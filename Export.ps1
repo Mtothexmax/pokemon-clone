@@ -75,7 +75,7 @@ try {
 
 } finally {
     # Restore original config
-    Set-Content 'vite.config.js' $origConfig
+    Set-Content 'vite.config.js' $origConfig -NoNewline
     Remove-Item 'src/routes/+layout.js' -Force -ErrorAction SilentlyContinue
     Remove-Item 'build' -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Cleaned up" -ForegroundColor DarkGray

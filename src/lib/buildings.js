@@ -173,41 +173,51 @@ export function drawAshHouse(ctx, W = 160, H = 128, _opts = {}) {
 	r(22, 118, 116, 9, 'rgba(2,6,23,0.28)');
 	r(32, 122, 96, 4, 'rgba(0,0,0,0.22)');
 
-	// gabled roof (apex centered)
-	const eaveL = 12, eaveR = 148, ryTop = 22, ryBot = 62, ryH = ryBot - ryTop;
-	for (let row = 0; row < ryH; row++) {
-		const inset = Math.floor((row * ((eaveR - eaveL) / 2)) / ryH);
+	// gabled roof — ridge along the top, wide eaves at the bottom
+	const eaveL = 12, eaveR = 148, ridgeY = 16, eaveY = 62, rh = eaveY - ridgeY, half = (eaveR - eaveL) / 2;
+	for (let row = 0; row < rh; row++) {
+		const inset = Math.floor((row * half) / rh);
+		const curY = eaveY - row;
 		const curX = eaveL + inset;
 		const curW = (eaveR - eaveL) - inset * 2;
 		let col = C.roofMid;
 		if (row % 5 === 0) col = C.roofDark;
 		else if (row % 5 === 1) col = C.roofLight;
-		r(curX, ryTop + row, curW, 1, col);
+		r(curX, curY, curW, 1, col);
 	}
-	for (let row = 0; row <= ryH; row++) {
-		const inset = Math.floor((row * ((eaveR - eaveL) / 2)) / ryH);
-		const curY = ryTop + row;
+	for (let row = 0; row <= rh; row++) {
+		const inset = Math.floor((row * half) / rh);
+		const curY = eaveY - row;
 		p(eaveL + inset, curY, C.roofRidge);
 		p(eaveL + inset + 1, curY, C.roofLight);
 		p(eaveR - inset - 1, curY, C.roofDark);
 		p(eaveR - inset, curY, C.roofShadow);
 	}
-	r(eaveL - 2, ryBot - 2, (eaveR - eaveL) + 4, 3, C.roofShadow);
-	r(eaveL - 1, ryBot, (eaveR - eaveL) + 2, 2, C.roofDark);
+	r(eaveL - 2, eaveY - 2, (eaveR - eaveL) + 4, 3, C.roofShadow);
+	r(eaveL - 1, eaveY, (eaveR - eaveL) + 2, 2, C.roofDark);
 
-	// dormer windows punched into the roof
-	for (const dx0 of [40, 92]) {
-		r(dx0 - 2, 38, 28, 3, C.outline);
-		r(dx0 - 1, 40, 26, 22, C.sidingMid);
-		r(dx0 - 1, 40, 2, 22, C.sidingHighlight);
-		r(dx0 + 23, 40, 2, 22, C.sidingDark);
-		r(dx0 + 3, 44, 18, 15, C.outline);
-		r(dx0 + 4, 45, 16, 13, C.frameWhite);
-		r(dx0 + 5, 46, 14, 11, C.glassDark);
-		r(dx0 + 5, 46, 14, 3, C.glassMid);
-		r(dx0 + 11, 46, 2, 11, C.frameWhite);
-		p(dx0 + 6, 47, C.glassGlint); p(dx0 + 7, 47, C.glassGlint); p(dx0 + 6, 48, C.glassGlint);
-		p(dx0 + 15, 52, C.glassGlint); p(dx0 + 16, 52, C.glassGlint);
+	// dormer windows, set low into the widest part of the roof
+	const span = (yy) => {
+		const inset = Math.floor(((eaveY - yy) * half) / rh);
+		return [eaveL + inset, eaveR - inset];
+	};
+	{
+		const [xl, xr] = span(44);
+		const dw = 26, gap = 12;
+		const cx = (xl + xr) / 2;
+		for (const dx0 of [Math.round(cx - gap / 2 - dw), Math.round(cx + gap / 2)]) {
+			r(dx0 - 2, 44, dw + 4, 3, C.outline);
+			r(dx0 - 1, 47, dw + 2, 15, C.outline);
+			r(dx0, 47, dw, 15, C.sidingMid);
+			r(dx0, 47, 2, 15, C.sidingHighlight);
+			r(dx0 + dw - 2, 47, 2, 15, C.sidingDark);
+			r(dx0 + 5, 50, dw - 10, 9, C.outline);
+			r(dx0 + 6, 51, dw - 12, 7, C.frameWhite);
+			r(dx0 + 7, 52, dw - 14, 5, C.glassDark);
+			r(dx0 + 7, 52, dw - 14, 1, C.glassMid);
+			r(dx0 + (dw >> 1) - 1, 52, 2, 5, C.frameWhite);
+			p(dx0 + 8, 53, C.glassGlint); p(dx0 + 9, 53, C.glassGlint);
+		}
 	}
 
 	// walls
@@ -268,40 +278,49 @@ export function drawGaryHouse(ctx, W = 192, H = 128, _opts = {}) {
 	r(46, 118, 108, 9, 'rgba(2,6,23,0.28)');
 	r(56, 122, 88, 4, 'rgba(0,0,0,0.22)');
 
-	// gabled roof
-	const eaveL = 38, eaveR = 176, ryTop = 20, ryBot = 60, ryH = ryBot - ryTop;
-	for (let row = 0; row < ryH; row++) {
-		const inset = Math.floor((row * ((eaveR - eaveL) / 2)) / ryH);
+	// gabled roof — ridge along the top, wide eaves at the bottom
+	const eaveL = 38, eaveR = 176, ridgeY = 16, eaveY = 60, rh = eaveY - ridgeY, half = (eaveR - eaveL) / 2;
+	for (let row = 0; row < rh; row++) {
+		const inset = Math.floor((row * half) / rh);
+		const curY = eaveY - row;
 		const curX = eaveL + inset;
 		const curW = (eaveR - eaveL) - inset * 2;
 		let col = C.roofMid;
 		if (row % 5 === 0) col = C.roofDark;
 		else if (row % 5 === 1) col = C.roofLight;
-		r(curX, ryTop + row, curW, 1, col);
+		r(curX, curY, curW, 1, col);
 	}
-	for (let row = 0; row <= ryH; row++) {
-		const inset = Math.floor((row * ((eaveR - eaveL) / 2)) / ryH);
-		const curY = ryTop + row;
+	for (let row = 0; row <= rh; row++) {
+		const inset = Math.floor((row * half) / rh);
+		const curY = eaveY - row;
 		p(eaveL + inset, curY, C.roofLight);
 		p(eaveL + inset + 1, curY, C.roofLight);
 		p(eaveR - inset - 1, curY, C.roofDark);
 		p(eaveR - inset, curY, C.roofRidge);
 	}
-	r(eaveL - 2, ryBot - 2, (eaveR - eaveL) + 4, 3, C.roofShadow);
-	r(eaveL - 1, ryBot, (eaveR - eaveL) + 2, 2, C.roofMid);
+	r(eaveL - 2, eaveY - 2, (eaveR - eaveL) + 4, 3, C.roofShadow);
+	r(eaveL - 1, eaveY, (eaveR - eaveL) + 2, 2, C.roofMid);
 
-	// flat-roof dormer windows
-	for (const dx0 of [58, 112]) {
-		r(dx0 - 2, 36, 24, 3, C.roofShadow);
-		r(dx0 - 1, 39, 22, 20, C.sidingMid);
-		r(dx0 - 1, 39, 2, 20, C.sidingLight);
-		r(dx0 + 19, 39, 2, 20, C.sidingDark);
-		r(dx0 + 3, 42, 14, 14, C.frameWhite);
-		r(dx0 + 4, 43, 12, 12, C.glassDark);
-		r(dx0 + 9, 43, 2, 12, C.frameShadow);
-		r(dx0 + 3, 48, 14, 1, C.frameShadow);
-		p(dx0 + 5, 44, C.glassGlint); p(dx0 + 6, 44, C.glassGlint); p(dx0 + 5, 45, C.glassGlint);
-		p(dx0 + 12, 51, C.glassGlint); p(dx0 + 13, 51, C.glassGlint);
+	// dormer windows, set low into the widest part of the roof
+	const span = (yy) => {
+		const inset = Math.floor(((eaveY - yy) * half) / rh);
+		return [eaveL + inset, eaveR - inset];
+	};
+	{
+		const [xl, xr] = span(42);
+		const dw = 24, gap = 14;
+		const cx = (xl + xr) / 2;
+		for (const dx0 of [Math.round(cx - gap / 2 - dw), Math.round(cx + gap / 2)]) {
+			r(dx0 - 2, 42, dw + 4, 3, C.roofShadow);
+			r(dx0 - 1, 45, dw + 2, 15, C.sidingMid);
+			r(dx0 - 1, 45, 2, 15, C.sidingLight);
+			r(dx0 + dw - 1, 45, 2, 15, C.sidingDark);
+			r(dx0 + 4, 48, dw - 8, 9, C.frameWhite);
+			r(dx0 + 5, 49, dw - 10, 7, C.glassDark);
+			r(dx0 + (dw >> 1) - 1, 49, 2, 7, C.frameShadow);
+			r(dx0 + 4, 52, dw - 8, 1, C.frameShadow);
+			p(dx0 + 6, 50, C.glassGlint); p(dx0 + 7, 50, C.glassGlint);
+		}
 	}
 
 	// walls

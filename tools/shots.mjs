@@ -154,6 +154,30 @@ try {
 			if (s.mode === 'window') data = (await send('Page.captureScreenshot', { format: 'png' })).data;
 			else data = await evaluate(s.mode === 'expr' ? s.expr : "document.getElementById('game').toDataURL('image/png')");
 			fs.writeFileSync(path.join(OUT, `${s.name}.png`), Buffer.from(data.split(',')[1] || data, 'base64'));
+			if (process.env.SHOTS_DEBUG) {
+				const r = await evaluate(
+					"(() => { const c = document.getElementById('game'); const b = c.getBoundingClientRect(); return JSON.stringify({ vw: innerWidth, vh: innerHeight, cw: Math.round(b.width), ch: Math.round(b.height), left: Math.round(b.left), top: Math.round(b.top) }); })()"
+				);
+				log(`       ${r}`);
+				const stick = await evaluate(`(() => {
+					const el = document.querySelector('.stick');
+					if (!el) return 'no .stick';
+					el.setPointerCapture = () => {};
+					const b = el.getBoundingClientRect();
+					const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+					const ev = (t, x, y) => el.dispatchEvent(new PointerEvent(t, { pointerId: 1, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+					const out = [];
+					for (const [name, fx, fy] of [['right', 0.42, 0], ['up', 0, -0.42], ['down', 0, 0.42], ['left', -0.42, 0]]) {
+						ev('pointerdown', cx + b.width * fx, cy + b.height * fy);
+						const k = window.__keys;
+						out.push(name + '=' + (k[name] ? 'on' : 'off'));
+						ev('pointerup', cx + b.width * fx, cy + b.height * fy);
+					}
+					const knob = document.querySelector('.stick-knob');
+					return out.join(' ') + ' | knob-reset=' + (knob && /translate\(0px, 0px\)/.test(knob.style.transform));
+				})()`);
+				log(`       ${stick}`);
+			}
 			log(`  ok  ${s.name} ${Date.now() - t}ms`);
 			ok++;
 		} catch (e) {

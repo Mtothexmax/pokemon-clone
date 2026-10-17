@@ -30,7 +30,7 @@
 		};
 	});
 
-	// Pointer handler set for one pad button: press on down, release on up.
+	// Pointer handler set for one round button (A/B): press on down, release on up.
 	// Pointer capture keeps the release reliable even if the finger slides off.
 	function press(name) {
 		return {
@@ -47,6 +47,56 @@
 			onlostpointercapture: () => setKey(name, false),
 			oncontextmenu: (e) => e.preventDefault()
 		};
+	}
+
+	// Analog stick: the knob follows the thumb and its offset picks a direction
+	// (grid movement is 4-way, so the dominant axis wins). Dead zone in the
+	// middle; the knob is clamped to a travel radius.
+	let knob = $state({ x: 0, y: 0 });
+	let stickId = null;
+
+	function moveStick(e) {
+		const el = e.currentTarget;
+		const r = el.getBoundingClientRect();
+		const cx = r.left + r.width / 2;
+		const cy = r.top + r.height / 2;
+		const R = r.width / 2;
+		const dx = e.clientX - cx;
+		const dy = e.clientY - cy;
+		const dist = Math.hypot(dx, dy);
+		const travel = R * 0.55;
+		const k = dist > travel ? travel / dist : 1;
+		knob = { x: dx * k, y: dy * k };
+
+		const dead = R * 0.26;
+		let up = false, down = false, left = false, right = false;
+		if (dist >= dead) {
+			if (Math.abs(dx) >= Math.abs(dy)) {
+				if (dx > 0) right = true; else left = true;
+			} else {
+				if (dy > 0) down = true; else up = true;
+			}
+		}
+		setKey('up', up);
+		setKey('down', down);
+		setKey('left', left);
+		setKey('right', right);
+	}
+
+	function grabStick(e) {
+		e.preventDefault();
+		stickId = e.pointerId;
+		e.currentTarget.setPointerCapture?.(e.pointerId);
+		moveStick(e);
+	}
+
+	function releaseStick() {
+		stickId = null;
+		knob = { x: 0, y: 0 };
+		setKey('up', false);
+		setKey('down', false);
+		setKey('left', false);
+		setKey('right', false);
 	}
 </script>
 
@@ -95,19 +145,18 @@
 
 	{#if touch}
 		<div class="touch-pad" aria-hidden="true">
-			<div class="dpad">
-				<button class="key up" aria-label="Up" {...press('up')}>
-					<span class="material-symbols-outlined">arrow_upward</span>
-				</button>
-				<button class="key left" aria-label="Left" {...press('left')}>
-					<span class="material-symbols-outlined">arrow_back</span>
-				</button>
-				<button class="key right" aria-label="Right" {...press('right')}>
-					<span class="material-symbols-outlined">arrow_forward</span>
-				</button>
-				<button class="key down" aria-label="Down" {...press('down')}>
-					<span class="material-symbols-outlined">arrow_downward</span>
-				</button>
+			<div
+				class="stick"
+				onpointerdown={grabStick}
+				onpointermove={(e) => {
+					if (e.pointerId === stickId) moveStick(e);
+				}}
+				onpointerup={releaseStick}
+				onpointercancel={releaseStick}
+				onlostpointercapture={releaseStick}
+				oncontextmenu={(e) => e.preventDefault()}
+			>
+				<div class="stick-knob" style="transform: translate({knob.x}px, {knob.y}px)"></div>
 			</div>
 			<div class="ab">
 				<button class="key round b" aria-label="B — cancel" {...press('b')}>B</button>
@@ -156,27 +205,31 @@
 		background: rgba(253, 224, 71, 0.55);
 		transform: scale(0.94);
 	}
-	.touch-pad .key .material-symbols-outlined {
-		font-size: calc(var(--u) * 0.6);
-		line-height: 1;
-	}
-
-	.dpad {
+	/* Analog stick (bottom-left). Sized in vmin so the thumb reach stays
+	   consistent from a small phone to a 4K display. */
+	.stick {
 		position: absolute;
-		left: max(10px, 3vmin);
-		bottom: max(10px, 3vmin);
-		width: calc(var(--u) * 3);
-		height: calc(var(--u) * 3);
+		left: max(12px, 4vmin);
+		bottom: max(12px, 4vmin);
+		width: calc(var(--u) * 3.4);
+		height: calc(var(--u) * 3.4);
+		border-radius: 50%;
+		pointer-events: auto;
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		grid-template-rows: repeat(3, 1fr);
-		gap: calc(var(--u) * 0.07);
+		place-items: center;
+		touch-action: none;
+		-webkit-tap-highlight-color: transparent;
+		background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06) 72%);
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25), 0 0.4vmin 1.2vmin rgba(0, 0, 0, 0.45);
 	}
-	.dpad .key { border-radius: 26%; }
-	.dpad .up { grid-area: 1 / 2 / 2 / 3; }
-	.dpad .left { grid-area: 2 / 1 / 3 / 2; }
-	.dpad .right { grid-area: 2 / 3 / 3 / 4; }
-	.dpad .down { grid-area: 3 / 2 / 4 / 3; }
+	.stick-knob {
+		width: calc(var(--u) * 1.5);
+		height: calc(var(--u) * 1.5);
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.3);
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0.3vmin 0.9vmin rgba(0, 0, 0, 0.45);
+		will-change: transform;
+	}
 
 	.ab {
 		position: absolute;

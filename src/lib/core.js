@@ -22,9 +22,11 @@ const VIEW_SCALE = 2;
 
 /**
  * Snap the canvas to the window. The viewport is as many whole 32px tiles as
- * fill the window (never more than the current map, so no black void shows),
- * then the canvas is stretched to the full window so there are never black
- * bars — the game always uses whatever space/proportion the window gives it.
+ * fill the window (never more than the current map), then the canvas is scaled
+ * *uniformly* to fit inside the window — the pixel art is never stretched, and
+ * whatever space is left over becomes letterbox/pillarbox bars (the page
+ * background shows through). This keeps the game undistorted in any window
+ * shape, including a phone held in portrait.
  */
 export function fitScreen(canvas, mapW = Infinity, mapH = Infinity) {
 	if (typeof window === 'undefined') return;
@@ -34,8 +36,9 @@ export function fitScreen(canvas, mapW = Infinity, mapH = Infinity) {
 	VH = Math.min(rows * TILE, mapH);
 	canvas.width = VW;
 	canvas.height = VH;
-	canvas.style.width = window.innerWidth + 'px';
-	canvas.style.height = window.innerHeight + 'px';
+	const scale = Math.min(window.innerWidth / VW, window.innerHeight / VH);
+	canvas.style.width = Math.round(VW * scale) + 'px';
+	canvas.style.height = Math.round(VH * scale) + 'px';
 }
 
 /** 5x7 pixel font, uppercase only (like the Game Boy originals). */

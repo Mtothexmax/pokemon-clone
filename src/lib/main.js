@@ -157,8 +157,8 @@ export function startGame(canvas, hooks = {}) {
 		art.fringe[i] = f;
 	}
 	const game = createGame();
-	// Fit the canvas to the window, capped to the current map so the map always
-	// fills the window (no black bars). Re-fitted on resize and on map change.
+	// Fit the canvas to the window (capped to the current map), preserving the
+	// aspect ratio so the art is never stretched. Re-fitted on resize / map change.
 	let curMap = game.mapId;
 	const mapPx = (id) => {
 		const m = MAPS[id];
