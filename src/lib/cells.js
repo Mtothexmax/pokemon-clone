@@ -53,6 +53,15 @@ export function door() {
 	return { id: 'd', ground: 'H', layers: [run('d')] };
 }
 
+/**
+ * A doormat: a run-aware layer (like the door), so a wide mat joins into one
+ * seamless strip. The two outer tiles carry the 50%-inset end pieces and the
+ * middle tile is the full mat — with a 3-wide run the player enters centred.
+ */
+export function mat() {
+	return { id: 'm', ground: 'L', layers: [run('mat')] };
+}
+
 export const CELLS = {
 	d: door(),
 	K: desk()

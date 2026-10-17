@@ -172,8 +172,9 @@ export function drawFlowerField(ctx, width, height, params) {
 	const bloomRadius = params.bloomRadius ?? 2;
 	const flowerType = params.flowerType ?? 'mixed';
 	const transparent = params.transparent ?? false;
-	// Wind sway: displace each bloom horizontally from its base by a sine that
-	// varies with world position, so a field ripples instead of moving rigidly.
+	// Wind sway: nudge each bloom by at most a pixel. The phase is keyed to the
+	// bloom's own random value, so neighbours don't march in lock-step — the
+	// field shimmers in a breeze instead of rippling as a travelling wave.
 	const swayAmp = params.sway ?? 0;
 	const swayPhase = params.swayPhase ?? 0;
 
@@ -227,7 +228,7 @@ export function drawFlowerField(ctx, width, height, params) {
 	for (const flower of flowerList) {
 		const fx = flower.x;
 		const fy = flower.y;
-		const sw = swayAmp ? Math.round(Math.sin(fx * 0.11 + fy * 0.05 + swayPhase) * swayAmp) : 0;
+		const sw = swayAmp ? Math.round(Math.sin(swayPhase + flower.r * Math.PI * 2) * swayAmp) : 0;
 		const bx = fx + sw;
 		let bloomColor, centerColor;
 		if (flowerType === 'tulips') {

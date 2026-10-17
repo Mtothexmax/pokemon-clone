@@ -20,7 +20,7 @@
  */
 
 import { SOLID } from './tiles.js';
-import { desk, door, normCell } from './cells.js';
+import { desk, door, mat, normCell, stack, tile } from './cells.js';
 
 export { SOLID };
 
@@ -74,8 +74,22 @@ const LAB = [
 	'HLLLLLLZLLQLLLLH',
 	'HBLLLLLLLLLLLLBH',
 	'HLLLLLLLLLLLLLLH',
-	'HLLLLLLMNLLLLLLH',
-	['H', 'H', 'H', 'H', 'H', 'H', 'H', door(), door(), 'H', 'H', 'H', 'H', 'H', 'H', 'H']
+	['H', 'L', 'L', 'L', 'L', 'L', mat(), mat(), mat(), 'L', 'L', 'L', 'L', 'L', 'L', 'H'],
+	['H', 'H', 'H', 'H', 'H', 'H', door(), door(), door(), 'H', 'H', 'H', 'H', 'H', 'H', 'H']
+];
+
+// Ash's house interior (Pallet Town). A cosy one-room cottage: the player
+// enters on the doormat at the bottom, mom is inside, and a table + plants
+// furnish the room. Exits back onto Ash's doorstep.
+const ASH_HOME = [
+	'HHwHHwHHwHH',
+	'HLLLLLLLLLH',
+	'HLL===LLLLH',
+	'HLLLLLLLLLH',
+	['H', 'L', stack('L', tile('*')), 'L', 'L', 'L', 'L', 'L', stack('L', tile('*')), 'L', 'H'],
+	'HLLLLLLLLLH',
+	['H', 'L', 'L', 'L', mat(), 'L', 'L', 'L', 'L', 'L', 'H'],
+	'HHHHdHHHHHH'
 ];
 
 export const MAPS = {
@@ -83,7 +97,10 @@ export const MAPS = {
 		name: 'PALLET TOWN',
 		grid: PALLET,
 		spawn: { x: 34, y: 16, dir: 'up' },
-		warps: [{ x: 8, y: 7, to: 'lab', tx: 7, ty: 9, dir: 'up' }],
+		warps: [
+			{ x: 8, y: 7, to: 'lab', tx: 7, ty: 9, dir: 'up' },
+			{ x: 33, y: 11, to: 'ash', tx: 4, ty: 6, dir: 'up' }
+		],
 		// Whole-object houses (painted as facades, collision stays grid-based).
 		// Big trees are generated cloud-trees (2x3 tiles); only the base row
 		// blocks movement so the player can stand behind/in front of the canopy.
@@ -104,14 +121,6 @@ export const MAPS = {
 			{ type: 'field', x: 37, y: 25, w: 9, h: 8, seed: 20250, flowers: true }
 		],
 		npcs: [
-			{
-				id: 'mom', look: 'mom', x: 33, y: 13, dir: 'down',
-				dialog: [
-					'MOM: RIGHT. ALL BOYS LEAVE HOME SOME DAY.',
-					'IT SAID SO ON TV.',
-					'PROF. OAK, NEXT DOOR, IS LOOKING FOR YOU.'
-				]
-			},
 			{
 				id: 'farmer', look: 'farmer', x: 6, y: 25, dir: 'down',
 				dialog: [
@@ -140,6 +149,7 @@ export const MAPS = {
 		spawn: { x: 7, y: 9, dir: 'up' },
 		props: [],
 		warps: [
+			{ x: 6, y: 11, to: 'pallet', tx: 8, ty: 8, dir: 'down' },
 			{ x: 7, y: 11, to: 'pallet', tx: 8, ty: 8, dir: 'down' },
 			{ x: 8, y: 11, to: 'pallet', tx: 8, ty: 8, dir: 'down' }
 		],
@@ -151,6 +161,24 @@ export const MAPS = {
 					'MY NAME IS OAK. PEOPLE CALL ME THE POKEMON PROF.',
 					'THIS WORLD IS INHABITED BY CREATURES CALLED POKEMON.',
 					'THREE STARTER POKEMON WAIT IN THE PODS. PICK ONE... LATER!'
+				]
+			}
+		],
+		signs: []
+	},
+	ash: {
+		name: "ASH'S HOUSE",
+		grid: ASH_HOME,
+		spawn: { x: 4, y: 6, dir: 'up' },
+		props: [],
+		warps: [{ x: 4, y: 7, to: 'pallet', tx: 33, ty: 12, dir: 'down' }],
+		npcs: [
+			{
+				id: 'mom', look: 'mom', x: 6, y: 2, dir: 'down',
+				dialog: [
+					'MOM: RIGHT. ALL BOYS LEAVE HOME SOME DAY.',
+					'IT SAID SO ON TV.',
+					'PROF. OAK, NEXT DOOR, IS LOOKING FOR YOU.'
 				]
 			}
 		],
@@ -177,7 +205,11 @@ export function bigTreeAt(mapId, x, y) {
 /** Solid tile, big-tree base, or NPC on it? Doors (d) and mats are walkable. */
 export function isSolid(mapId, x, y, npcs) {
 	const map = MAPS[mapId];
-	if (normCell(map, x, y).solid) return true;
+	// A tile the building facade leaves transparent (grass shows through there)
+	// is walkable even if its grid char is a solid wall/roof. main.js records
+	// these so you never bump into the invisible edge of a house.
+	const seeThrough = map.clearTiles?.has(`${x},${y}`);
+	if (!seeThrough && normCell(map, x, y).solid) return true;
 	const tree = bigTreeAt(mapId, x, y);
 	if (tree && y === tree.y + (tree.h ?? 3) - 1) return true; // base row only
 	return npcs.some((n) => n.x === x && n.y === y);

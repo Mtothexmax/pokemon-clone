@@ -23,25 +23,53 @@ export function startGame(canvas, hooks = {}) {
 	// n=1,s=2,e=4,w=8). Building style selects the facade generator.
 	art.houses = {};
 	for (const [id, map] of Object.entries(MAPS)) {
+		map.clearTiles = new Set();
 		art.houses[id] = (map.props ?? [])
 			.filter((p) => p.type === 'house')
 			.map((p) => {
 				const style = p.style ?? 'house';
 				const h = BUILDING_H[style] ?? BUILDING_H.house;
+				const rows = Math.round(h / 32);
 				const c = document.createElement('canvas');
 				c.width = p.w * 32;
 				c.height = h;
 				const hg = c.getContext('2d');
-				// Covered tiles are skipped by the tile pass, so the transparent
-				// edges would show the cleared canvas. Paint grass first.
+				// Draw the facade on transparency first, so we can find the
+				// footprint tiles it leaves empty. Grass shows through those, so
+				// they should stay walkable rather than act as invisible walls.
+				paintBuilding(hg, p.w, rows, p);
+				try {
+					const data = hg.getImageData(0, 0, c.width, c.height).data;
+					if (data.length >= c.width * c.height * 4) {
+						for (let ty = 0; ty < rows; ty++) {
+							for (let tx = 0; tx < p.w; tx++) {
+								let opaque = false;
+								for (let yy = ty * 32; yy < (ty + 1) * 32 && !opaque; yy++) {
+									for (let xx = tx * 32; xx < (tx + 1) * 32; xx++) {
+										if (data[(yy * c.width + xx) * 4 + 3] > 0) {
+											opaque = true;
+											break;
+										}
+									}
+								}
+								if (!opaque) map.clearTiles.add(`${p.x + tx},${p.y + ty}`);
+							}
+						}
+					}
+				} catch {
+					// No pixel access (e.g. headless canvas stub): leave all solid.
+				}
+				// Covered tiles are skipped by the tile pass, so transparent edges
+				// would show the cleared canvas. Paint grass *behind* the facade.
 				const grass = art.tiles[','];
-				for (let ty = 0; ty * 32 < h; ty++) {
+				hg.globalCompositeOperation = 'destination-over';
+				for (let ty = 0; ty < rows; ty++) {
 					for (let tx = 0; tx < p.w; tx++) {
 						hg.drawImage(grass[(tx * 3 + ty * 5) % grass.length], tx * 32, ty * 32);
 					}
 				}
-				paintBuilding(hg, p.w, Math.round(h / 32), p);
-				return { x: p.x, y: p.y, w: p.w, h: Math.round(h / 32), img: c };
+				hg.globalCompositeOperation = 'source-over';
+				return { x: p.x, y: p.y, w: p.w, h: rows, img: c };
 			});
 	}
 	// Whole flower-field regions: one continuous patch over a grass base.
@@ -62,8 +90,8 @@ export function startGame(canvas, hooks = {}) {
 						bg.drawImage(grass[(tx * 3 + ty * 5) % grass.length], tx * 32, ty * 32);
 					}
 				}
-				// Pre-render wind-sway phases so the blooms ripple each frame.
-				const NF = 4;
+				// Pre-render gentle wind-sway phases (slow, low-amplitude).
+				const NF = 6;
 				const frames = [];
 				for (let k = 0; k < NF; k++) {
 					const c = document.createElement('canvas');

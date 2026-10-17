@@ -51,7 +51,7 @@ export const LAB_EQUIP = [
 ];
 
 /** Layers whose left/middle/right variant is baked (see cells.runPos). */
-export const RUN_LAYERS = new Set(['desk', 'computer', 'd']);
+export const RUN_LAYERS = new Set(['desk', 'computer', 'd', 'mat']);
 /** Deterministic 0..1 hash for decoration scatter. */
 export function hash(x, y, s = 0) {
 	let h = (x * 374761393 + y * 668265263 + s * 974634) | 0;
@@ -401,6 +401,26 @@ const painters = {
 			rect(g, ox + 19, oy + 15, 2, 4, C.knob);
 			rect(g, ox + 6, oy + 30, 20, 2, C.floorEdge);
 		}
+	},
+	// Doormat (run-aware): like the door leaves, each end tile carries only its
+	// inner 50% and the middle tile is the full mat — so a 3-wide run reads as
+	// one doormat that joins seamlessly across the tiles.
+	mat: (g, ox, oy, tx, ty, pos = 3) => {
+		const x0 = pos === 0 ? 16 : 0;
+		const x1 = pos === 2 ? 16 : 32;
+		const w = x1 - x0;
+		const borderL = pos === 0 || pos === 3;
+		const borderR = pos === 2 || pos === 3;
+		rect(g, ox + x0, oy + 2, w, 2, C.matD);
+		rect(g, ox + x0, oy + 28, w, 2, C.matD);
+		if (borderL) rect(g, ox + x0, oy + 2, 2, 28, C.matD);
+		if (borderR) rect(g, ox + x1 - 2, oy + 2, 2, 28, C.matD);
+		const b0 = x0 + (borderL ? 2 : 0);
+		const b1 = x1 - (borderR ? 2 : 0);
+		rect(g, ox + b0, oy + 4, b1 - b0, 24, C.mat);
+		const i0 = x0 + (borderL ? 4 : 0);
+		const i1 = x1 - (borderR ? 4 : 0);
+		rect(g, ox + i0, oy + 8, i1 - i0, 16, C.matIn);
 	},
 	// Desk surface (run-aware): continuous top + front panel across a run.
 	desk: (g, ox, oy, tx, ty, pos = 3) => {

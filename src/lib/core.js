@@ -21,22 +21,24 @@ export let VH = 288;
 const VIEW_SCALE = 2;
 
 /**
- * Snap the canvas to the window. The viewport is as many whole 32px tiles as
- * fill the window (never more than the current map), then the canvas is scaled
- * *uniformly* to fit inside the window — the pixel art is never stretched, and
- * whatever space is left over becomes letterbox/pillarbox bars (the page
- * background shows through). This keeps the game undistorted in any window
- * shape, including a phone held in portrait.
+ * Snap the canvas to the window. The width is as many whole 32px tiles as fill
+ * the window (capped to the current map); the height is then derived from the
+ * window's *own* aspect ratio. That way the canvas fills the window exactly:
+ * the pixels stay square (the art is never stretched) and there are no
+ * letterbox / pillarbox bars to see on any screen, including 4K. Whatever
+ * fraction of a bottom row is left over is simply clipped. When the window is
+ * taller than the map (very rare), the height is clamped to the map.
  */
 export function fitScreen(canvas, mapW = Infinity, mapH = Infinity) {
 	if (typeof window === 'undefined') return;
-	const cols = Math.max(10, Math.ceil(window.innerWidth / (TILE * VIEW_SCALE)));
-	const rows = Math.max(9, Math.ceil(window.innerHeight / (TILE * VIEW_SCALE)));
+	const winW = window.innerWidth || 1;
+	const winH = window.innerHeight || 1;
+	const cols = Math.max(10, Math.ceil(winW / (TILE * VIEW_SCALE)));
 	VW = Math.min(cols * TILE, mapW);
-	VH = Math.min(rows * TILE, mapH);
+	VH = Math.max(TILE, Math.min(Math.round(VW * (winH / winW)), mapH));
 	canvas.width = VW;
 	canvas.height = VH;
-	const scale = Math.min(window.innerWidth / VW, window.innerHeight / VH);
+	const scale = winW / VW;
 	canvas.style.width = Math.round(VW * scale) + 'px';
 	canvas.style.height = Math.round(VH * scale) + 'px';
 }

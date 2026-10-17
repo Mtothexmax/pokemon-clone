@@ -95,14 +95,14 @@ ok('maps valid', validateMaps().length === 0, validateMaps().join('; '));
 	ok('lab is bigger inside', MAPS.lab.grid.length * MAPS.lab.grid[0].length > 100, `${MAPS.lab.grid[0].length}x${MAPS.lab.grid.length}`);
 }
 
-// 4b. locked house door answers, farmer talks
+// 4b. Ash's house door enters, farmer walks onto wheat, lab plant blocks
 {
 	const g = createGame();
 	enterMap(g, 'pallet', 33, 12, 'up');
 	g.state = 'walk';
-	update(g, K(), P({ a: true })); // face (33,11) locked door (Ash's)
-	ok('locked door answers', g.state === 'text', g.state);
-	while (g.state === 'text') update(g, K(), P({ a: true }));
+	update(g, K({ up: true }), P()); // step onto (33,11) doormat -> warp inside
+	for (let i = 0; i < 10; i++) update(g, K(), P());
+	ok("Ash's door enters his house", g.mapId === 'ash' && g.mx === 4 && g.my === 6, `${g.mapId} ${g.mx},${g.my}`);
 	const h = createGame();
 	enterMap(h, 'pallet', 1, 27, 'right');
 	h.state = 'walk';
@@ -134,12 +134,20 @@ ok('maps valid', validateMaps().length === 0, validateMaps().join('; '));
 	ok('river described', describeAt(g, 24, 13) === 'pallet river (24,13)');
 	ok('lake described', describeAt(g, 23, 30) === 'pallet lake (23,30)');
 	ok('meadow walkable', !isSolid('pallet', 24, 34, []));
-	ok('door leaves walkable', !isSolid('lab', 7, 11, []) && !isSolid('lab', 8, 11, []));
+	ok(
+		'door leaves walkable',
+		!isSolid('lab', 6, 11, []) && !isSolid('lab', 7, 11, []) && !isSolid('lab', 8, 11, [])
+	);
 	// Smart cells: one desk/door char, auto left/middle/right via runPos.
 	{
 		const gl = createGame();
 		enterMap(gl, 'lab', 8, 8, 'up');
-		ok('door run left/right', RUN_POS[runPos(MAPS.lab, 7, 11, 'd')] === 'left' && RUN_POS[runPos(MAPS.lab, 8, 11, 'd')] === 'right');
+		ok(
+			'door run left/middle/right',
+			RUN_POS[runPos(MAPS.lab, 6, 11, 'd')] === 'left' &&
+				RUN_POS[runPos(MAPS.lab, 7, 11, 'd')] === 'middle' &&
+				RUN_POS[runPos(MAPS.lab, 8, 11, 'd')] === 'right'
+		);
 		ok('desk is 3 layers', describeAt(gl, 7, 5) === "lab tile (7,5) ground='L' layers=['desk', 'computer'] pos=middle", describeAt(gl, 7, 5));
 		ok('desk left end', describeAt(gl, 6, 5).endsWith('pos=left'), describeAt(gl, 6, 5));
 		ok('desk right end', describeAt(gl, 9, 5).endsWith('pos=right'), describeAt(gl, 9, 5));
@@ -381,9 +389,12 @@ ok('maps valid', validateMaps().length === 0, validateMaps().join('; '));
 	ok('lab exit warps out', g.mapId === 'pallet' && g.mx === 8 && g.my === 8, `${g.mx},${g.my}`);
 }
 
-// 5b. double door: both leaves warp, mat is 2 wide, plant gone
+// 5b. triple door: all three leaves warp, mat is 3 wide, plant gone
 {
-	ok('lab door is smart d', normCell(MAPS.lab, 7, 11).ch === 'd' && normCell(MAPS.lab, 8, 11).ch === 'd');
+	ok(
+		'lab door is smart d',
+		normCell(MAPS.lab, 6, 11).ch === 'd' && normCell(MAPS.lab, 7, 11).ch === 'd' && normCell(MAPS.lab, 8, 11).ch === 'd'
+	);
 	const g = createGame();
 	enterMap(g, 'lab', 8, 10, 'down');
 	g.state = 'walk';
@@ -391,8 +402,12 @@ ok('maps valid', validateMaps().length === 0, validateMaps().join('; '));
 	for (let i = 0; i < 10; i++) update(g, K(), P());
 	ok('right leaf warps out too', g.mapId === 'pallet' && g.mx === 8 && g.my === 8, `${g.mapId} ${g.mx},${g.my}`);
 	let mats = 0;
-	for (const row of MAPS.lab.grid) for (const ch of row) if (ch === 'M' || ch === 'N') mats++;
-	ok('doormat is one 2-wide pair', mats === 2 && MAPS.lab.grid[10][7] === 'M' && MAPS.lab.grid[10][8] === 'N', `${mats} halves`);
+	for (let x = 0; x < MAPS.lab.grid[10].length; x++) if (normCell(MAPS.lab, x, 10).ch === 'm') mats++;
+	ok(
+		'doormat is one 3-wide strip',
+		mats === 3 && normCell(MAPS.lab, 6, 10).ch === 'm' && normCell(MAPS.lab, 8, 10).ch === 'm',
+		`${mats} tiles`
+	);
 	ok('upper mats removed', MAPS.lab.grid[9][7] === 'L' && MAPS.lab.grid[9][8] === 'L');
 	ok('doormat walkable', !isSolid('lab', 7, 10, []) && !isSolid('lab', 8, 10, []));
 	ok('plant (11,3) removed', MAPS.lab.grid[3][11] === 'L');
@@ -465,7 +480,7 @@ ok('no stray warps', warpAt('pallet', 0, 0) === null && warpAt('lab', 0, 0) === 
 	update(g, K(), P({ debug: true }));
 	ok('debug toggles off', g.debug === false);
 	g.debug = true;
-	ok('npc id string', describeAt(g, 33, 13) === 'pallet npc mom (33,13) look=mom dir=down', describeAt(g, 33, 13));
+	ok('npc id string', describeAt(g, 6, 25) === 'pallet npc farmer (6,25) look=farmer dir=down', describeAt(g, 6, 25));
 	ok('house id string', describeAt(g, 34, 11) === 'pallet house (32-36,8-11) style=ash door=33', describeAt(g, 34, 11));
 	ok('sign id string', describeAt(g, 27, 2).startsWith('pallet sign (27,2) "PALLET TOWN.'), describeAt(g, 27, 2));
 	ok('warp id string', describeAt(g, 8, 7) === 'pallet warp (8,7) -> lab (7,9)', describeAt(g, 8, 7));
@@ -797,7 +812,8 @@ function stubOps() {
 	);
 	const g = createGame();
 	ok('lab building described', describeAt(g, 6, 5) === 'pallet house (5-11,4-7) style=lab door=8', describeAt(g, 6, 5));
-	ok('ash building described', describeAt(g, 33, 11) === 'pallet house (32-36,8-11) style=ash door=33', describeAt(g, 33, 11));
+	ok('ash doormat is a warp', describeAt(g, 33, 11) === 'pallet warp (33,11) -> ash (4,6)', describeAt(g, 33, 11));
+	ok('ash building described', describeAt(g, 34, 11) === 'pallet house (32-36,8-11) style=ash door=33', describeAt(g, 34, 11));
 	ok(
 		'flower field prop covers V region',
 		MAPS.pallet.props.some((p) => p.type === 'field' && p.x === 37 && p.y === 25 && p.w === 9 && p.h === 8)
@@ -806,6 +822,18 @@ function stubOps() {
 		'sunflower prop present',
 		MAPS.pallet.props.some((p) => p.type === 'sunflower' && p.x === 17 && p.y === 24 && p.count === 3)
 	);
+}
+
+// 13c. Ash's house interior: mom lives inside, the door leads back out
+{
+	ok('ash map exists', MAPS.ash?.name === "ASH'S HOUSE");
+	const g = createGame();
+	enterMap(g, 'ash', 4, 6, 'up');
+	ok('mom is inside', describeAt(g, 6, 2).startsWith('ash npc mom (6,2)'), describeAt(g, 6, 2));
+	g.state = 'walk';
+	update(g, K({ down: true }), P()); // step onto (4,7) door -> warps out
+	for (let i = 0; i < 10; i++) update(g, K(), P());
+	ok('ash door warps back to Pallet', g.mapId === 'pallet' && g.mx === 33 && g.my === 12, `${g.mapId} ${g.mx},${g.my}`);
 }
 
 console.log(fails ? `${fails} FAILURES` : 'ALL GREEN');

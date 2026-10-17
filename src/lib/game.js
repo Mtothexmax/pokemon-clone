@@ -235,7 +235,7 @@ export function drawGame(g, art, game) {
 	// Whole flower-field regions (continuous ground patches, wind-sway frames).
 	for (const f of art.fields?.[game.mapId] ?? []) {
 		const frames = f.frames ?? [f.img];
-		const img = frames[Math.floor(game.frame / 12) % frames.length];
+		const img = frames[Math.floor(game.frame / 26) % frames.length];
 		g.drawImage(img, f.x * TILE - cx, f.y * TILE - cy);
 	}
 	// Whole-object houses (facades with chimney, windows, door).

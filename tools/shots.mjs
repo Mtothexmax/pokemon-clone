@@ -34,10 +34,14 @@ const enter = (map, x, y, dir) =>
 	`window.__enterMap(window.__game,'${map}',${x},${y},'${dir}'); window.__game.frame=0;`;
 const SHOTS = [
 	{ name: 'pallet_wide', viewport: [3840, 1080], pre: enter('pallet', 34, 16, 'down') },
+	{ name: 'pallet_4k', viewport: [3840, 2160], pre: enter('pallet', 34, 16, 'down') },
 	{ name: 'pallet_hd', viewport: [1920, 1080], pre: enter('pallet', 34, 16, 'down') },
 	{ name: 'highgrass', viewport: [1280, 720], pre: enter('pallet', 29, 2, 'up') },
 	{ name: 'lab_building', viewport: [1280, 720], pre: enter('pallet', 8, 10, 'up') },
 	{ name: 'lab_inside', viewport: [1920, 1080], pre: enter('lab', 7, 9, 'up') },
+	{ name: 'lab_door', viewport: [1280, 720], pre: enter('lab', 7, 8, 'down') },
+	{ name: 'ash_inside', viewport: [1280, 720], pre: enter('ash', 4, 6, 'up') },
+	{ name: 'gary_grass', viewport: [1280, 720], pre: enter('pallet', 37, 9, 'right') },
 	{ name: 'river', viewport: [1280, 720], pre: enter('pallet', 24, 12, 'down') },
 	{ name: 'bridge', viewport: [1280, 720], pre: enter('pallet', 25, 15, 'down') },
 	{ name: 'houses', viewport: [1280, 720], pre: enter('pallet', 38, 13, 'up') },

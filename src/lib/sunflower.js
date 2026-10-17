@@ -117,7 +117,10 @@ export function drawSunflowerPatch(ctx, w, h, params = {}) {
 	ctx.clearRect(0, 0, w * 32, h * 32);
 	const count = params.count ?? 3;
 	const seed = params.seed ?? 1;
-	const s = params.scale ?? 0.75;
+	// Keep the scale integral: a fractional scale makes the canvas rasterise the
+	// 1px petals with anti-aliasing, which lets the green grass bleed through and
+	// turns the yellow petals greenish. 1:1 stays crisp and pure.
+	const s = params.scale ?? 1;
 	const rnd = prng(seed);
 	const bottom = h * 32;
 	const rand = [];
