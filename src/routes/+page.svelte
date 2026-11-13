@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { assetUrl } from '../lib/asset-url';
 	import { onMount, untrack } from 'svelte';
 	import { Town, NPCS } from '../lib/three/town';
 	import type { VoxEvent, VoxelPlay } from '../lib/three/voxelmon';
@@ -228,7 +229,7 @@
 	function track(name: Track) {
 		let a = tracks[name];
 		if (!a) {
-			a = new Audio(`/audio/${name}.mp3`);
+			a = new Audio(assetUrl(`/audio/${name}.mp3`));
 			a.loop = LOOPS[name];
 			a.muted = !tabFocused;
 			a.volume = 0;

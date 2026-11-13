@@ -1,3 +1,4 @@
+import { assetUrl } from '../asset-url';
 import * as THREE from 'three';
 import { ASSET_VERSION } from './assets-version';
 
@@ -7,7 +8,7 @@ const cache = new Map<string, Promise<THREE.BufferGeometry>>();
 export function loadModel(url: string): Promise<THREE.BufferGeometry> {
 	let p = cache.get(url);
 	if (!p) {
-		p = fetch(`${url}?v=${ASSET_VERSION}`, { cache: 'no-cache' }) // revalidate so re-converted models are picked up
+		p = fetch(`${assetUrl(url)}?v=${ASSET_VERSION}`, { cache: 'no-cache' }) // revalidate so re-converted models are picked up
 			.then((r) => r.arrayBuffer())
 			.then((buf) => {
 				const [n, m, flags] = new Uint32Array(buf, 0, 3);

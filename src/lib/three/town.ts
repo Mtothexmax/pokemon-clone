@@ -1,3 +1,4 @@
+import { assetUrl } from '../asset-url';
 import * as THREE from 'three';
 import { VoxelPlay, type VoxEvent } from './voxelmon';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -856,7 +857,7 @@ export class Town {
 			loadModel('/models/flowerpot.bin')
 		]);
 		const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32 });
-		const tex = await new THREE.TextureLoader().loadAsync(`/models/bush.png?v=${ASSET_VERSION}`);
+		const tex = await new THREE.TextureLoader().loadAsync(assetUrl(`/models/bush.png?v=${ASSET_VERSION}`));
 		tex.colorSpace = THREE.SRGBColorSpace;
 		tex.anisotropy = 4;
 		const loadAlpha = async (url: string) => {
@@ -865,9 +866,9 @@ export class Town {
 			return t;
 		};
 		// the plant textures keep their cut-out shape in a separate alpha mask
-		const [bushA, bambooA] = await Promise.all([loadAlpha(`/models/bush_a.png?v=${ASSET_VERSION}`), loadAlpha(`/models/bamboo_a.png?v=${ASSET_VERSION}`)]);
+		const [bushA, bambooA] = await Promise.all([loadAlpha(assetUrl(`/models/bush_a.png?v=${ASSET_VERSION}`)), loadAlpha(assetUrl(`/models/bamboo_a.png?v=${ASSET_VERSION}`))]);
 		const bushMat = new THREE.MeshStandardMaterial({ map: tex, alphaMap: bushA, roughness: 0.32, alphaTest: 0.5, side: THREE.DoubleSide });
-		const btex = await new THREE.TextureLoader().loadAsync(`/models/bamboo.png?v=${ASSET_VERSION}`);
+		const btex = await new THREE.TextureLoader().loadAsync(assetUrl(`/models/bamboo.png?v=${ASSET_VERSION}`));
 		btex.colorSpace = THREE.SRGBColorSpace;
 		btex.anisotropy = 4;
 		const bambooMat = new THREE.MeshStandardMaterial({ map: btex, alphaMap: bambooA, roughness: 0.32, side: THREE.DoubleSide, alphaTest: 0.5 });

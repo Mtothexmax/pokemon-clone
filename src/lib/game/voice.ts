@@ -1,5 +1,8 @@
 // Character voice lines (pre-generated with Fish Audio by scripts/generate-voices.mjs).
 // The API key is only used by that script; the game just plays the generated MP3s.
+// files under static/, also when the game is served from a sub path (same as src/lib/asset-url.ts;
+// written out here because the node tests load this module without Vite)
+const assetUrl = (path: string) => ((import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/').replace(/\/$/, '') + path;
 
 /** speaker name in dialogs -> Fish Audio voice model id */
 export const VOICE_MODELS: Record<string, string> = {
@@ -47,7 +50,7 @@ try {
 
 export async function loadVoices() {
 	try {
-		const r = await fetch(`/voices/manifest.json?t=${Date.now()}`);
+		const r = await fetch(assetUrl(`/voices/manifest.json?t=${Date.now()}`));
 		available = new Set(r.ok ? ((await r.json()) as string[]) : []);
 	} catch {
 		available = new Set();
@@ -95,7 +98,7 @@ export function playVoice(speaker: string, text: string, onEnd?: () => void) {
 	if (!enabled || !focused || !available || !VOICE_MODELS[speaker]) return false;
 	const id = voiceId(speaker, spokenText(text));
 	if (!available.has(id)) return false;
-	const a = new Audio(`/voices/${id}.mp3`);
+	const a = new Audio(assetUrl(`/voices/${id}.mp3`));
 	a.volume = 0.95;
 	a.onended = () => {
 		if (current !== a) return;

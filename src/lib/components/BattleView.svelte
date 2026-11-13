@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { assetUrl } from '../asset-url';
 	import Card from './Card.svelte';
 	import FluentIcon from './FluentIcon.svelte';
 	import { CARD_MAP, ZONE_MAP, inkOn } from '../game/cards';
@@ -469,7 +470,7 @@
 	const tileVars = (color: string, img?: string) => {
 		if (img) {
 			// picture background: white text on a dark fade, the location color as a frame
-			return `--zc:${color};--zbg:linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0.15) 75%), url(/zones/${img}.jpg) center / cover, ${color};--zt:#fff;--zs:0 1px 3px rgb(0 0 0 / 0.9);--zb:${color}`;
+			return `--zc:${color};--zbg:linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0.15) 75%), url(${assetUrl(`/zones/${img}.jpg`)}) center / cover, ${color};--zt:#fff;--zs:0 1px 3px rgb(0 0 0 / 0.9);--zb:${color}`;
 		}
 		const k = inkOn(color);
 		return `--zc:${color};--zt:${k.ink};--zs:${k.shadow}`;
@@ -483,7 +484,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="battle fixed inset-0 z-40 flex flex-col text-white select-none" class:shiny={battle.opts.shiny} style="--bgimg:url(/backgrounds/{bgName}.png)">
+<div class="battle fixed inset-0 z-40 flex flex-col text-white select-none" class:shiny={battle.opts.shiny} style="--bgimg:url({assetUrl(`/backgrounds/${bgName}.png`)})">
 	<!-- top bar -->
 	<div class="top">
 		<div class="avatar"><span class="material-symbols-rounded">{battle.opts.kind === 'wild' ? 'pets' : 'person'}</span></div>

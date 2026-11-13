@@ -1,4 +1,5 @@
 // Tiny synthesized sound effects (no audio files needed).
+import { assetUrl } from '../asset-url';
 let ctx: AudioContext | null = null;
 let enabled = true;
 /** false while the browser tab has no focus: no game sound at all */
@@ -246,7 +247,7 @@ function sample(url: string, vol: number, rateJitter = 0, offset = 0) {
 	if (!a || !enabled) return;
 	let p = buffers.get(url);
 	if (!p) {
-		p = fetch(url)
+		p = fetch(assetUrl(url))
 			.then((r) => r.arrayBuffer())
 			.then((b) => a.decodeAudioData(b))
 			.catch(() => null);

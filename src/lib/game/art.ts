@@ -1,4 +1,5 @@
 // Card portraits: Openmon pixel-art sprites (static/sprites), with procedural brick creatures as fallback.
+import { assetUrl } from '../asset-url';
 import { CARD_MAP, KIND_INFO } from './cards';
 import { MODELS } from '../voxelmon/index';
 import { drawPixelPicture } from '../voxelmon/draw.js';
@@ -195,7 +196,7 @@ export function preloadSprites() {
 						res();
 					};
 					img.onerror = () => res();
-					img.src = `/sprites/${id}.png`;
+					img.src = assetUrl(`/sprites/${id}.png`);
 				})
 		)
 	).then(() => {
