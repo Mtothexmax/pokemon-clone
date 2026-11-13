@@ -1,0 +1,11 @@
+{
+	"mcpServers": {
+		"blender": {
+			"command": "C:\\Users\\mtoth\\AppData\\Local\\hermes\\bin\\uvx.exe",
+			"args": ["blender-mcp"],
+			"env": {
+				"DISABLE_TELEMETRY": "true"
+			}
+		}
+	}
+}
