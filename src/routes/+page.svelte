@@ -118,7 +118,7 @@
 		todo.forEach((i, k) => setTimeout(() => reveal(i, false), k * 260));
 		if (todo.length) setTimeout(() => sfx.reward(anyRare), (todo.length - 1) * 260 + 420);
 	}
-	// ---------------- dev / debug mode (on by default, remembered; F9 toggles) ----------------
+	// ---------------- dev / debug mode (on by default on desktop, off on phones; remembered; F9 toggles) ----------------
 	const readFlag = (k: string, def: boolean) => {
 		try {
 			const v = localStorage.getItem(k);
@@ -135,7 +135,7 @@
 		}
 	};
 	const POSE_KEY = 'brickhollow-pose';
-	let debugOn = $state(readFlag('brickhollow-debug', true));
+	let debugOn = $state(readFlag('brickhollow-debug', !(typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches)));
 	let dbgPick = $state(readFlag('brickhollow-debug-pick', true));
 	let dbgWire = $state(readFlag('brickhollow-debug-wire', false));
 	let dbgOpen = $state(true);
@@ -268,6 +268,18 @@
 	let areaLabel = $state('Your Room');
 	let fade = $state(0);
 	let joy = $state<{ id: number; cx: number; cy: number; dx: number; dy: number } | null>(null);
+	type Quality = 'high' | 'medium' | 'low';
+	/** graphics: the level in use, and whether auto picked it */
+	let graphics = $state<{ level: Quality; auto: boolean }>({ level: 'high', auto: true });
+	function setGraphics(g: 'auto' | Quality) {
+		try {
+			localStorage.setItem('brickhollow-graphics', g);
+		} catch {
+			/* ignore */
+		}
+		// auto starts from high again and steps down if needed
+		town?.setQuality(g === 'auto' ? 'high' : g, g === 'auto');
+	}
 	/** the menu behind the top-right button (things you rarely need) */
 	let menuOpen = $state(false);
 	/** touch controls: 'swipe' (default: swipe once to walk, tap to stop) or 'dpad' (the stick) */
@@ -1002,6 +1014,15 @@
 				showToast(`Copied: ${id}`);
 			},
 			onBlockedRoute: () => gateTalk(),
+			onQuality: (q, auto) => {
+				graphics = { level: q, auto };
+				if (auto)
+					try {
+						localStorage.setItem('brickhollow-graphics-auto', q);
+					} catch {
+						/* ignore */
+					}
+			},
 			onZone: (label) => {
 				areaLabel = label;
 				toastIcon = label === 'Stonecrest' ? 'castle' : label === 'Route 1' ? 'forest' : 'home_pin';
@@ -1017,6 +1038,19 @@
 		});
 		town.hasDeck = () => game.save.hasDeck;
 		town.routeOpen = () => !!game.save.gateOpen;
+		// graphics: the saved choice, auto by default (auto starts at the level it found last time)
+		{
+			let g = 'auto';
+			let last: string | null = null;
+			try {
+				g = localStorage.getItem('brickhollow-graphics') ?? 'auto';
+				last = localStorage.getItem('brickhollow-graphics-auto');
+			} catch {
+				/* storage unavailable */
+			}
+			const lv = (v: string | null) => (v === 'medium' || v === 'low' ? v : 'high') as Quality;
+			town.setQuality(g === 'auto' ? lv(last) : lv(g), g === 'auto');
+		}
 		town.vox.setCompanion(game.save.voxelmon ?? null);
 		voxHud = town.vox.hud();
 		if (import.meta.env.DEV) Object.assign(window, { __town: town, __dev: { talk, startBattle, game, showRewards: (ids: string[]) => (rewards = { title: 'Test pack', ids }) } });
@@ -1095,6 +1129,13 @@
 					<span class="material-symbols-rounded">{voicesOn ? 'record_voice_over' : 'voice_over_off'}</span>Voices<span class="state">{voicesOn ? 'on' : 'off'}</span>
 				</button>
 				<button class="menu-item" onclick={toggleMusic}><FluentIcon name={musicOn ? 'speaker' : 'mute'} />Music<span class="state">{musicOn ? 'on' : 'off'}</span></button>
+				<div class="menu-label">Graphics</div>
+				<div class="seg">
+					{#each [['auto', 'Auto'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] as [g, label]}
+						<button class:on={g === 'auto' ? graphics.auto : !graphics.auto && graphics.level === g} onclick={() => setGraphics(g as 'auto' | Quality)}>{label}</button>
+					{/each}
+				</div>
+				<div class="menu-hint">{graphics.auto ? `Auto: now ${graphics.level}. It turns down if the game gets slow.` : 'Lower settings run smoother on slow devices.'}</div>
 				{#if isTouch}
 					<div class="menu-label">Controls</div>
 					<div class="seg">

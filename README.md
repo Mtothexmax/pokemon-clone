@@ -1,3 +1,12 @@
+**▶ Play: https://mtothexmax.github.io/pokemon-clone/**
+
+# Brickhollow: Snap Beasts
+
+A LEGO-style village with a card battler and real-time Voxelmon battles (SvelteKit + Svelte 5 + three.js).
+Export for GitHub Pages: `powershell -ExecutionPolicy Bypass -File .\export.ps1` (builds into `docs/`).
+
+---
+
 # sv
 
 Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).

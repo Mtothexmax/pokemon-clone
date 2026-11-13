@@ -49,6 +49,8 @@ export interface TownCallbacks {
 	onBlockedGrass: () => void;
 	/** tried to leave for Route 1 while Prof. Quill still blocks the way */
 	onBlockedRoute?: () => void;
+	/** graphics quality changed (auto = picked by the frame-rate watch) */
+	onQuality?: (q: 'high' | 'medium' | 'low', auto: boolean) => void;
 	/** swipe controls: the figure started / stopped walking by itself */
 	onAutoWalk?: (on: boolean) => void;
 	/** walked into another part of the outside world (Brickhollow / Route 1 / Stonecrest) */
@@ -576,6 +578,7 @@ export class Town {
 		this.hemi = new THREE.HemisphereLight('#e8f4ff', '#5a7a4a', 1.1);
 		this.scene.add(this.hemi);
 		const sun = new THREE.DirectionalLight('#fff6e0', 2.4);
+		this.sunLight = sun;
 		sun.castShadow = true;
 		sun.shadow.mapSize.set(2048, 2048);
 		const s = sun.shadow.camera;
@@ -3533,12 +3536,14 @@ export class Town {
 
 	// ---------- swipe controls: one swipe and the figure keeps walking; tap stops ----------
 	/** the direction the player swiped (x right, z down the screen), null = standing */
-	private auto: { x: number; z: number; side: number } | null = null;
+	private auto: { x: number; z: number; side: number; best: number; gained: number } | null = null;
 	/** start walking in this direction until tapped, or until there is no way on */
 	autoWalk(x: number, z: number) {
 		const l = Math.hypot(x, z);
 		if (l < 1e-3) return this.stopAutoWalk();
-		this.auto = { x: x / l, z: z / l, side: 1 };
+		const p = this.player.group.position;
+		// side 0 = not decided yet; best / gained: how far it got in the swipe direction, and when it last got further
+		this.auto = { x: x / l, z: z / l, side: 0, best: (p.x * x + p.z * z) / l, gained: this.clock.elapsedTime };
 	}
 	stopAutoWalk() {
 		if (!this.auto) return;
@@ -3557,9 +3562,16 @@ export class Town {
 		const p = this.player.group.position;
 		// the next step must be free (the movement itself slides along walls; a longer look ahead gives up too early in narrow spots)
 		const free = (x: number, z: number) => this.walkable(p.x + x * 0.9, p.z + z * 0.9);
+		// no progress in the swipe direction for 1.5 s: it is a wall, stop instead of searching back and forth
+		const along = p.x * a.x + p.z * a.z;
+		if (along > a.best + 0.3) {
+			a.best = along;
+			a.gained = this.clock.elapsedTime;
+		} else if (this.clock.elapsedTime - a.gained > 1.5) return null; // (long enough to walk around a house)
 		if (free(a.x, a.z)) return { x: a.x, z: a.z };
-		for (const ang of [0.45, 0.8, 1.15, Math.PI / 2, 1.95]) { // up to exactly along the wall, and a bit back out of corners
-			for (const sd of [a.side, -a.side]) {
+		// around the obstacle: decide on one side the first time, then keep it (never backwards)
+		for (const ang of [0.45, 0.8, 1.15, Math.PI / 2]) {
+			for (const sd of a.side ? [a.side] : [1, -1]) {
 				const c = Math.cos(ang * sd), s = Math.sin(ang * sd);
 				const x = a.x * c - a.z * s, z = a.x * s + a.z * c;
 				if (free(x, z)) {
@@ -3908,12 +3920,73 @@ export class Town {
 
 	/** true while a full-screen overlay (battle, deck builder) hides the world: nothing is updated or drawn */
 	suspended = false;
+	// ---------- graphics quality: high / medium / low, or auto (measures the frame rate and steps down) ----------
+	quality: 'high' | 'medium' | 'low' = 'high';
+	private sunLight: THREE.DirectionalLight | null = null;
+	autoQuality = true;
+	private perf = { since: 0, frames: 0, last: 0, warm: 0 };
+	setQuality(q: 'high' | 'medium' | 'low', auto = this.autoQuality) {
+		this.autoQuality = auto;
+		this.perf = { since: 0, frames: 0, last: 0, warm: performance.now() + 5000 };
+		if (q === this.quality && this.qualityApplied) return;
+		this.quality = q;
+		this.qualityApplied = true;
+		const r = this.renderer;
+		const touch = matchMedia('(pointer: coarse)').matches;
+		const dpr = window.devicePixelRatio;
+		// sharpness: full resolution on high, less on medium, below 1 on low
+		r.setPixelRatio(q === 'high' ? Math.min(dpr, touch ? 1.5 : 2) : q === 'medium' ? Math.min(dpr, 1) : 0.75);
+		// shadows: off on low, a smaller shadow map on medium
+		const shadows = q !== 'low';
+		if (r.shadowMap.enabled !== shadows) {
+			r.shadowMap.enabled = shadows;
+			this.scene.traverse((o) => {
+				const m = (o as THREE.Mesh).material;
+				if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.needsUpdate = true;
+			});
+		}
+		if (this.sunLight) {
+			const size = q === 'high' ? 2048 : 1024;
+			if (this.sunLight.shadow.mapSize.x !== size) {
+				this.sunLight.shadow.mapSize.set(size, size);
+				this.sunLight.shadow.map?.dispose();
+				this.sunLight.shadow.map = null;
+			}
+		}
+		// the pond reflection draws the figures a second time: only on high
+		const mirror = this.scene.getObjectByName('pond:reflection');
+		if (mirror) mirror.visible = q === 'high';
+		this.resize();
+		this.cb.onQuality?.(q, this.autoQuality);
+	}
+	private qualityApplied = false;
+	/** auto quality: average frame rate over 4 s; below ~38 fps it steps one level down (never up, so it can't flicker) */
+	private watchPerf(now: number) {
+		const P = this.perf;
+		const gap = now - P.last;
+		P.last = now;
+		// skip loading, a hidden tab, or a pause (no fair measurement)
+		if (!this.autoQuality || document.hidden || now < P.warm || gap > 250 || this.paused) {
+			P.since = now;
+			P.frames = 0;
+			return;
+		}
+		P.frames++;
+		if (now - P.since < 4000) return;
+		const fps = (P.frames * 1000) / (now - P.since);
+		P.since = now;
+		P.frames = 0;
+		if (fps < 38 && this.quality !== 'low') this.setQuality(this.quality === 'high' ? 'medium' : 'low', true);
+	}
+
 	private loop = () => {
 		this.raf = requestAnimationFrame(this.loop);
 		if (this.suspended) {
 			this.clock.getDelta(); // keep the clock from jumping when the world comes back
+			this.perf.last = 0;
 			return;
 		}
+		this.watchPerf(performance.now());
 		const dt = Math.min(0.05, this.clock.getDelta());
 		this.update(dt, this.clock.elapsedTime);
 		this.renderer.info.autoReset = false; // the pond mirror renders mid-frame and would reset the counters
