@@ -149,7 +149,7 @@ hz_internal void fig_animate(MinifigSet *set, EcsWorld *w, EcsEntity player, f32
         air = !character_grounded(c);
       }
     }
-    f32 target = air || f->pose == FIG_POSE_SIT ? 0.0f : m_minf(1.0f, speed / 3.0f) * 0.7f;
+    f32 target = air || f->pose == FIG_POSE_SIT ? 0.0f : m_minf(1.0f, speed / 3.0f) * 0.6f;
     f->swing += (target - f->swing) * m_minf(1.0f, dt * 10.0f);
     f->walk_t += dt * (speed * 2.4f);
     f->idle_t += dt;

@@ -594,6 +594,14 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         }
       }
     }
+    // anti-aliasing follows the automatic quality: 4x MSAA on HIGH and ULTRA, off below (phones keep their frame rate)
+    {
+      RendererState *rs = ecs_resource_get_mut(w, RendererState);
+      RendererQuality q = renderer_quality(rs);
+      u32 want = q >= RENDERER_QUALITY_HIGH && q < RENDERER_QUALITY_COUNT ? 4u : 1u;
+      if ((renderer_supported_sample_counts(rs) & want) && want != renderer_sample_count(rs) && want != renderer_pending_sample_count(rs))
+        renderer_set_sample_count(rs, want);
+    }
     // the editor pauses the simulation
     game_sim_begin_frame(&s->sim, &controls, dt, s->editor_open);
     fig_animate(&s->figs, w, s->sim.player, dt);

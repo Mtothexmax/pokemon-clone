@@ -19,6 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'tools', 'minifig_src')
 OUT = os.path.join(ROOT, 'assets', 'brickhollow', 'minifig')
 
+SINGLE_SIDED = True  # the body meshes have inner faces that flicker through when drawn double-sided
 STUD_M = 0.38  # metres per stud: the figure is 4.9 studs = 1.86 m, the character controller's size
 PARTS = ['head', 'torso', 'armL', 'armR', 'legL', 'legR']
 PIVOT = {'head': (0, 3.95, 0), 'torso': (0, 0, 0), 'armL': (-0.86, 3.12, -0.1), 'armR': (0.86, 3.12, -0.1),
@@ -325,7 +326,7 @@ class Glb:
         return len(self.j['accessors']) - 1
 
     def material(self, color, png=None, name='m'):
-        m = dict(name=name, pbrMetallicRoughness=dict(baseColorFactor=linear_rgba(color), metallicFactor=0.0, roughnessFactor=0.5),
+        m = dict(name=name, pbrMetallicRoughness=dict(baseColorFactor=linear_rgba(color), metallicFactor=0.0, roughnessFactor=0.72),
                  doubleSided=True)
         if png is not None:
             buf = io.BytesIO()
@@ -385,6 +386,7 @@ def build_style(name, style, meshes):
         mats = {}
         prims = []
         px, py, pz = PIVOT[part]
+        leg = part in ('legL', 'legR')
         for start, count, mi in src['groups']:
             if mi not in mats:
                 if mi == 3:
@@ -393,9 +395,35 @@ def build_style(name, style, meshes):
                     mats[mi] = g.material('#ffffff', face_png(style), f'{name}_face')
                 else:
                     mats[mi] = g.material(colors[mi], None, ['torso', 'legs', 'skin'][mi])
+                if SINGLE_SIDED:
+                    g.j['materials'][mats[mi]]['doubleSided'] = False
             pos, nrm, uv, idx = compact(src, src['idx'][start:start + count])
-            pos = [((x - px) * STUD_M, (y - py) * STUD_M, (z - pz) * STUD_M) for x, y, z in pos]
+            # legs a hair narrower than the hips around their pivot: their faces no longer fight with the hip piece
+            k = 0.975 if leg else 1.0
+
+            def tuck(x, y, z):
+                # the part of a leg inside the hip piece is rounded around the hip pin (y 1.55, along x), like a real
+                # minifig leg, so a swinging leg never pokes through the hip's grooved front
+                if not leg or y < 1.22:
+                    return x, y, z
+                dy = y - 1.55
+                d = math.sqrt(dy * dy + z * z)
+                R = 0.38
+                w = min(1.0, (y - 1.22) / 0.12)
+                if d <= R:
+                    return x, y, z
+                k2 = 1.0 + (R / d - 1.0) * w
+                return x, 1.55 + dy * k2, z * k2
+            pos = [(lambda tx, ty, tz: ((tx - px) * k * STUD_M, (ty - py) * STUD_M, (tz - pz) * k * STUD_M))(*tuck(x, y, z)) for x, y, z in pos]
             prims.append(g.prim(pos, nrm, uv, idx, mats[mi]))
+        if leg:
+            # the source legs are open at the top: a round hip joint along x closes them (a swinging leg showed its inside)
+            hg = Geo()
+            cx = -0.34 if part == 'legL' else 0.34
+            p, t = cylinder(0.36, 0.36, 0.84, 18, caps=True)
+            hg.add(xf(p, rot=(0.0, 0.0, math.pi / 2), pos=(cx, 1.55, 0.0)), t)
+            pos = [((x - px) * STUD_M, (y - py) * STUD_M, (z - pz) * STUD_M) for x, y, z in hg.p]
+            prims.append(g.prim(pos, hg.n, [(0.0, 0.0)] * len(pos), hg.i, mats.get(1) or g.material(style['legs'], None, 'legs')))
         if part == 'head':
             for k, (hg, color) in enumerate(hair_geo(style)):
                 mat = g.material(color, None, f'{name}_hair{k}')
