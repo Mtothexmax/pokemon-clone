@@ -24,6 +24,12 @@
         }
         #status { font-size: 13px; opacity: 0.75; min-height: 1.2em; }
         #start.hidden { opacity: 0; pointer-events: none; }
+        #play:disabled { background: #c9c9c9; box-shadow: 0 5px 0 #8a8a8a; }
+        #log {
+            display: none; position: fixed; left: 8px; right: 8px; bottom: 8px; max-height: 28vh; overflow: auto; z-index: 20;
+            background: rgba(20, 0, 0, 0.82); color: #ffd0d0; font: 11px/1.35 ui-monospace, Consolas, monospace;
+            padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; pointer-events: auto;
+        }
     </style>
 </head>
 <body>
@@ -35,29 +41,87 @@
         <button id="play">Tap to play</button>
         <div id="status">Loading...</div>
     </div>
+    <pre id="log"></pre>
     <script type="module">
         import { createGame } from "./main.js";
         const start = document.getElementById("start");
         const status = document.getElementById("status");
+        const play = document.getElementById("play");
         const canvas = document.getElementById("canvas");
+        const logEl = document.getElementById("log");
+        const debug = new URLSearchParams(location.search).has("debug");
+        const errors = [];
+        let ready = false, failed = false;
 
+        // problems stay on screen (a phone has no console): the last engine and page errors, newest last
+        const showLog = () => {
+            if (!errors.length && !debug) return;
+            logEl.textContent = errors.slice(debug ? -40 : -14).join("\n");
+            logEl.scrollTop = logEl.scrollHeight;
+            logEl.style.display = "block";
+        };
+        const addError = (text) => {
+            errors.push(String(text).slice(0, 300));
+            if (failed || debug || errors.length > 0) showLog();
+        };
+        const fail = (msg) => {
+            failed = true;
+            status.textContent = msg;
+            play.disabled = true;
+            play.textContent = "Cannot start";
+            start.classList.remove("hidden");
+            showLog();
+        };
+        window.addEventListener("error", (e) => addError("[page] " + e.message));
+        window.addEventListener("unhandledrejection", (e) => addError("[page] " + e.reason));
+
+        // WebGPU check before the engine: no API, or no adapter (the browser blocks this GPU)
+        const ua = navigator.userAgent;
+        const browser = (/(Chrome|Firefox|SamsungBrowser|HuaweiBrowser|HonorBrowser|EdgA|OPR)\/[\d.]+/.exec(ua) || [ua.slice(0, 60)])[0];
+        let gpuOk = !!navigator.gpu;
         if (!navigator.gpu) {
-            status.textContent = "This browser has no WebGPU. Try a current Chrome, Edge or Safari (iOS 26+).";
+            fail("This browser has no WebGPU (" + browser + "). On Android use a current Google Chrome (121 or newer).");
+        } else {
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    gpuOk = false;
+                    fail("WebGPU is switched off for this phone's graphics chip in " + browser +
+                         ". In Chrome you can try chrome://flags/#enable-unsafe-webgpu (Enabled) and restart Chrome.");
+                } else if (debug) {
+                    const i = adapter.info || {};
+                    addError("[gpu] " + [i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(" ") + " | " + browser);
+                }
+            } catch (e) {
+                gpuOk = false;
+                fail("WebGPU failed to start: " + e);
+            }
         }
-        const game = createGame({ canvas, allowFullscreen: true });
-        game.ready.then(() => { status.textContent = "Ready"; })
-            .catch((e) => {
-                const code = e && e.code ? e.code : "";
-                status.textContent = code === "webgpu_unavailable"
-                    ? "WebGPU is not available here. Try a current Chrome, Edge or Safari."
-                    : "Could not start: " + (e && e.message ? e.message : e);
+
+        if (gpuOk) {
+            const game = createGame({
+                canvas, allowFullscreen: true, logRelay: true,
+                onEngineMessage: (msg) => {
+                    if (msg.type !== "engineLog") return;
+                    for (const [level, text] of msg.lines)
+                        if (level === "error" || debug) addError(text);
+                },
             });
-        game.oncrash = () => { status.textContent = "The game crashed. Reload the page."; start.classList.remove("hidden"); };
-        // the first tap is the browser's permission to play sound (the engine resumes audio on pointerdown)
-        start.addEventListener("pointerdown", () => {
-            start.classList.add("hidden");
-            canvas.focus();
-        }, { once: true });
+            game.ready.then(() => { ready = true; if (!failed) status.textContent = "Ready"; })
+                .catch((e) => {
+                    const code = e && e.code ? e.code : "";
+                    fail(code === "webgpu_unavailable" ? "WebGPU could not start here: " + (e.message || "")
+                        : code === "memory_unavailable" ? "Not enough memory for the game on this device: " + (e.message || "")
+                        : "Could not start: " + (e && e.message ? e.message : e));
+                });
+            game.oncrash = () => fail("The game crashed. Reload the page.");
+            // the first tap is the browser's permission to play sound (the engine resumes audio on pointerdown)
+            start.addEventListener("pointerdown", () => {
+                if (failed) return;
+                start.classList.add("hidden");
+                canvas.focus();
+            });
+        }
     </script>
 </body>
 </html>

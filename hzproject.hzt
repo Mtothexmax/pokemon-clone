@@ -15,4 +15,3 @@ engine_version 0.7.0.002
 publish
   product_name "Brickhollow"
 modules 1 gameplay_blocks
-orientation landscape
