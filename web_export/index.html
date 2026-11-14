@@ -25,10 +25,19 @@
         #status { font-size: 13px; opacity: 0.75; min-height: 1.2em; }
         #start.hidden { opacity: 0; pointer-events: none; }
         #play:disabled { background: #c9c9c9; box-shadow: 0 5px 0 #8a8a8a; }
+        #logbox {
+            display: none; position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 20; pointer-events: auto;
+            background: rgba(20, 0, 0, 0.86); border-radius: 8px; padding-bottom: env(safe-area-inset-bottom);
+        }
+        #logbar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 0 10px; }
+        #logbar span { flex: 1; color: #ffb0b0; font: 600 12px system-ui, sans-serif; }
+        #copy {
+            font: 600 13px system-ui, sans-serif; color: #1d3b22; background: #ffd23f; border: 0; border-radius: 999px;
+            padding: 7px 16px; cursor: pointer; box-shadow: 0 2px 0 #b8901a;
+        }
         #log {
-            display: none; position: fixed; left: 8px; right: 8px; bottom: 8px; max-height: 28vh; overflow: auto; z-index: 20;
-            background: rgba(20, 0, 0, 0.82); color: #ffd0d0; font: 11px/1.35 ui-monospace, Consolas, monospace;
-            padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; pointer-events: auto;
+            max-height: 26vh; overflow: auto; margin: 0; color: #ffd0d0; font: 11px/1.35 ui-monospace, Consolas, monospace;
+            padding: 6px 10px 8px; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text;
         }
     </style>
 </head>
@@ -37,11 +46,14 @@
     <div id="start">
         <h1>Brickhollow</h1>
         <p>A little starter town. Walk around, visit the houses, the lab and the pond.<br>
-           Keyboard: WASD to walk, Shift to run. Phone: the stick on the left.</p>
+           Keyboard: WASD to walk, Shift to run. Phone: swipe to walk, tap to stop.</p>
         <button id="play">Tap to play</button>
         <div id="status">Loading...</div>
     </div>
-    <pre id="log"></pre>
+    <div id="logbox">
+        <div id="logbar"><span>Error details</span><button id="copy">Copy to clipboard</button></div>
+        <pre id="log"></pre>
+    </div>
     <script type="module">
         // Sound needs the threaded engine build, and that needs a cross-origin isolated page. GitHub Pages cannot send
         // the headers, so coi-sw.js adds them: the first visit registers it and reloads once.
@@ -67,19 +79,23 @@
         const play = document.getElementById("play");
         const canvas = document.getElementById("canvas");
         const logEl = document.getElementById("log");
+        const logBox = document.getElementById("logbox");
+        const copyBtn = document.getElementById("copy");
         const debug = new URLSearchParams(location.search).has("debug");
-        const errors = [];
-        let ready = false, failed = false;
+        const errors = [];     // shown: shortened
+        const fullErrors = []; // copied: everything, as it came
+        let ready = false, failed = false, gpuInfo = "";
 
         // problems stay on screen (a phone has no console): the last engine and page errors, newest last
         const showLog = () => {
-            if (!errors.length && !debug) return;
+            if (!errors.length && !debug && !failed) return;
             logEl.textContent = errors.slice(debug ? -40 : -14).join("\n");
+            logBox.style.display = "block";
             logEl.scrollTop = logEl.scrollHeight;
-            logEl.style.display = "block";
         };
         const addError = (text) => {
             errors.push(String(text).slice(0, 300));
+            if (fullErrors.length < 300) fullErrors.push(String(text).slice(0, 4000));
             if (failed || debug) showLog(); // collected quietly otherwise: shown when the start fails
         };
         const fail = (msg) => {
@@ -90,6 +106,44 @@
             start.classList.remove("hidden");
             showLog();
         };
+        // the whole report for a bug: what failed, where, on which browser and graphics chip, and every error line
+        const report = () => [
+            "Brickhollow error report",
+            "status: " + status.textContent,
+            "page: " + location.href,
+            "time: " + new Date().toISOString(),
+            "browser: " + navigator.userAgent,
+            "screen: " + innerWidth + "x" + innerHeight + " @" + devicePixelRatio + "x, canvas " + canvas.width + "x" + canvas.height,
+            "build: " + (threaded ? "threaded" : "single-threaded") + ", isolated " + self.crossOriginIsolated,
+            "gpu: " + (gpuInfo || "unknown"),
+            "",
+            ...fullErrors,
+        ].join("\n");
+        copyBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const text = report();
+            let ok = false;
+            try { await navigator.clipboard.writeText(text); ok = true; } catch { /* no clipboard API here: the old way */ }
+            if (!ok) {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.setAttribute("readonly", "");
+                ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, text.length);
+                try { ok = document.execCommand("copy"); } catch { ok = false; }
+                ta.remove();
+            }
+            if (!ok) { // still nothing: the whole report, selected, to copy by hand
+                logEl.textContent = text;
+                getSelection().selectAllChildren(logEl);
+            }
+            copyBtn.textContent = ok ? "Copied \u2713" : "Select and copy";
+            setTimeout(() => (copyBtn.textContent = "Copy to clipboard"), 2500);
+        });
+        logBox.addEventListener("pointerdown", (e) => e.stopPropagation());
+
         window.addEventListener("error", (e) => addError("[page] " + e.message));
         window.addEventListener("unhandledrejection", (e) => addError("[page] " + e.reason));
 
@@ -106,9 +160,10 @@
                     gpuOk = false;
                     fail("WebGPU is switched off for this phone's graphics chip in " + browser +
                          ". In Chrome you can try chrome://flags/#enable-unsafe-webgpu (Enabled) and restart Chrome.");
-                } else if (debug) {
+                } else {
                     const i = adapter.info || {};
-                    addError("[gpu] " + [i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(" ") + " | " + browser);
+                    gpuInfo = [i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(" ") + " | " + browser;
+                    if (debug) addError("[gpu] " + gpuInfo);
                 }
             } catch (e) {
                 gpuOk = false;
