@@ -37,9 +37,20 @@ hz_internal f32 town_rand(TownRng *r) {
   return (f32)(r->s >> 8) / 16777216.0f;
 }
 
+typedef struct TownRect {
+  f32 x0, x1, z0, z1;
+} TownRect;
+
+#define TOWN_MAX_RECTS 512
 typedef struct Town {
   MeshBuilder *b;
   TownRng rng;
+  EcsWorld *world;
+  RendererState *renderer;
+  AssetSystem *assets;
+  TownRect *used; // blockers and kept-free areas, for the plants' free-spot search
+  u32 used_count;
+  u32 props;      // placed LEGO plant models
 } Town;
 
 hz_internal v3 town_m(f32 x, f32 y, f32 z) { return (v3){x * TOWN_STUD, y * TOWN_STUD, z * TOWN_STUD}; }
@@ -102,7 +113,13 @@ hz_internal void town_cyl(Town *t, u32 hex, f32 x, f32 y, f32 z, f32 r_bottom, f
 }
 
 // a solid block nobody walks through (the three.js "blockers"), 2 m high
+hz_internal void town_occupy(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
+  if (t->used_count < TOWN_MAX_RECTS)
+    t->used[t->used_count++] = (TownRect){x0, x1, z0, z1};
+}
+
 hz_internal void town_block(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
+  town_occupy(t, x0, x1, z0, z1);
   v3 c = town_m((x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f);
   c.y = 1.0f;
   mesh_builder_collider_box(t->b, c, quat_identity(), (v3){(x1 - x0) * 0.5f * TOWN_STUD, 1.0f, (z1 - z0) * 0.5f * TOWN_STUD});
@@ -110,93 +127,200 @@ hz_internal void town_block(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
 
 // ---------------------------------------------------------------- plants
 
-// a LEGO flower plant: a 2x2 leaf star and a 1x1 flower with a yellow centre
+// grey road plates (0.4 high, studs on top), as the three.js roads list
+
+#define TOWN_ROAD_COUNT 7
+hz_internal TownRect town_road(i32 i) {
+  switch (i) {
+  case 0: return (TownRect){-3, 3, -27, 24};
+  case 1: return (TownRect){-26, 29, -2, 3};
+  case 2: return (TownRect){26, 29, 3, 10};
+  case 3: return (TownRect){29, 66, 7, 10};
+  case 4: return (TownRect){-16, -14, -6, -2};
+  case 5: return (TownRect){3, 15, 16.5f, 19.5f};
+  default: return (TownRect){-20, -18, 3, 7};
+  }
+}
+
+// ---- the LEGO plant models of the three.js version (tools/make_props.py: true LEGO parts, metres) ----
+#define PROP(name) "brickhollow/props/" name ".glb"
+
+// one instance of a prop model at (x, z) studs, standing on y studs, scaled by s, turned by rot
+hz_internal void town_prop(Town *t, CString path, f32 x, f32 z, f32 y, f32 s, f32 rot, b32 shadow) {
+  HzHandleT(ModelBlobAsset) model = asset_load(ModelBlobAsset, t->assets, .path = path);
+  ecs_renderer_spawn(t->world, t->renderer,
+                     &(EcsRendererSpawnDesc){.model_asset = blob_asset_ref_from_handle(ModelBlobAsset, model),
+                                             .transform = {.position = town_m(x, y, z),
+                                                           .rotation = quat_from_euler((v3){0.0f, rot, 0.0f}),
+                                                           .scale = (v3){s, s, s}},
+                                             .casts_shadow = shadow,
+                                             .static_shadow = shadow});
+  t->props++;
+}
+
+hz_internal f32 town_rot(Town *t) { return town_rand(&t->rng) * 6.2832f; }
+
+// the flower colours the models exist in
+typedef enum TownPetal { PETAL_RED, PETAL_YELLOW, PETAL_PINK, PETAL_WHITE, PETAL_ORANGE, PETAL_PURPLE } TownPetal;
+
+hz_internal TownPetal town_petal_of(u32 hex) {
+  switch (hex) {
+  case C_RED: return PETAL_RED;
+  case C_YELLOW: return PETAL_YELLOW;
+  case C_PINK: return PETAL_PINK;
+  case C_WHITE: return PETAL_WHITE;
+  case C_ORANGE: return PETAL_ORANGE;
+  default: return PETAL_PURPLE;
+  }
+}
+
+#define PETAL_PATHS(prefix)                                                                                                \
+  PROP(prefix "_red"), PROP(prefix "_yellow"), PROP(prefix "_pink"), PROP(prefix "_white"), PROP(prefix "_orange"),        \
+      PROP(prefix "_purple")
+
+// the LEGO flower plant (2x2 leaves + 1x1 flower)
 hz_internal void town_flower(Town *t, f32 x, f32 z, u32 hex, f32 y) {
-  MeshBuilderStyle leaf = town_style(C_DARK_GREEN);
-  f32 a0 = town_rand(&t->rng) * 6.283f;
-  for (i32 i = 0; i < 4; i++) {
-    f32 a = a0 + (f32)i * 1.5708f;
-    v3 base = town_m(x, y + 0.15f, z);
-    v3 tip = town_m(x + m_cosf(a) * 0.95f, y + 0.55f, z + m_sinf(a) * 0.95f);
-    mesh_builder_cone_between(t->b, &leaf, base, tip, 0.28f * TOWN_STUD, 4);
-  }
-  town_cyl(t, C_DARK_GREEN, x, y, z, 0.12f, 0.12f, 1.1f, 5, false);
-  town_cyl(t, hex, x, y + 1.0f, z, 0.45f, 0.5f, 0.3f, 8, false);
-  town_cyl(t, C_YELLOW, x, y + 1.3f, z, 0.18f, 0.18f, 0.08f, 6, false);
+  CString paths[] = {PETAL_PATHS("flower")};
+  town_prop(t, paths[town_petal_of(hex)], x, z, y, 1.0f, town_rot(t), false);
+  town_occupy(t, x - 0.6f, x + 0.6f, z - 0.6f, z + 0.6f);
 }
 
-// LEGO bamboo leaves (part 30176): five long leaves fanning out of one point
+// a "Lego Frog" plant: 0 leafy a, 1 leafy b, 2 sprout, 3 bouquet, 4 / 5 the flat stems
+hz_internal void town_frog_plant(Town *t, u32 variant, f32 x, f32 z, TownPetal petal) {
+  f32 s = 0.9f + town_rand(&t->rng) * 0.25f;
+  switch (variant) {
+  case 0: town_prop(t, PROP("frog_leafy_a"), x, z, 0.0f, s, town_rot(t), false); break;
+  case 1: town_prop(t, PROP("frog_leafy_b"), x, z, 0.0f, s, town_rot(t), false); break;
+  case 2: {
+    CString paths[] = {PETAL_PATHS("frog_sprout")};
+    town_prop(t, paths[petal], x, z, 0.0f, s, town_rot(t), false);
+  } break;
+  case 3: {
+    CString paths[] = {PETAL_PATHS("frog_bouquet")};
+    town_prop(t, paths[petal], x, z, 0.0f, s, town_rot(t), false);
+  } break;
+  case 4: {
+    CString paths[] = {PETAL_PATHS("frog_stem_a")};
+    town_prop(t, paths[petal], x, z, 0.0f, s, town_rot(t), false);
+  } break;
+  default: {
+    CString paths[] = {PETAL_PATHS("frog_stem_b")};
+    town_prop(t, paths[petal], x, z, 0.0f, s, town_rot(t), false);
+  } break;
+  }
+}
+
+// LEGO bamboo leaves (part 30176)
 hz_internal void town_leaves(Town *t, f32 x, f32 z, f32 s) {
-  MeshBuilderStyle leaf = town_style(C_DARK_GREEN);
-  f32 a0 = town_rand(&t->rng) * 6.283f;
-  for (i32 i = 0; i < 5; i++) {
-    f32 a = a0 + (f32)i * 1.2566f;
-    f32 up = 1.3f + 0.5f * (f32)(i % 2);
-    v3 base = town_m(x, 0.1f, z);
-    v3 tip = town_m(x + m_cosf(a) * 1.1f * s, up * s, z + m_sinf(a) * 1.1f * s);
-    mesh_builder_cone_between(t->b, &leaf, base, tip, 0.22f * s * TOWN_STUD, 4);
-  }
+  town_prop(t, PROP("bamboo"), x, z, 0.0f, s, town_rot(t), false);
+  town_occupy(t, x - 0.8f, x + 0.8f, z - 0.8f, z + 0.8f);
 }
 
-// a 4x4 LEGO flower pot: a terracotta pot, a green dome and flower heads around it
+// the LEGO flower pot (4x4), or only its flowers (the park)
 hz_internal void town_flower_pot(Town *t, f32 x, f32 z, b32 pot) {
-  f32 y = 0.0f;
-  if (pot) {
-    town_cyl(t, C_RED_BROWN, x, 0.0f, z, 1.4f, 1.8f, 1.6f, 12, false);
-    town_cyl(t, 0x6b3a22u, x, 1.6f, z, 1.85f, 1.85f, 0.25f, 12, false);
-    y = 1.6f;
-  }
-  MeshBuilderStyle green = town_style(C_DARK_GREEN);
-  mesh_builder_polyhedron(t->b, &green, m4_trs(town_m(x, y + 0.5f, z), quat_identity(), town_m(1.6f, 1.2f, 1.6f)), PG_POLYHEDRON_ICOSA, 1);
-  u32 cols[] = {C_RED, C_YELLOW, C_PINK, C_WHITE, C_ORANGE};
-  for (i32 i = 0; i < 7; i++) {
-    f32 a = (f32)i * 0.9f + town_rand(&t->rng);
-    f32 r = i == 0 ? 0.0f : 1.05f;
-    f32 fy = y + (i == 0 ? 1.7f : 1.15f);
-    town_cyl(t, cols[(u32)(town_rand(&t->rng) * 5.0f) % 5u], x + m_cosf(a) * r, fy, z + m_sinf(a) * r, 0.4f, 0.45f, 0.3f, 8, false);
-  }
+  town_prop(t, pot ? PROP("flowerpot") : PROP("flower_bunch"), x, z, 0.0f, 1.0f, town_rot(t), true);
   town_block(t, x - 1.8f, x + 1.8f, z - 1.8f, z + 1.8f);
 }
 
-// a brick spruce: a round trunk and four stacked green tiers with studs on the top one
-hz_internal void town_spruce(Town *t, f32 x, f32 z, f32 s) {
-  f32 k = s / 9.5f;
-  town_cyl(t, C_BROWN, x, 0.0f, z, 0.55f * k, 0.5f * k, 2.4f * k, 8, false);
-  u32 g = town_rand(&t->rng) < 0.5f ? C_PINE : C_DARK_GREEN;
-  f32 y = 1.6f * k;
-  for (i32 i = 0; i < 4; i++) {
-    f32 rb = (3.4f - 0.72f * (f32)i) * k, rt = rb * 0.42f, h = 2.3f * k;
-    town_cyl(t, i % 2 ? g : town_shade(g, 1.12f), x, y, z, rb, rt, h, 8, false);
-    y += h * 0.78f;
-  }
-  town_cyl(t, g, x, y, z, 0.7f * k, 0.15f * k, 1.4f * k, 6, false);
-}
+hz_internal void town_spruce(Town *t, f32 x, f32 z, f32 s) { town_prop(t, PROP("spruce"), x, z, 0.0f, s, town_rot(t), true); }
 
-// a round brick tree: a trunk and a crown of stacked round bricks, the top one with studs
 hz_internal void town_round_tree(Town *t, f32 x, f32 z, f32 s) {
-  f32 k = s / 6.5f;
-  town_cyl(t, C_BROWN, x, 0.0f, z, 0.55f * k, 0.5f * k, 2.6f * k, 8, false);
-  f32 radii[] = {1.9f, 2.9f, 3.2f, 2.8f, 1.8f};
-  f32 y = 2.2f * k;
-  u32 g = town_rand(&t->rng) < 0.5f ? C_GREEN : 0x58ab41u;
-  for (i32 i = 0; i < 5; i++) {
-    f32 h = 1.0f * k;
-    town_cyl(t, i % 2 ? g : town_shade(g, 0.9f), x, y, z, radii[i] * k, radii[i] * k, h, 12, false);
-    y += h;
-  }
-  for (i32 i = 0; i < 4; i++) {
-    f32 a = (f32)i * 1.5708f + 0.785f;
-    town_stud(t, g, x + m_cosf(a) * 0.9f * k, y, z + m_sinf(a) * 0.9f * k);
-  }
+  town_prop(t, PROP("round_tree"), x, z, 0.0f, s, town_rot(t), true);
 }
 
-// a LEGO bush: three overlapping green round bricks
-hz_internal void town_bush(Town *t, f32 x, f32 z, f32 s) {
-  for (i32 i = 0; i < 3; i++) {
-    f32 a = (f32)i * 2.094f + town_rand(&t->rng);
-    f32 r = (0.55f + 0.2f * (f32)i) * s * 0.55f;
-    town_cyl(t, i == 1 ? C_DARK_GREEN : C_GREEN, x + m_cosf(a) * 0.4f * s, 0.0f, z + m_sinf(a) * 0.4f * s, r, r * 0.8f,
-             (0.7f + 0.25f * (f32)(i % 2)) * s, 10, false);
+hz_internal void town_bush(Town *t, f32 x, f32 z, f32 s) { town_prop(t, PROP("bush"), x, z, 0.0f, s, town_rot(t), false); }
+
+// is (x, z) free for a plant of radius r: inside the village, off the roads, every used rect and placed plant
+hz_internal b32 town_free(Town *t, f32 x, f32 z, f32 r, const v3 *taken, u32 taken_count) {
+  if (x < -26.2f + r || x > 66.2f - r || z < -25.6f + r || z > 23.4f - r)
+    return false;
+  for (i32 i = 0; i < TOWN_ROAD_COUNT; i++) {
+    TownRect rd = town_road(i);
+    if (x > rd.x0 - r && x < rd.x1 + r && z > rd.z0 - r && z < rd.z1 + r)
+      return false;
+  }
+  for (u32 i = 0; i < t->used_count; i++) {
+    TownRect u = t->used[i];
+    if (x > u.x0 - r && x < u.x1 + r && z > u.z0 - r && z < u.z1 + r)
+      return false;
+  }
+  for (u32 i = 0; i < taken_count; i++) {
+    f32 dx = taken[i].x - x, dz = taken[i].z - z;
+    if (dx * dx + dz * dz < (taken[i].y + r) * (taken[i].y + r))
+      return false;
+  }
+  return true;
+}
+
+// the three.js placeFrogPlants: plants along the village's edge ring, then cypresses, ferns, small pines and reeds
+// wherever there is room, outer areas first. taken: x, z and the radius (in y) of everything placed here.
+hz_internal void town_wild_plants(Town *t, Allocator *a) {
+  const u32 cap = 4096;
+  v3 *taken = ALLOC_ARRAY(a, v3, cap);
+  u32 nt = 0;
+  // the pond banks and garden corners first
+  f32 first[4][3] = {{-3.0f, 21.5f, 0}, {-13.4f, 18.4f, 3}, {-24.2f, 16.2f, 1}, {-24.0f, 10.5f, 2}};
+  for (i32 i = 0; i < 4; i++)
+    if (town_free(t, first[i][0], first[i][1], 1.4f, taken, nt)) {
+      town_frog_plant(t, (u32)first[i][2], first[i][0], first[i][1], (TownPetal)((u32)(town_rand(&t->rng) * 6.0f) % 6u));
+      taken[nt++] = (v3){first[i][0], 1.4f, first[i][1]};
+    }
+  // the edge ring, shuffled
+  v3 *cand = ALLOC_ARRAY(a, v3, cap);
+  u32 nc = 0;
+  for (f32 x = -26.2f + 1.0f; x < 66.2f - 1.0f; x += 1.3f)
+    for (f32 z = -25.6f + 1.0f; z < 23.4f - 1.0f; z += 1.3f) {
+      f32 edge = m_minf(m_minf(x + 26.2f, 66.2f - x), m_minf(z + 25.6f, 23.4f - z));
+      if (edge > 0.8f && edge < 7.0f && nc < cap)
+        cand[nc++] = (v3){x + (town_rand(&t->rng) - 0.5f) * 0.6f, 0.0f, z + (town_rand(&t->rng) - 0.5f) * 0.6f};
+    }
+  for (u32 i = nc - 1; i > 0; i--) {
+    u32 j = (u32)(town_rand(&t->rng) * (f32)(i + 1)) % (i + 1);
+    v3 tmp = cand[i];
+    cand[i] = cand[j];
+    cand[j] = tmp;
+  }
+  u32 plants = 0;
+  for (u32 i = 0; i < nc && plants < 30; i++) {
+    u32 v = (u32)(town_rand(&t->rng) * 4.0f) % 4u;
+    f32 r = v < 2 ? 1.9f : 1.3f;
+    if (!town_free(t, cand[i].x, cand[i].z, r, taken, nt))
+      continue;
+    town_frog_plant(t, v, cand[i].x, cand[i].z, (TownPetal)((u32)(town_rand(&t->rng) * 6.0f) % 6u));
+    taken[nt++] = (v3){cand[i].x, r, cand[i].z};
+    plants++;
+  }
+  // reeds standing in the pond's corners
+  f32 reeds[4][2] = {{-11.2f, 15.8f}, {-4.6f, 15.9f}, {-11.3f, 21.2f}, {-4.7f, 21.3f}};
+  for (i32 i = 0; i < 4; i++)
+    town_prop(t, PROP("reed"), reeds[i][0], reeds[i][1], 0.0f, 0.45f + town_rand(&t->rng) * 0.1f, town_rot(t), false);
+  // the whole village, outer areas first: a key of edge distance plus noise (in y), taken in bands
+  nc = 0;
+  for (f32 x = -26.2f + 1.0f; x < 66.2f - 1.0f; x += 1.1f)
+    for (f32 z = -25.6f + 1.0f; z < 23.4f - 1.0f; z += 1.1f) {
+      f32 edge = m_minf(m_minf(x + 26.2f, 66.2f - x), m_minf(z + 25.6f, 23.4f - z));
+      if (nc < cap)
+        cand[nc++] = (v3){x + (town_rand(&t->rng) - 0.5f) * 0.5f, edge + town_rand(&t->rng) * 4.0f,
+                          z + (town_rand(&t->rng) - 0.5f) * 0.5f};
+    }
+  // per kind: how many, radius, scale, collider half-size (0: walk through)
+  for (i32 kind = 0; kind < 4; kind++) {
+    i32 want = kind == 0 ? 6 : kind == 1 ? 4 : kind == 2 ? 8 : 10;
+    f32 r = kind == 0 ? 1.7f : kind == 1 ? 2.2f : kind == 2 ? 1.6f : 1.1f;
+    f32 sc = kind == 0 ? 0.8f : kind == 1 ? 0.3f : kind == 2 ? 0.75f : 0.5f;
+    f32 bl = kind == 0 ? 0.8f : kind == 2 ? 0.6f : 0.0f;
+    CString path = kind == 0 ? PROP("cypress") : kind == 1 ? PROP("fern") : kind == 2 ? PROP("pine_small") : PROP("reed");
+    i32 k = 0;
+    for (f32 band = 0.0f; band < 40.0f && k < want; band += 0.5f)
+      for (u32 i = 0; i < nc && k < want; i++) {
+        if (cand[i].y < band || cand[i].y >= band + 0.5f || !town_free(t, cand[i].x, cand[i].z, r, taken, nt))
+          continue;
+        town_prop(t, path, cand[i].x, cand[i].z, 0.0f, sc * (0.9f + town_rand(&t->rng) * 0.2f), town_rot(t), kind == 0 || kind == 2);
+        taken[nt++] = (v3){cand[i].x, r, cand[i].z};
+        if (bl > 0.0f)
+          town_block(t, cand[i].x - bl, cand[i].x + bl, cand[i].z - bl, cand[i].z + bl);
+        k++;
+      }
   }
 }
 
@@ -449,30 +573,18 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 
 // ---------------------------------------------------------------- the village
 
-// grey road plates (0.4 high, studs on top), as the three.js roads list
-typedef struct TownRect {
-  f32 x0, x1, z0, z1;
-} TownRect;
-
-#define TOWN_ROAD_COUNT 7
-hz_internal TownRect town_road(i32 i) {
-  switch (i) {
-  case 0: return (TownRect){-3, 3, -27, 24};
-  case 1: return (TownRect){-26, 29, -2, 3};
-  case 2: return (TownRect){26, 29, 3, 10};
-  case 3: return (TownRect){29, 66, 7, 10};
-  case 4: return (TownRect){-16, -14, -6, -2};
-  case 5: return (TownRect){3, 15, 16.5f, 19.5f};
-  default: return (TownRect){-20, -18, 3, 7};
-  }
-}
-
 // main lane, once: the whole village into one slot; the parts become static renderer entities
 hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   ArenaAllocator *arena = arena_create(MB(128), MB(1));
   MeshBuilder mb;
   mesh_builder_begin(&mb, arena, &(MeshBuilderDesc){.slot_count = 1, .vtx_reserve = 1u << 18, .idx_reserve = 1u << 19});
-  Town town = {.b = &mb, .rng = {.s = 20261114u}};
+  Allocator scratch = make_arena_allocator(arena);
+  Town town = {.b = &mb,
+               .rng = {.s = 20261114u},
+               .world = w,
+               .renderer = r,
+               .assets = ecs_resource_get_mut(w, AssetSystem),
+               .used = ALLOC_ARRAY(&scratch, TownRect, TOWN_MAX_RECTS)};
   Town *t = &town;
 
   // ---- roads: grey plates with studs, solid so the figure steps up onto them ----
@@ -697,6 +809,10 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   for (i32 i = 0; i < 4; i++)
     town_block(t, npcs[i][0] - 0.9f, npcs[i][0] + 0.9f, npcs[i][1] - 0.7f, npcs[i][1] + 0.7f);
 
+  // ---- the wild LEGO plants wherever there is room (the garden inside its fence stays as it is) ----
+  town_occupy(t, -25.0f, -13.0f, 7.0f, 17.0f);
+  town_wild_plants(t, &scratch);
+
   // ---- LEGO clouds ----
   town_cloud(t, -10.0f, 32.0f, -60.0f, 1.6f);
   town_cloud(t, 30.0f, 36.0f, -70.0f, 2.0f);
@@ -734,7 +850,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
                                                .casts_shadow = true,
                                                .static_shadow = true,
                                                .name = "Town"});
-  log_info("town: % vertices, % tris, % parts, % colliders", fmt_u32(built.vertex_count), fmt_u32(slot->tri_count),
-           fmt_u32(slot->part_count), fmt_u32(built.collider_count));
+  log_info("town: % vertices, % tris, % parts, % colliders, % LEGO plants", fmt_u32(built.vertex_count),
+           fmt_u32(slot->tri_count), fmt_u32(slot->part_count), fmt_u32(built.collider_count), fmt_u32(t->props));
   arena_destroy(arena);
 }
