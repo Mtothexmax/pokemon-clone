@@ -33,6 +33,7 @@ typedef struct GameSave {
   u8 gfx;        // GfxChoice: 0 Auto, 1 High, 2 Medium, 3 Low
   u8 voices_off, music_off;
   u8 auto_step;  // the step Auto reached + 1 (0: not chosen yet)
+  u8 touch_mode; // phones: 0 Swipe (the default), 1 D-pad (the stick)
 } GameSave;
 
 typedef struct SaveState {

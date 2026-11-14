@@ -150,6 +150,8 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 #include "st_life.c"
 #include "st_cardgame.c"
 #include "st_settings.c"
+#include "st_swipe.c"
+hz_internal TouchControls make_touch_controls(UISystem *ui, b32 swipe);
 #include "st_vox.c"
 #include "st_screens.c"
 #include "st_debug.c"
@@ -320,6 +322,8 @@ typedef struct AppState {
   CardGame cards;      // battles, rewards, the deck menu (st_cardgame.c)
   Vox vox;             // your Voxelmon and the fights in the tall grass (st_vox.c)
   Settings set;        // the menu: voices, music, graphics (st_settings.c)
+  Swipe swipe;         // swipe walking on phones (st_swipe.c)
+  i32 touch_layout;    // the touch layout built: 0 swipe (no stick), 1 d-pad
   b32 gate_shown;      // the gate prof stands where the save says
   b32 mom_talked, kid_talked; // for the "!" markers
   char dlg_buf[128];   // a dialogue line built from the save
@@ -371,15 +375,8 @@ HZ_APP_API void app_init(AppMemory *memory) {
 
   // ---- touch: a stick on the left, a jump button on the right, drag elsewhere to look; shown once a touch arrives ----
   // touch button 0 reads a sign (shown only in reach of one), left of the jump button / above it in portrait
-  TouchControlsConfig touch = {.ui = s->ui,
-                               .landscape = touch_controls_layout_default(TOUCH_ORIENTATION_LANDSCAPE),
-                               .portrait = touch_controls_layout_default(TOUCH_ORIENTATION_PORTRAIT)};
-  touch.buttons[0] = (TouchButtonDesc){.enabled = true, .label = "Use"};
-  touch.landscape.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {200.0f, 70.0f},
-                                                      .diameter_px = 86.0f};
-  touch.portrait.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {80.0f, 210.0f},
-                                                     .diameter_px = 86.0f};
-  s->touch = touch_controls_init(touch);
+  s->touch = make_touch_controls(s->ui, true); // swipe walking is the default on phones (the menu has the stick)
+  s->touch_layout = 0;
   s->world = (WorldState){.area = -2, .nearby = -1};
 
 #if GAME_DEV_TOOLS
@@ -412,10 +409,28 @@ HZ_APP_API void app_init(AppMemory *memory) {
   life_init(&s->life, w, renderer, &s->snd, &s->save, &s->audio, &s->allocator, s->blocks, s->block_count, pip);
   cg_init(&s->cards, w, &s->audio, (u32)(os_time_unix_ms() & 0xffffffffu));
   s->set.applied = -1;
-  s->set.click_gfx = -1;
+  s->set.click_gfx = s->set.click_touch = -1;
   vox_init(&s->vox, &s->life, (u32)(os_time_unix_ms() >> 3));
 
   log_info("brickhollow initialized");
+}
+
+// touch: the Use button and the jump button; with `swipe` no stick (a one-finger swipe walks, st_swipe.c), else the
+// stick on the left. Touch button 0 reads a sign or talks (shown only in reach), left of / above the jump button
+hz_internal TouchControls make_touch_controls(UISystem *ui, b32 swipe) {
+  TouchControlsConfig touch = {.ui = ui,
+                               .landscape = touch_controls_layout_default(TOUCH_ORIENTATION_LANDSCAPE),
+                               .portrait = touch_controls_layout_default(TOUCH_ORIENTATION_PORTRAIT)};
+  touch.buttons[0] = (TouchButtonDesc){.enabled = true, .label = "Use"};
+  touch.landscape.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {200.0f, 70.0f},
+                                                      .diameter_px = 86.0f};
+  touch.portrait.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {80.0f, 210.0f},
+                                                     .diameter_px = 86.0f};
+  if (swipe) {
+    touch.landscape.region_size_pct = (v2){0.0f, 0.0f};
+    touch.portrait.region_size_pct = (v2){0.0f, 0.0f};
+  }
+  return touch_controls_init(touch);
 }
 
 // one line of HUD text
@@ -479,12 +494,27 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       cg_start_battle(&s->cards, BATTLE_PRACTICE, w, &s->audio);
     }
 #endif
-    // touch claims its fingers before anything else reads the pointer
+    // touch claims its fingers before anything else reads the pointer (the layout follows the menu's Swipe / D-pad)
+    b32 swipe_mode = s->save.data.touch_mode == 0;
+    if (s->touch_layout != (swipe_mode ? 0 : 1)) {
+      b32 was_active = s->touch.last_active;
+      s->touch = make_touch_controls(s->ui, swipe_mode);
+      s->touch.last_active = was_active;
+      s->touch_layout = swipe_mode ? 0 : 1;
+      swipe_stop(&s->swipe);
+    }
     touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0 || s->dlg.open || s->scr.kind != SCREEN_NONE, s->world.reading);
     TouchControlsFrame tf = touch_controls_update(&s->touch, input, memory->total_time);
     b32 touch_on = tf.active && !s->editor_open;
     // keys, pad and touch to camera-relative controls; R respawns
     const CameraRigState *rig = ecs_resource_get(w, CameraRigState);
+    // swipe walking: a one-finger swipe on free screen sets the way, a tap stops; that finger does not turn the camera
+    if (touch_on && swipe_mode && !s->set.open) {
+      const WorldTransform *ppos = ecs_component_get(w, s->sim.player, WorldTransform);
+      if (ppos)
+        swipe_touch(&s->swipe, input, s->ui, rig ? rig->yaw : 0.0f, ppos->position, (f32)memory->total_time, s->world.area);
+      tf.camera_pan_px = (v2){0, 0};
+    }
     v2 move = {(f32)input->buttons[KEY_D].is_pressed - (f32)input->buttons[KEY_A].is_pressed,
                (f32)input->buttons[KEY_W].is_pressed - (f32)input->buttons[KEY_S].is_pressed};
     move = v2_add(move, input_gamepad_stick(input->gamepads[input->active_gamepad].left_stick, 0.15f));
@@ -525,7 +555,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         controls.teleport = true;
         controls.teleport_pos = town_m(197.4f, 0.5f, 41.2f);
         controls.teleport_yaw = M_PI;
-        dialog_open(&s->dlg, dialog_script(s->touch.last_active ? DLG_INTRO_TOUCH : DLG_INTRO_KEYS), w, &s->audio);
+        dialog_open(&s->dlg, dialog_script(!s->touch.last_active ? DLG_INTRO_KEYS : swipe_mode ? DLG_INTRO_SWIPE : DLG_INTRO_TOUCH), w,
+                    &s->audio);
       }
     }
     b32 busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade;
@@ -631,6 +662,20 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       if (moving || busy)
         s->dancing = false;
+      // swipe walking: keep going that way (keys and the stick take over while used); anything busy stops it
+      if (s->swipe.on) {
+        v2 wd;
+        if (busy || s->life.sitting || !swipe_mode || v2_length(controls.move) > 0.05f) {
+          swipe_stop(&s->swipe);
+        } else if (swipe_step(&s->swipe, ecs_resource_get(w, EcsPhysicsWorld), s->sim.player, pwt->position, (f32)memory->total_time,
+                              s->world.area, &wd)) {
+          f32 hh = controls.heading;
+          v2 fw = {-m_sinf(hh), -m_cosf(hh)}, rt = {m_cosf(hh), -m_sinf(hh)};
+          controls.move = (v2){v2_dot(wd, rt), v2_dot(wd, fw)};
+        } else {
+          swipe_stop(&s->swipe);
+        }
+      }
       if (busy || s->life.sitting) {
         controls.move = (v2){0};
         controls.jump = false;
@@ -802,16 +847,14 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // YOUR HUD HERE: ui_* calls; read game state from resources (ecs_resource_get), never mutate the world
     if (!s->editor_open) {
       f32 ui_w = (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f), ui_h = (f32)memory->canvas_height / m_maxf(memory->dpr, 0.5f);
-      // the size the UI really lays out into (last frame's root): screens sized from it always fit, whatever the dpr limit does
+      // the size the UI really lays out into (Clay's root, last frame): screens sized from it always fit, whatever the dpr limit
+      // does. Read from the root itself: an element of ours covering the screen would count as UI under every finger
       {
-        HzUIElementData probe = ui_get_element_data(ui_id("ScreenProbe"));
-        if (probe.found && probe.boundingBox.width > 50.0f && probe.boundingBox.height > 50.0f) {
-          ui_w = probe.boundingBox.width;
-          ui_h = probe.boundingBox.height;
+        HzUIElementData root = ui_get_element_data(ui_id("Clay__RootContainer"));
+        if (root.found && root.boundingBox.width > 50.0f && root.boundingBox.height > 50.0f) {
+          ui_w = root.boundingBox.width;
+          ui_h = root.boundingBox.height;
         }
-        ui_element({.id = ui_id("ScreenProbe"),
-                    .floating = {.attach_to = UI_ATTACH_TO_ROOT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
-                    .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}}}) {}
       }
       b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
       if (!cards_screen) {
@@ -819,6 +862,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
         world_draw(&s->world, s->touch.last_active, busy_ui);
         life_draw(&s->life);
+        swipe_draw(&s->swipe, (f32)memory->total_time);
       }
       if (!cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && s->world.area < 0 && !s->zoom.active)
         cg_quest_draw(&s->cards, &s->save.data);
@@ -837,7 +881,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         u32 gold_n = 0;
         for (u32 k = 0; k < GOLDEN_COUNT; k++)
           gold_n += (s->save.data.golden_mask >> k) & 1u;
-        settings_draw(&s->set, &s->cards.ui, &s->save.data, input, ui_w,
+        settings_draw(&s->set, &s->cards.ui, &s->save.data, input, ui_w, s->touch.last_active,
                       !cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !cg_busy(&s->cards), gold_n,
                       GOLDEN_COUNT);
       }

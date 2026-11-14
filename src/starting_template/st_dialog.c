@@ -34,6 +34,7 @@ typedef struct Dialog {
 typedef enum DialogId {
   DLG_INTRO_KEYS,
   DLG_INTRO_TOUCH,
+  DLG_INTRO_SWIPE,
   DLG_MOM,
   DLG_PROF,
   DLG_DEX,
@@ -62,6 +63,10 @@ hz_internal Dialog dialog_script(DialogId id) {
     return (Dialog){.speaker = "You", .lines = {L("*yawn* What a beautiful morning in Brickhollow.", VOICE("91b19939")),
                             L("I should go downstairs and talk to Mom in the kitchen. Drag the stick to walk and tap the talk button.",
                               VOICE("459836e6"))}, .count = 2};
+  case DLG_INTRO_SWIPE:
+    return (Dialog){.speaker = "You", .lines = {L("*yawn* What a beautiful morning in Brickhollow.", VOICE("91b19939")),
+                            L("I should go downstairs and talk to Mom in the kitchen. Swipe to walk, tap to stop, and tap the talk button.",
+                              VOICE("4c5ccef1"))}, .count = 2};
   case DLG_MOM:
     return (Dialog){.speaker = "Mom", .lines = {L("Morning, sweetie! Professor Quill was looking for you earlier.", VOICE("10a293f7")),
                             L("Her lab is the big tan building with the solar panels \xe2\x80\x94 just across the road to the south-east.",

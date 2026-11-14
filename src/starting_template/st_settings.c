@@ -25,6 +25,7 @@ hz_internal GfxStep gfx_step(i32 i) {
 typedef struct Settings {
   b32 open;
   b32 click_button, click_voices, click_music, click_shade;
+  i32 click_touch; // touch mode clicked (-1)
   i32 click_gfx; // GfxChoice clicked (-1)
   // what is applied to the renderer now
   i32 applied; // step index, -1 none yet
@@ -65,6 +66,10 @@ hz_internal void settings_update(Settings *st, SaveState *save, RendererState *r
     g->voices_off = !g->voices_off;
     save_mark(save);
   }
+  if (st->click_touch >= 0) {
+    g->touch_mode = (u8)st->click_touch;
+    save_mark(save);
+  }
   if (st->click_music) {
     g->music_off = !g->music_off;
     save_mark(save);
@@ -77,7 +82,7 @@ hz_internal void settings_update(Settings *st, SaveState *save, RendererState *r
     save_mark(save);
   }
   st->click_button = st->click_voices = st->click_music = st->click_shade = false;
-  st->click_gfx = -1;
+  st->click_gfx = st->click_touch = -1;
   audio_bus_set_volume(audio, AUDIO_BUS_VOICE, g->voices_off ? 0.0f : 1.0f);
   audio_bus_set_volume(audio, AUDIO_BUS_MUSIC, g->music_off ? 0.0f : 1.0f);
 
@@ -135,7 +140,8 @@ hz_internal b32 settings_row(HzUIElementId id, CString label, CString state, con
 }
 
 // the ☰ button (top right, left of it the Deck button) and the menu under it
-hz_internal void settings_draw(Settings *st, CardUi *ui, const GameSave *g, const InputSystem *in, f32 sw, b32 show_button, u32 golden_n,
+hz_internal void settings_draw(Settings *st, CardUi *ui, const GameSave *g, const InputSystem *in, f32 sw, b32 touch, b32 show_button,
+                               u32 golden_n,
                                u32 golden_total) {
   if (!show_button && !st->open)
     return;
@@ -151,7 +157,15 @@ hz_internal void settings_draw(Settings *st, CardUi *ui, const GameSave *g, cons
               .shadow = {.color = cu_black(0.25f), .offset_y = 2.0f, .blur = 6.0f}}) {
     if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
       st->click_button = true;
-    cu_textb(st->open ? "\xc3\x97" : "\xe2\x89\xa1", 22, ink, 700, false, (HzUIColor){0});
+    if (st->open) {
+      cu_textb("\xc3\x97", 22, ink, 700, false, (HzUIColor){0});
+    } else { // three bars (the font has no menu glyph)
+      ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 4}}) {
+        for (i32 i = 0; i < 3; i++)
+          ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(18), .height = ui_sizing_fixed(2.5f)}}, .background_color = ink,
+                      .corner_radius = ui_corner_radius(1.25f)}) {}
+      }
+    }
   }
   if (!st->open)
     return;
@@ -211,6 +225,33 @@ hz_internal void settings_draw(Settings *st, CardUi *ui, const GameSave *g, cons
                          ? CU_FMT(ui, "Auto: now %. It turns down if the game gets slow.", fmt_cstr(gfx_step(settings_step(st, g)).name))
                          : "Lower settings run smoother on slow devices.";
       ui_text(ui_str_c(hint), ui_text_config({.fontSize = 13, .textColor = cu_rgb(0x5c6670), .wrapMode = UI_TEXT_WRAP_WORDS}));
+    }
+    if (touch) { // phones: swipe walking or the stick
+      ui_element({.layout = {.padding = {.left = 12, .top = 8, .bottom = 2}}}) {
+        cu_textb("CONTROLS", 12, cu_rgb(0x5c6670), 800, false, (HzUIColor){0});
+      }
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 3, .padding = ui_padding_all(3), .sizing = {.width = ui_sizing_grow(0)}},
+                  .background_color = cu_rgb(0xe6e9ec),
+                  .corner_radius = ui_corner_radius(10)}) {
+        static const CString tnames[2] = {"Swipe", "D-pad"};
+        for (i32 i = 0; i < 2; i++) {
+          b32 on = g->touch_mode == i;
+          HzUIElementId id = ui_idi("MenuTouch", (u32)i);
+          ui_element({.id = id,
+                      .layout = {.sizing = {.width = ui_sizing_grow(0)}, .padding = {.top = 7, .bottom = 7}, .child_alignment = {.x = UI_ALIGN_X_CENTER}},
+                      .background_color = on ? cu_rgb(0xffffff) : cu_rgba(0xffffff, 0),
+                      .corner_radius = ui_corner_radius(8),
+                      .shadow = {.color = on ? cu_black(0.18f) : (HzUIColor){0}, .offset_y = 1.0f, .blur = 3.0f}}) {
+            if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
+              st->click_touch = i;
+            cu_textb(tnames[i], 14, on ? ink : cu_rgb(0x5c6670), on ? 800 : 600, false, (HzUIColor){0});
+          }
+        }
+      }
+      ui_element({.layout = {.padding = {.left = 12, .right = 12, .top = 6, .bottom = 6}, .sizing = {.width = ui_sizing_grow(0)}}}) {
+        ui_text(ui_str_c(g->touch_mode == 0 ? "Swipe once to walk that way, tap to stop." : "Hold and drag the stick to walk."),
+                ui_text_config({.fontSize = 13, .textColor = cu_rgb(0x5c6670), .wrapMode = UI_TEXT_WRAP_WORDS}));
+      }
     }
     if (st->fps > 0.0f) {
       ui_element({.layout = {.padding = {.left = 12, .bottom = 4}}}) {
