@@ -29,6 +29,10 @@ typedef struct GameSave {
   b32 gate_open;
   u32 vox_wins;
   b32 met_rival;
+  // ---- the menu (appended) ----
+  u8 gfx;        // GfxChoice: 0 Auto, 1 High, 2 Medium, 3 Low
+  u8 voices_off, music_off;
+  u8 auto_step;  // the step Auto reached + 1 (0: not chosen yet)
 } GameSave;
 
 typedef struct SaveState {

@@ -223,7 +223,7 @@ hz_internal void dialog_voice(DialogState *ds, EcsWorld *w, AudioSystem *audio) 
   audio_voice_stop(audio, ds->voice, 0.08f);
   CString v = ds->d.lines[ds->index].voice;
   if (v)
-    ds->voice = ecs_audio_play(w, v, &(EcsAudioPlayDesc){.volume = 1.0f, .bus = AUDIO_BUS_VOICE});
+    ds->voice = ecs_audio_play(w, v, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE});
 }
 
 hz_internal void dialog_open(DialogState *ds, Dialog d, EcsWorld *w, AudioSystem *audio) {

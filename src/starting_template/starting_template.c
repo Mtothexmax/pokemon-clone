@@ -149,6 +149,7 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 #include "st_world.c"
 #include "st_life.c"
 #include "st_cardgame.c"
+#include "st_settings.c"
 #include "st_vox.c"
 #include "st_screens.c"
 #include "st_debug.c"
@@ -318,6 +319,7 @@ typedef struct AppState {
   b32 dancing;
   CardGame cards;      // battles, rewards, the deck menu (st_cardgame.c)
   Vox vox;             // your Voxelmon and the fights in the tall grass (st_vox.c)
+  Settings set;        // the menu: voices, music, graphics (st_settings.c)
   b32 gate_shown;      // the gate prof stands where the save says
   b32 mom_talked, kid_talked; // for the "!" markers
   char dlg_buf[128];   // a dialogue line built from the save
@@ -409,6 +411,8 @@ HZ_APP_API void app_init(AppMemory *memory) {
   save_begin(&s->save);
   life_init(&s->life, w, renderer, &s->snd, &s->save, &s->audio, &s->allocator, s->blocks, s->block_count, pip);
   cg_init(&s->cards, w, &s->audio, (u32)(os_time_unix_ms() & 0xffffffffu));
+  s->set.applied = -1;
+  s->set.click_gfx = -1;
   vox_init(&s->vox, &s->life, (u32)(os_time_unix_ms() >> 3));
 
   log_info("brickhollow initialized");
@@ -510,8 +514,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     const WorldTransform *pwt = ecs_component_get(w, s->sim.player, WorldTransform);
     const Character *pch = ecs_component_get(w, s->sim.player, Character);
     Minifig *me = &s->figs.figs[0];
-    b32 use = input->buttons[KEY_E].pressed_this_frame || (touch_on && tf.buttons[0].pressed);
-    b32 advance = use || input->buttons[KEY_SPACE].pressed_this_frame || input->buttons[KEY_ENTER].pressed_this_frame;
+    b32 use = (input->buttons[KEY_E].pressed_this_frame || (touch_on && tf.buttons[0].pressed)) && !s->set.open;
+    b32 advance = use || ((input->buttons[KEY_SPACE].pressed_this_frame || input->buttons[KEY_ENTER].pressed_this_frame) && !s->set.open);
     // a new game wakes up in your room upstairs, with a thought about the day
     if (!s->intro_checked && s->save.loaded && s->playable && memory->total_time > 1.0) {
       s->intro_checked = true;
@@ -613,7 +617,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         }
         sound_play(&s->snd, SND_BLIP, 1.2f, 0.4f);
       }
-      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade || cg_busy(&s->cards) || fight;
+      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade || cg_busy(&s->cards) || fight || s->set.open;
       b32 moving = v2_length(controls.move) > 0.2f;
       // the bench: any move gets you up; Q dances (moving stops it)
       if (s->life.sitting && moving && !busy)
@@ -757,14 +761,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         }
       }
     }
-    // anti-aliasing follows the automatic quality: 4x MSAA on HIGH and ULTRA, off below (phones keep their frame rate)
-    {
-      RendererState *rs = ecs_resource_get_mut(w, RendererState);
-      RendererQuality q = renderer_quality(rs);
-      u32 want = q >= RENDERER_QUALITY_HIGH && q < RENDERER_QUALITY_COUNT ? 4u : 1u;
-      if ((renderer_supported_sample_counts(rs) & want) && want != renderer_sample_count(rs) && want != renderer_pending_sample_count(rs))
-        renderer_set_sample_count(rs, want);
-    }
+    // the menu and the graphics level (Auto steps down when the frame rate drops: anti-aliasing first)
+    settings_update(&s->set, &s->save, ecs_resource_get_mut(w, RendererState), &s->audio, input, dt, memory->focused);
     // the editor pauses the simulation
     game_sim_begin_frame(&s->sim, &controls, dt, s->editor_open);
     fig_animate(&s->figs, w, s->sim.player, dt);
@@ -824,6 +822,14 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       if (!cards_screen)
         vox_draw(&s->vox, input, cam, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->world.area < 0 && !s->dlg.open);
       cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
+      {
+        u32 gold_n = 0;
+        for (u32 k = 0; k < GOLDEN_COUNT; k++)
+          gold_n += (s->save.data.golden_mask >> k) & 1u;
+        settings_draw(&s->set, &s->cards.ui, &s->save.data, input, ui_w,
+                      !cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !cg_busy(&s->cards), gold_n,
+                      GOLDEN_COUNT);
+      }
       dialog_draw(&s->dlg, input, s->touch.last_active, ui_w);
       screens_draw(&s->scr, input, &s->save.data);
       debug_draw(&s->dbg);

@@ -31,7 +31,8 @@ hz_internal void cg_music(CardGame *cg, EcsWorld *w, AudioSystem *audio, MusicTr
     return;
   CString path[] = {NULL, "brickhollow/music/home.hzt", "brickhollow/music/battle-intro.hzt", "brickhollow/music/fight.hzt",
                     "brickhollow/music/victory.hzt", "brickhollow/music/defeat.hzt"};
-  f32 vol[] = {0.0f, 0.55f, 0.6f, 0.5f, 0.6f, 0.55f};
+  // as quiet as in the three.js version (VOL 0.15): the voices (0.95) must stay clear above the music
+  f32 vol[] = {0.0f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f};
   audio_voice_stop(audio, cg->music, 0.4f);
   cg->track = t;
   cg->track_t = 0.0f;
@@ -83,7 +84,7 @@ hz_internal void cg_say(CardGame *cg, EcsWorld *w, AudioSystem *audio, i32 what,
   cg->taunt_t = secs;
   audio_voice_stop(audio, cg->taunt_voice, 0.05f);
   if (t.voice)
-    cg->taunt_voice = ecs_audio_play(w, t.voice, &(EcsAudioPlayDesc){.volume = 1.0f, .bus = AUDIO_BUS_VOICE});
+    cg->taunt_voice = ecs_audio_play(w, t.voice, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE});
 }
 
 hz_internal void cg_init(CardGame *cg, EcsWorld *w, AudioSystem *audio, u32 seed) {
@@ -355,7 +356,7 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
     ui_element({.id = ui_id("DeckButton"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT,
                              .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
-                             .offset = {-safe.right - 14.0f, safe.top + 14.0f}},
+                             .offset = {-safe.right - 62.0f, safe.top + 14.0f}}, // left of the menu button
                 .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 8, .padding = {.left = 14, .right = 14, .top = 8, .bottom = 8},
                            .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
                 .background_color = {0, 85, 191, 235},

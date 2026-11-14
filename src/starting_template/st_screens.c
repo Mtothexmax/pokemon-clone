@@ -117,7 +117,7 @@ hz_internal void screens_tv_line(Screens *sc, EcsWorld *w, AudioSystem *audio) {
   sc->voice = (HzHandleT(AudioVoice)){0};
   sc->voiced = ln.voice != NULL;
   if (ln.voice)
-    sc->voice = ecs_audio_play(w, ln.voice, &(EcsAudioPlayDesc){.volume = 1.0f, .bus = AUDIO_BUS_VOICE});
+    sc->voice = ecs_audio_play(w, ln.voice, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE});
   sc->line_t = 0.0f;
 }
 
