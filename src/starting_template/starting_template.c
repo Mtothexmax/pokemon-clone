@@ -862,7 +862,6 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
         world_draw(&s->world, s->touch.last_active, busy_ui);
         life_draw(&s->life);
-        swipe_draw(&s->swipe, (f32)memory->total_time);
       }
       if (!cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && s->world.area < 0 && !s->zoom.active)
         cg_quest_draw(&s->cards, &s->save.data);

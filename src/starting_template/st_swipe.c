@@ -15,13 +15,10 @@ typedef struct Swipe {
   b32 tracking;
   u32 touch_id;
   v2 start;
-  // the arrow where the swipe started
-  f32 mark_t;
-  v2 mark_pos;
-  f32 mark_angle;
+  b32 swiped; // this finger has moved far enough to be a swipe (else lifting it is a tap)
 } Swipe;
 
-#define SWIPE_MIN_PX 28.0f
+#define SWIPE_MIN_PX 22.0f // finger travel that makes a swipe (less is a tap)
 
 // a screen swipe (x right, y down) to a world direction for the camera's yaw
 hz_internal v2 swipe_world_dir(v2 d, f32 yaw) {
@@ -42,42 +39,35 @@ hz_internal void swipe_start(Swipe *sw, v2 dir, v3 pos, f32 now, i32 area) {
   sw->area = area;
 }
 
-// main lane, after touch_controls_update (its buttons, the jump button and UI touches are claimed or skipped first)
+// main lane, after touch_controls_update (its buttons, the jump button and UI touches are claimed or skipped first).
+// Never drops a swipe: every new finger becomes the swipe at once (also while an older one is still down, also a
+// swipe that starts and ends between two frames), and its whole path is read from the touch's start and end points.
 hz_internal void swipe_touch(Swipe *sw, InputSystem *in, UISystem *ui, f32 yaw, v3 pos, f32 now, i32 area) {
-  u32 fingers = 0;
-  for (i32 i = 0; i < MAX_TOUCHES; i++)
-    fingers += in->touches.items[i].is_active ? 1u : 0u;
   for (i32 i = 0; i < MAX_TOUCHES; i++) {
     MobileTouch *t = &in->touches.items[i];
-    if (!sw->tracking && t->started_this_frame && !t->claimed && fingers == 1 && !ui_point_over_ui(ui, (v2){t->start_x, t->start_y})) {
-      sw->tracking = true;
-      sw->touch_id = t->id;
-      sw->start = (v2){t->start_x, t->start_y};
-    }
+    if (!t->started_this_frame || t->claimed || ui_point_over_ui(ui, (v2){t->start_x, t->start_y}))
+      continue;
+    sw->tracking = true; // the newest finger wins
+    sw->touch_id = t->id;
+    sw->start = (v2){t->start_x, t->start_y};
+    sw->swiped = false;
   }
   if (!sw->tracking)
     return;
-  if (fingers > 1) { // a second finger: it is a pinch, not a swipe
-    sw->tracking = false;
-    return;
-  }
   for (i32 i = 0; i < MAX_TOUCHES; i++) {
     MobileTouch *t = &in->touches.items[i];
-    if (t->id != sw->touch_id || (!t->is_active && !t->stopped_this_frame))
+    if (t->id != sw->touch_id || (!t->is_active && !t->stopped_this_frame && !t->started_this_frame))
       continue;
     v2 d = {t->current_x - sw->start.x, t->current_y - sw->start.y};
-    b32 swiped = v2_length(d) > SWIPE_MIN_PX;
-    // already walking while the finger is still down, as soon as it is clearly a swipe
-    if (swiped) {
+    // walking while the finger is still down, as soon as it is clearly a swipe; the way follows the finger
+    if (v2_length(d) > SWIPE_MIN_PX) {
       v2 wd = swipe_world_dir(d, yaw);
-      if (!sw->on || v2_dot(wd, sw->dir) < 0.999f)
+      if (!sw->on || v2_dot(wd, sw->dir) < 0.9995f)
         swipe_start(sw, wd, pos, now, area);
-      sw->mark_t = now;
-      sw->mark_pos = sw->start;
-      sw->mark_angle = m_atan2f(d.y, d.x) * 180.0f / M_PI;
+      sw->swiped = true;
     }
     if (t->stopped_this_frame || !t->is_active) {
-      if (!swiped)
+      if (!sw->swiped)
         swipe_stop(sw); // a tap stops
       sw->tracking = false;
     }
@@ -168,23 +158,4 @@ hz_internal b32 swipe_step(Swipe *sw, const EcsPhysicsWorld *pw, EcsEntity playe
     }
   }
   return false;
-}
-
-// the fading arrow where a swipe started
-hz_internal void swipe_draw(const Swipe *sw, f32 now) {
-  f32 q = (now - sw->mark_t) / 0.7f;
-  if (q < 0.0f || q >= 1.0f)
-    return;
-  f32 sz = 56.0f;
-  ui_element({.id = ui_id("SwipeMark"),
-              .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 4, .offset = {sw->mark_pos.x - sz * 0.5f, sw->mark_pos.y - sz * 0.5f},
-                           .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
-              .layout = {.sizing = {.width = ui_sizing_fixed(sz), .height = ui_sizing_fixed(sz)},
-                         .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
-              .background_color = {255, 255, 255, 140},
-              .corner_radius = ui_corner_radius(sz * 0.5f),
-              .transform = cu_tf(0, 0, 1.0f + 0.3f * q, sw->mark_angle),
-              .opacity = opt_some(f32, 1.0f - q)}) {
-    cu_textb("\xe2\x86\x92", 34, cu_rgb(0x1b2a34), 800, false, (HzUIColor){0}); // arrow
-  }
 }
