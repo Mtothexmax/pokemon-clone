@@ -802,6 +802,17 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // YOUR HUD HERE: ui_* calls; read game state from resources (ecs_resource_get), never mutate the world
     if (!s->editor_open) {
       f32 ui_w = (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f), ui_h = (f32)memory->canvas_height / m_maxf(memory->dpr, 0.5f);
+      // the size the UI really lays out into (last frame's root): screens sized from it always fit, whatever the dpr limit does
+      {
+        HzUIElementData probe = ui_get_element_data(ui_id("ScreenProbe"));
+        if (probe.found && probe.boundingBox.width > 50.0f && probe.boundingBox.height > 50.0f) {
+          ui_w = probe.boundingBox.width;
+          ui_h = probe.boundingBox.height;
+        }
+        ui_element({.id = ui_id("ScreenProbe"),
+                    .floating = {.attach_to = UI_ATTACH_TO_ROOT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                    .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}}}) {}
+      }
       b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
       if (!cards_screen) {
         hud_draw(&s->touch);
@@ -821,7 +832,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       if (!cards_screen)
         vox_draw(&s->vox, input, cam, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->world.area < 0 && !s->dlg.open);
-      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
+      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, (f32)memory->canvas_width / m_maxf(ui_w, 1.0f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
       {
         u32 gold_n = 0;
         for (u32 k = 0; k < GOLDEN_COUNT; k++)

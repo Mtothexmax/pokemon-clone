@@ -741,13 +741,22 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
   b32 modal = ui->inspect != INSPECT_NONE || b->phase == PHASE_OVER;
   b32 dragging = ui->drag >= 0 && ui->drag_moved;
   b32 no_moves = cu_no_moves(b);
+  OsSafeAreaInsets safe = os_get_safe_area(); // the notch and the home bar
   // ---- sizes (the three.js css, in px) ----
-  f32 top_h = 50.0f;
+  f32 top_h = 50.0f + safe.top;
   f32 hw = phone ? m_clampf(sw * 0.19f, 52.0f, 96.0f) : short_land ? m_clampf(sw * 0.10f, 48.0f, 80.0f) : m_clampf(m_minf(sw * 0.15f, sh * 0.17f), 58.0f, 128.0f);
   f32 rowh = hw * 1.4f + 18.0f;
-  f32 bottom_h = phone ? rowh + 54.0f + 18.0f : rowh + 16.0f;
-  f32 pad = phone ? 4.0f : m_clampf(sw * 0.012f, 4.0f, 14.0f);
+  f32 bottom_h = (phone ? rowh + 54.0f + 18.0f : rowh + 16.0f) + safe.bottom;
+  f32 pad = (phone ? 4.0f : m_clampf(sw * 0.012f, 4.0f, 14.0f)) + m_maxf(safe.left, safe.right);
   f32 board_h = sh - top_h - bottom_h - 16.0f;
+  // a short screen: smaller hand cards first, so the board keeps room for two rows of cards per side
+  if (board_h < 300.0f && hw > 48.0f) {
+    f32 cut = m_minf(hw - 48.0f, (300.0f - board_h) / 1.4f);
+    hw -= cut;
+    rowh = hw * 1.4f + 18.0f;
+    bottom_h -= cut * 1.4f;
+    board_h += cut * 1.4f;
+  }
   f32 tile_h = short_land ? 64.0f : m_clampf(sh * 0.15f, 78.0f, 130.0f);
   f32 zgap = phone ? 14.0f : short_land ? 12.0f : 16.0f;
   f32 slot_h = m_maxf(40.0f, (board_h - tile_h - 2.0f * zgap) * 0.5f);
@@ -757,6 +766,24 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
   colw = m_minf(colw, (sw - 2.0f * pad - 2.0f * colgap) / 3.0f);
   f32 cw = m_minf((colw - 8.0f - 14.0f) * 0.5f, (slot_h - 8.0f - 14.0f) * 0.5f * 0.714f);
   cw = m_maxf(cw, 20.0f);
+  // a tall screen (a phone upright): the slots need less height than they get; the rest makes the hand cards and the
+  // location pictures bigger, so the board fills the screen instead of leaving empty bands
+  {
+    f32 slot_need = 2.0f * cw * 1.4f + 5.0f + 14.0f;
+    if (slot_h > slot_need + 8.0f) {
+      f32 spare = (slot_h - slot_need) * 2.0f;
+      f32 hw_cap = phone ? m_minf((sw - 20.0f) / 4.6f, 110.0f) : 128.0f; // 4 to 5 cards side by side
+      f32 dh = m_clampf(spare * 0.5f / 1.4f, 0.0f, m_maxf(0.0f, hw_cap - hw));
+      hw += dh;
+      rowh += dh * 1.4f;
+      bottom_h += dh * 1.4f;
+      spare -= dh * 1.4f;
+      f32 grow = m_minf(spare * 0.6f, tile_h * 0.7f);
+      tile_h += grow;
+      spare -= grow;
+      slot_h = slot_need + spare * 0.5f;
+    }
+  }
 
   // ---- the background: the place's picture (wild forest, Dex's cave, Lumi's lab), a little darker ----
   i32 bg_kind = b->kind == BATTLE_WILD ? 0 : b->kind == BATTLE_RIVAL ? 1 : 2;
@@ -785,7 +812,7 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
               .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_fixed(sw), .height = ui_sizing_fixed(sh)}}}) {
     // ---- the top bar: the opponent, the stakes and the turn, log / SNAP / Retreat ----
     ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = phone ? 5 : 8,
-                           .padding = {.left = phone ? 6 : 10, .right = phone ? 6 : 10, .top = 6, .bottom = 6},
+                           .padding = {.left = (u16)((phone ? 6 : 10) + safe.left), .right = (u16)((phone ? 6 : 10) + safe.right), .top = (u16)(6 + safe.top), .bottom = 6},
                            .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_fixed(top_h)}, .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
                 .background_color = cu_black(0.3f)}) {
       ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(36), .height = ui_sizing_fixed(36)}, .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
@@ -948,13 +975,13 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
 
     // ---- the hand row: the energy orb with the deck pile, the hand, Undo / End Turn ----
     f32 orb = phone ? 54.0f : rowh;
-    f32 ctrl_w = phone ? sw - orb - 40.0f : 150.0f;
-    f32 hand_w = phone ? sw - 20.0f : sw - orb - ctrl_w - 20.0f - 20.0f;
+    f32 ctrl_w = phone ? sw - orb - 40.0f - safe.left - safe.right : 150.0f;
+    f32 hand_w = (phone ? sw - 20.0f : sw - orb - ctrl_w - 20.0f - 20.0f) - safe.left - safe.right;
     i32 hn = b->hand_n[B_SIDE_P];
     f32 hgap = hn < 2 ? 6.0f : m_minf(6.0f, (hand_w - (f32)hn * hw) / (f32)(hn - 1));
     ui_element({.id = ui_id("BattleBottom"),
                 .layout = {.layout_direction = phone ? UI_TOP_TO_BOTTOM : UI_LEFT_TO_RIGHT, .child_gap = phone ? 4 : 10,
-                           .padding = {.left = 10, .right = 10, .top = phone ? 2 : 6, .bottom = 10},
+                           .padding = {.left = (u16)(10 + safe.left), .right = (u16)(10 + safe.right), .top = phone ? 2 : 6, .bottom = (u16)(10 + safe.bottom)},
                            .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_fixed(bottom_h)}, .child_alignment = {.y = UI_ALIGN_Y_BOTTOM}},
                 .background_color = cu_black(0.2f),
                 .outline = {.width = dragging && ui->drag_over == 3 ? 3.0f : 0.0f, .color = cu_rgba(0xffffff, 0.6f)}}) {

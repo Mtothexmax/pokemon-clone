@@ -332,7 +332,7 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
       // the opponent's speech bubble under its name, with a little tail
       f32 age = 3.0f - cg->taunt_t, pop = m_clampf(age / 0.25f, 0.0f, 1.0f);
       ui_element({.id = ui_id("Taunt"),
-                  .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 58, .offset = {14.0f, 48.0f + 6.0f * (1.0f - pop)}},
+                  .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 58, .offset = {14.0f + os_get_safe_area().left, 48.0f + os_get_safe_area().top + 6.0f * (1.0f - pop)}},
                   .layout = {.padding = {.left = 14, .right = 14, .top = 8, .bottom = 8}, .sizing = {.width = ui_sizing_fit(0.0f, m_minf(sw * 0.7f, 340.0f))}},
                   .background_color = {255, 255, 255, 255},
                   .border = {.color = {27, 42, 52, 255}, .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
