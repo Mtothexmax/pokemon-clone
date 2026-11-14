@@ -33,15 +33,18 @@ typedef struct Settings {
   f32 win_t, settle;
   u32 win_frames;
   f32 fps; // the last window's frame rate (shown in the menu)
+  // the device: phones get no MSAA (a phone's Vulkan driver failed to build a 4x pipeline and the game hung), and
+  // Auto never starts above the level the engine picks for the hardware
+  b32 hw_known, mobile;
+  i32 hw_step;
 } Settings;
 
 hz_internal i32 settings_step(const Settings *st, const GameSave *g) {
-  (void)st;
   switch ((GfxChoice)g->gfx) {
-  case GFX_HIGH: return 0;
+  case GFX_HIGH: return st->mobile ? 1 : 0; // phones: High without MSAA
   case GFX_MEDIUM: return 2;
   case GFX_LOW: return 3;
-  default: return g->auto_step ? (i32)g->auto_step - 1 : 0;
+  default: return MAX(g->auto_step ? (i32)g->auto_step - 1 : 0, st->hw_step);
   }
 }
 
@@ -49,6 +52,15 @@ hz_internal i32 settings_step(const Settings *st, const GameSave *g) {
 hz_internal void settings_update(Settings *st, SaveState *save, RendererState *rs, AudioSystem *audio, const InputSystem *in, f32 dt,
                                  b32 focused) {
   GameSave *g = &save->data;
+  if (!st->hw_known) {
+    st->hw_known = true;
+    RendererHardware hw = renderer_hardware(rs);
+    st->mobile = hw.platform == RENDERER_PLATFORM_MOBILE || hw.platform == RENDERER_PLATFORM_MOBILE_WEB;
+    RendererQuality q = renderer_quality_for_hardware(&hw);
+    // desktops may start at the top (Auto steps down when slow); phones start where the engine says, without MSAA
+    st->hw_step = !st->mobile ? 0 : q >= RENDERER_QUALITY_HIGH ? 1 : q == RENDERER_QUALITY_MEDIUM ? 2 : 3;
+    log_info("graphics: % device, Auto starts at %", fmt_cstr(st->mobile ? "mobile" : "desktop"), fmt_cstr(gfx_step(st->hw_step).name));
+  }
   if (!save->loaded)
     return;
   // a new save: Auto starts at High (as the three.js version) and steps down only when it really is slow
@@ -96,11 +108,12 @@ hz_internal void settings_update(Settings *st, SaveState *save, RendererState *r
     st->win_frames++;
     if (st->win_t >= 2.0f) {
       st->fps = (f32)st->win_frames / st->win_t;
-      if (g->gfx == GFX_AUTO && st->fps < 38.0f && g->auto_step < GFX_STEPS) {
-        g->auto_step++;
+      i32 cur = settings_step(st, g);
+      if (g->gfx == GFX_AUTO && st->fps < 38.0f && cur + 1 < GFX_STEPS) {
+        g->auto_step = (u8)(cur + 2); // one below the step in use (+1: 0 means not chosen)
         save_mark(save);
         st->settle = 0.0f;
-        log_info("graphics: % fps, Auto steps down to %", fmt_f32_p(st->fps, 1), fmt_cstr(gfx_step(g->auto_step - 1).name));
+        log_info("graphics: % fps, Auto steps down to %", fmt_f32_p(st->fps, 1), fmt_cstr(gfx_step(cur + 1).name));
       }
       st->win_t = 0.0f;
       st->win_frames = 0;
@@ -116,7 +129,7 @@ hz_internal void settings_update(Settings *st, SaveState *save, RendererState *r
     renderer_set_quality(rs, gs.quality);
     hz_set_max_dpr(gs.max_dpr);
   }
-  u32 want = (renderer_supported_sample_counts(rs) & gs.msaa) ? gs.msaa : 1u;
+  u32 want = !st->mobile && (renderer_supported_sample_counts(rs) & gs.msaa) ? gs.msaa : 1u;
   if (want != renderer_sample_count(rs) && want != renderer_pending_sample_count(rs))
     renderer_set_sample_count(rs, want);
 }
