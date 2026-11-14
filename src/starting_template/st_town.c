@@ -41,7 +41,7 @@ typedef struct TownRect {
   f32 x0, x1, z0, z1;
 } TownRect;
 
-#define TOWN_MAX_RECTS 512
+#define TOWN_MAX_RECTS 1024
 typedef struct Town {
   MeshBuilder *b;
   TownRng rng;
@@ -51,6 +51,8 @@ typedef struct Town {
   TownRect *used; // blockers and kept-free areas, for the plants' free-spot search
   u32 used_count;
   u32 props;      // placed LEGO plant models
+  TownRect *solid; // the colliders only (town_block), handed to the game
+  u32 solid_count;
 } Town;
 
 hz_internal v3 town_m(f32 x, f32 y, f32 z) { return (v3){x * TOWN_STUD, y * TOWN_STUD, z * TOWN_STUD}; }
@@ -120,6 +122,8 @@ hz_internal void town_occupy(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
 
 hz_internal void town_block(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
   town_occupy(t, x0, x1, z0, z1);
+  if (t->solid && t->solid_count < TOWN_MAX_RECTS)
+    t->solid[t->solid_count++] = (TownRect){x0, x1, z0, z1};
   v3 c = town_m((x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f);
   c.y = 1.0f;
   mesh_builder_collider_box(t->b, c, quat_identity(), (v3){(x1 - x0) * 0.5f * TOWN_STUD, 1.0f, (z1 - z0) * 0.5f * TOWN_STUD});
@@ -505,7 +509,6 @@ hz_internal void town_sign_board(Town *t, f32 x, f32 z, f32 w, f32 h, f32 y, u32
 hz_internal void town_lamp(Town *t, f32 x, f32 z) {
   town_box(t, C_BLACK, 0.35f, 5.0f, 0.35f, x, 0.0f, z, false);
   town_box(t, C_BLACK, 0.9f, 0.2f, 0.9f, x, 5.0f, z, false);
-  town_box(t, 0xfff5c0u, 0.7f, 0.8f, 0.7f, x, 5.2f, z, false);
   town_box(t, C_BLACK, 1.0f, 0.25f, 1.0f, x, 6.0f, z, true);
   town_block(t, x - 0.4f, x + 0.4f, z - 0.4f, z + 0.4f);
 }
@@ -556,10 +559,10 @@ hz_internal void town_brick_pile(Town *t, u32 seed, f32 cx, f32 cz, u32 color) {
   town_block(t, cx - R + 0.3f, cx + R - 0.3f, cz - R + 0.3f, cz + R - 0.3f);
 }
 
-// a yellow LEGO duck (body, head, orange beak); yaw 0 looks +x
-hz_internal void town_duck(Town *t, f32 x, f32 z, f32 s, f32 yaw, f32 y) {
+// a LEGO duck (body, head, orange beak, tail) in `hex`; yaw 0 looks +x
+hz_internal void town_duck(Town *t, f32 x, f32 z, f32 s, f32 yaw, f32 y, u32 hex) {
   quat q = quat_from_euler((v3){0.0f, yaw, 0.0f});
-  MeshBuilderStyle body = town_style(C_YELLOW);
+  MeshBuilderStyle body = town_style(hex);
   body.flat = false;
   v3 fwd = quat_rotate(q, (v3){1, 0, 0});
   mesh_builder_sphere(t->b, &body, m4_trs(town_m(x, y + 0.45f * s, z), q, town_m(0.75f * s, 0.45f * s, 0.5f * s)), 10, 6);
@@ -567,7 +570,7 @@ hz_internal void town_duck(Town *t, f32 x, f32 z, f32 s, f32 yaw, f32 y) {
   mesh_builder_sphere(t->b, &body, m4_trs(town_m(head.x, head.y, head.z), q, town_m(0.33f * s, 0.33f * s, 0.33f * s)), 8, 6);
   town_box_rot(t, C_ORANGE, (v3){0.4f * s, 0.12f * s, 0.25f * s},
                (v3){head.x + fwd.x * 0.35f * s, head.y - 0.05f * s, head.z + fwd.z * 0.35f * s}, (v3){0.0f, yaw, 0.0f});
-  town_box_rot(t, 0xf2b02cu, (v3){0.3f * s, 0.12f * s, 0.3f * s},
+  town_box_rot(t, town_shade(hex, 0.9f), (v3){0.3f * s, 0.12f * s, 0.3f * s},
                (v3){x - fwd.x * 0.7f * s, y + 0.7f * s, z - fwd.z * 0.7f * s}, (v3){0.0f, yaw, 0.0f});
 }
 
@@ -584,7 +587,7 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 #include "st_rooms.c"
 
 // main lane, once: the whole village into one slot; the parts become static renderer entities
-hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
+hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, TownRect *out_blocks, u32 *out_count, u32 cap) {
   ArenaAllocator *arena = arena_create(MB(128), MB(1));
   MeshBuilder mb;
   mesh_builder_begin(&mb, arena, &(MeshBuilderDesc){.slot_count = 1, .vtx_reserve = 1u << 18, .idx_reserve = 1u << 19});
@@ -594,7 +597,8 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
                .world = w,
                .renderer = r,
                .assets = ecs_resource_get_mut(w, AssetSystem),
-               .used = ALLOC_ARRAY(&scratch, TownRect, TOWN_MAX_RECTS)};
+               .used = ALLOC_ARRAY(&scratch, TownRect, TOWN_MAX_RECTS),
+               .solid = ALLOC_ARRAY(&scratch, TownRect, TOWN_MAX_RECTS)};
   Town *t = &town;
 
   // ---- roads: grey plates with studs, solid so the figure steps up onto them ----
@@ -698,10 +702,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
     for (i32 i = 0; i < 3; i++)
       town_cyl(t, C_GREEN, pads[i][0], 0.3f, pads[i][1], 0.6f, 0.6f, 0.08f, 12, false);
     town_flower(t, -6.5f, 20.0f, C_PINK, 0.38f);
-    town_box_rot(t, C_ORANGE, (v3){0.8f, 0.3f, 0.35f}, (v3){-7.0f, 0.3f, 16.5f}, (v3){0.0f, 0.4f, 0.0f});
-    town_duck(t, -9.2f, 19.2f, 1.2f, 0.4f, 0.3f);
-    town_duck(t, -7.6f, 19.9f, 0.7f, 0.2f, 0.3f);
-    town_duck(t, -6.4f, 20.6f, 0.7f, -0.3f, 0.3f);
+    // (the fish and the duck family swim: st_life.c)
     town_box(t, C_RED_BROWN, 3.0f, 0.3f, 1.0f, -7.5f, 0.9f, 22.4f + 0.0f, false); // bench near the pond
     town_box(t, C_DARK_GRAY, 0.4f, 0.9f, 0.8f, -8.7f, 0.0f, 22.4f, false);
     town_box(t, C_DARK_GRAY, 0.4f, 0.9f, 0.8f, -6.3f, 0.0f, 22.4f, false);
@@ -816,10 +817,31 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
     }
   }
 
-  // ---- the villagers stand here (st_minifig.c spawns them): Dex, Pip, Prof. Quill, Mom ----
-  f32 npcs[4][2] = {{52.5f, -3.4f}, {-8.0f, 13.2f}, {-5.4f, -24.2f}, {-8.0f, -4.6f}};
-  for (i32 i = 0; i < 4; i++)
+  // ---- the villagers who stand still (st_minifig.c spawns them): Dex, Prof. Quill at the gap, Mom and Lumi and the
+  // Professor in the rooms; Pip walks around (st_life.c) ----
+  f32 npcs[5][2] = {{52.5f, -3.4f}, {-5.4f, -24.2f}, {193.4f, -4.4f}, {254.5f, 2.0f}, {337.0f, -1.2f}};
+  for (i32 i = 0; i < 5; i++)
     town_block(t, npcs[i][0] - 0.9f, npcs[i][0] + 0.9f, npcs[i][1] - 0.7f, npcs[i][1] + 0.7f);
+
+  // ---- the little football goal east of the park: open to the west, the sides and the back block ----
+  {
+    f32 x0 = 24.5f, x1 = 27.0f, z0 = -7.6f, z1 = -4.4f;
+    for (i32 k = 0; k < 2; k++) {
+      f32 z = k ? z1 : z0;
+      town_box(t, C_WHITE, 0.3f, 2.6f, 0.3f, x0, 0.0f, z, false);
+      town_box(t, C_WHITE, 0.3f, 2.6f, 0.3f, x1, 0.0f, z, false);
+      town_box(t, C_WHITE, x1 - x0, 0.25f, 0.25f, (x0 + x1) * 0.5f, 2.5f, z, false); // side top bar
+      for (f32 x = x0 + 0.5f; x < x1; x += 0.5f)
+        town_box(t, 0xdfe6eau, 0.05f, 2.5f, 0.05f, x, 0.0f, z, false);                // side net
+      town_block(t, x0, x1, z - 0.2f, z + 0.2f);
+    }
+    town_box(t, C_WHITE, 0.25f, 0.25f, z1 - z0, x0, 2.5f, (z0 + z1) * 0.5f, false); // crossbar
+    for (f32 z = z0 + 0.4f; z < z1; z += 0.4f)
+      town_box(t, 0xdfe6eau, 0.05f, 2.5f, 0.05f, x1, 0.0f, z, false);                // back net
+    for (f32 y = 0.5f; y < 2.5f; y += 0.5f)
+      town_box(t, 0xdfe6eau, 0.05f, 0.05f, z1 - z0, x1, y, (z0 + z1) * 0.5f, false);
+    town_block(t, x1 - 0.2f, x1 + 0.2f, z0, z1);
+  }
 
   // ---- the rooms, far east of the village (st_rooms.c) ----
   rooms_build(t);
@@ -867,5 +889,8 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
                                                .name = "Town"});
   log_info("town: % vertices, % tris, % parts, % colliders, % LEGO plants", fmt_u32(built.vertex_count),
            fmt_u32(slot->tri_count), fmt_u32(slot->part_count), fmt_u32(built.collider_count), fmt_u32(t->props));
+  *out_count = MIN(t->solid_count, cap);
+  for (u32 i = 0; i < *out_count; i++)
+    out_blocks[i] = t->solid[i];
   arena_destroy(arena);
 }

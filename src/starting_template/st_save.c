@@ -1,0 +1,72 @@
+// The save game: one small struct in the platform store (a file natively, IndexedDB in the browser) under
+// "brickhollow.save". Loaded once at start (asynchronously: the game starts, the save lands a few frames later),
+// written whenever something changed. Included by starting_template.c above app_init.
+
+#define SAVE_KEY "brickhollow.save"
+#define SAVE_VERSION 1u
+
+typedef struct GameSave {
+  u32 version;
+  u32 golden_mask; // GOLDEN_COUNT bits
+  u32 studs;
+  u32 duck_feeds;
+  u32 chests;
+  u32 fireflies;
+  u32 goals;
+  u32 seek_wins;
+  b32 legendary; // all golden studs found
+  f32 time_of_day; // 0..1, saved so the day goes on where you left it
+  u32 _reserved[16];
+} GameSave;
+
+typedef struct SaveState {
+  GameSave data;
+  b32 loaded;     // the read finished (found or not)
+  b32 dirty;      // changed since the last write
+  f32 write_wait; // seconds until a dirty save is written (coalesces bursts)
+  OsStoreOp *op;
+  b32 op_is_read;
+} SaveState;
+
+hz_internal void save_begin(SaveState *s) {
+  s->data = (GameSave){.version = SAVE_VERSION, .time_of_day = 0.32f};
+  s->op = os_store_read(SAVE_KEY);
+  s->op_is_read = true;
+}
+
+hz_internal void save_mark(SaveState *s) {
+  s->dirty = true;
+  s->write_wait = 0.5f;
+}
+
+// main lane, every frame: finishes the read, writes a dirty save
+hz_internal void save_update(SaveState *s, f32 dt) {
+  if (s->op) {
+    OsStoreState st = os_store_check(s->op);
+    if (st == OS_STORE_PENDING)
+      return;
+    if (s->op_is_read) {
+      const u8 *bytes = NULL;
+      u32 len = os_store_value(s->op, &bytes);
+      if (st == OS_STORE_DONE && bytes && len >= sizeof(u32)) {
+        GameSave g = {0};
+        mem_cpy(&g, bytes, MIN(len, (u32)sizeof(GameSave)));
+        if (g.version == SAVE_VERSION)
+          s->data = g;
+      }
+      s->loaded = true;
+      log_info("save: % (golden % / studs %)", fmt_cstr(st == OS_STORE_DONE ? "loaded" : "new game"),
+               fmt_u32(s->data.golden_mask), fmt_u32(s->data.studs));
+    }
+    os_store_release(s->op);
+    s->op = NULL;
+  }
+  if (!s->loaded || !s->dirty)
+    return;
+  s->write_wait -= dt;
+  if (s->write_wait > 0.0f)
+    return;
+  s->dirty = false;
+  s->op = os_store_write(SAVE_KEY, (const u8 *)&s->data, (u32)sizeof(GameSave));
+  s->op_is_read = false;
+}

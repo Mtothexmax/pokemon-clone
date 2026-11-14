@@ -1,0 +1,7 @@
+type AudioClipBlobAsset
+version 23
+---
+audio "/brickhollow/voices/3c3b5ded" u8
+file_format AUDIO_FORMAT_QOA
+volume 1.000000
+loop false

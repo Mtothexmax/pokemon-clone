@@ -13,6 +13,7 @@ typedef enum FigStyle {
   FIG_STYLE_PIP,
   FIG_STYLE_QUILL,
   FIG_STYLE_MOM,
+  FIG_STYLE_LUMI,
 } FigStyle;
 
 typedef struct Minifig {
@@ -24,6 +25,10 @@ typedef struct Minifig {
   f32 swing;    // current swing amplitude, eases in and out
   f32 head_yaw; // a villager looks at the player when close
   f32 idle_t;
+  f32 speed;    // a villager walking somewhere (m/s); the player's comes from its character
+  u32 pose;     // FigPose
+  f32 spin;     // extra turn of the whole figure (dancing)
+  v3 offset;    // the whole figure moved (sitting, hopping, crouching), figure space
 } Minifig;
 
 typedef struct MinifigSet {
@@ -62,6 +67,10 @@ hz_internal CString fig_part_path(FigStyle style, u32 part) {
     CString p[] = {FIG_PATHS("quill")};
     return p[part];
   }
+  case FIG_STYLE_LUMI: {
+    CString p[] = {FIG_PATHS("lumi")};
+    return p[part];
+  }
   case FIG_STYLE_MOM: {
     CString p[] = {FIG_PATHS("mom")};
     return p[part];
@@ -92,13 +101,22 @@ hz_internal Minifig *fig_attach(MinifigSet *set, EcsWorld *w, EcsEntity root, Fi
 }
 
 // main lane: a villager standing at (x, y, z) metres, facing yaw
-hz_internal void fig_spawn_villager(MinifigSet *set, EcsWorld *w, FigStyle style, v3 at, f32 yaw) {
+hz_internal Minifig *fig_spawn_villager(MinifigSet *set, EcsWorld *w, FigStyle style, v3 at, f32 yaw) {
   EcsEntity root = ecs_entity_create(w);
   quat q = quat_from_euler((v3){0.0f, yaw, 0.0f});
   ecs_component_set(w, root, LocalTransform, {.position = at, .rotation = q, .scale = V3_ONE});
   ecs_component_set(w, root, WorldTransform, {.position = at, .rotation = q, .scale = V3_ONE});
-  fig_attach(set, w, root, style, false, yaw);
+  return fig_attach(set, w, root, style, false, yaw);
 }
+
+typedef enum FigPose {
+  FIG_POSE_NORMAL, // walk / stand
+  FIG_POSE_SIT,    // on a bench: legs forward, hands on the knees, feet swinging
+  FIG_POSE_DANCE,  // arms up, hopping (spin is set by the caller)
+  FIG_POSE_ARMS_UP,
+  FIG_POSE_CROUCH, // hiding
+  FIG_POSE_WAVE,   // right arm waving
+} FigPose;
 
 hz_internal f32 fig_wrap(f32 a) {
   while (a > M_PI)
@@ -108,17 +126,21 @@ hz_internal f32 fig_wrap(f32 a) {
   return a;
 }
 
-hz_internal void fig_set_rot(EcsWorld *w, EcsEntity e, u32 part, v3 euler) {
-  ecs_component_set(w, e, LocalTransform, {.position = fig_pivot(part), .rotation = quat_from_euler(euler), .scale = V3_ONE});
+// one part: its pivot turned by the figure's spin and moved by its offset, then its own rotation
+hz_internal void fig_set_part(EcsWorld *w, const Minifig *f, u32 part, v3 euler) {
+  quat spin = quat_from_euler((v3){0.0f, f->spin, 0.0f});
+  v3 pos = v3_add(quat_rotate(spin, fig_pivot(part)), f->offset);
+  quat rot = quat_mul(spin, quat_from_euler(euler));
+  ecs_component_set(w, f->part[part], LocalTransform, {.position = pos, .rotation = rot, .scale = V3_ONE});
 }
 
-// main lane, before the scope: walk swing from the character's speed, arms up in a jump, villagers breathe and look
+// main lane, before the scope: walk swing from the speed (the player's character, or a villager's `speed`), the poses
 hz_internal void fig_animate(MinifigSet *set, EcsWorld *w, EcsEntity player, f32 dt) {
   const WorldTransform *pwt = ecs_component_get(w, player, WorldTransform);
   v3 ppos = pwt ? pwt->position : V3_ZERO;
   for (u32 i = 0; i < set->count; i++) {
     Minifig *f = &set->figs[i];
-    f32 speed = 0.0f;
+    f32 speed = f->speed;
     b32 air = false;
     if (f->is_player) {
       const Character *c = ecs_component_get(w, f->root, Character);
@@ -127,28 +149,65 @@ hz_internal void fig_animate(MinifigSet *set, EcsWorld *w, EcsEntity player, f32
         air = !character_grounded(c);
       }
     }
-    f32 target = air ? 0.0f : m_minf(1.0f, speed / 3.0f) * 0.7f;
+    f32 target = air || f->pose == FIG_POSE_SIT ? 0.0f : m_minf(1.0f, speed / 3.0f) * 0.7f;
     f->swing += (target - f->swing) * m_minf(1.0f, dt * 10.0f);
     f->walk_t += dt * (speed * 2.4f);
     f->idle_t += dt;
     f32 s = m_sinf(f->walk_t) * f->swing;
     f32 breathe = m_sinf(f->idle_t * 1.6f) * 0.04f;
-    // a villager turns the head to the player within 7 m
+    // a villager turns the head to the player within 7 m (not while walking somewhere)
     if (!f->is_player) {
       const WorldTransform *wt = ecs_component_get(w, f->root, WorldTransform);
       f32 want = 0.0f;
-      if (wt) {
+      if (wt && speed < 0.3f) {
         v3 d = v3_sub(ppos, wt->position);
         if (d.x * d.x + d.z * d.z < 49.0f)
           want = m_clampf(fig_wrap(m_atan2f(d.x, d.z) - f->yaw), -1.0f, 1.0f);
       }
       f->head_yaw += (want - f->head_yaw) * m_minf(1.0f, dt * 5.0f);
     }
-    f32 arm_air = air ? -1.6f : 0.0f;
-    fig_set_rot(w, f->part[0], 0, (v3){0.0f, f->head_yaw, 0.0f});
-    fig_set_rot(w, f->part[2], 2, (v3){FIG_ARM_REST - s * 0.8f + arm_air + breathe, 0.0f, 0.0f});
-    fig_set_rot(w, f->part[3], 3, (v3){FIG_ARM_REST + s * 0.8f + arm_air - breathe, 0.0f, 0.0f});
-    fig_set_rot(w, f->part[4], 4, (v3){air ? -0.5f : s, 0.0f, 0.0f});
-    fig_set_rot(w, f->part[5], 5, (v3){air ? 0.3f : -s, 0.0f, 0.0f});
+    v3 arm_l = {FIG_ARM_REST - s * 0.8f + breathe, 0.0f, 0.0f}, arm_r = {FIG_ARM_REST + s * 0.8f - breathe, 0.0f, 0.0f};
+    v3 leg_l = {s, 0.0f, 0.0f}, leg_r = {-s, 0.0f, 0.0f};
+    f->offset = V3_ZERO;
+    if (air) {
+      arm_l.x = arm_r.x = FIG_ARM_REST - 1.6f;
+      leg_l.x = -0.5f;
+      leg_r.x = 0.3f;
+    }
+    switch (f->pose) {
+    case FIG_POSE_SIT: {
+      f32 swing = m_sinf(f->idle_t * 2.0f) * 0.12f;
+      leg_l.x = -1.5f + swing;
+      leg_r.x = -1.5f - swing;
+      arm_l.x = arm_r.x = -0.75f;
+      f->offset = (v3){0.0f, -0.08f, -0.42f}; // onto the seat behind the feet
+    } break;
+    case FIG_POSE_DANCE:
+    case FIG_POSE_ARMS_UP: {
+      f32 wave = m_sinf(f->idle_t * 8.0f) * 0.3f;
+      arm_l.x = -2.6f + wave;
+      arm_r.x = -2.6f - wave;
+      f->offset.y = m_absf(m_sinf(f->idle_t * 6.0f)) * (f->pose == FIG_POSE_DANCE ? 0.13f : 0.11f);
+    } break;
+    case FIG_POSE_CROUCH:
+      f->offset.y = -0.19f;
+      leg_l.x = leg_r.x = -0.6f;
+      break;
+    case FIG_POSE_WAVE: arm_r.x = -2.6f + m_sinf(f->idle_t * 8.0f) * 0.3f; break;
+    default: break;
+    }
+    fig_set_part(w, f, 0, (v3){0.0f, f->head_yaw, 0.0f});
+    fig_set_part(w, f, 1, V3_ZERO);
+    fig_set_part(w, f, 2, arm_l);
+    fig_set_part(w, f, 3, arm_r);
+    fig_set_part(w, f, 4, leg_l);
+    fig_set_part(w, f, 5, leg_r);
   }
+}
+
+// a villager's root to (x, z) metres, facing yaw (the walk swing follows `speed`)
+hz_internal void fig_place(EcsWorld *w, Minifig *f, v3 at, f32 yaw) {
+  f->yaw = yaw;
+  quat q = quat_from_euler((v3){0.0f, yaw, 0.0f});
+  ecs_component_set(w, f->root, LocalTransform, {.position = at, .rotation = q, .scale = V3_ONE});
 }

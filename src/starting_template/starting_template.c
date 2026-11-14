@@ -114,7 +114,12 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
 #include "st_town.c"
 #include "st_minifig.c"
+#include "st_sound.c"
+#include "st_save.c"
+#include "st_dialog.c"
 #include "st_world.c"
+#include "st_life.c"
+#include "st_screens.c"
 
 // ---- THE SIMULATION: all game state, shared by the app and headless runs (game_sim.h); no renderer, UI, audio or avatar ----
 
@@ -263,6 +268,15 @@ typedef struct AppState {
   AudioSystem audio;
   MinifigSet figs; // the LEGO player and the villagers
   WorldState world; // doors, stairs, signs, the area title
+  SoundBank snd;
+  SaveState save;
+  DialogState dlg;
+  Life life;       // golden studs, ducks, ball, weather, Pip... (st_life.c)
+  Screens scr;     // TV, piano, PCs
+  TownRect blocks[LIFE_MAX_BLOCKS];
+  u32 block_count;
+  b32 intro_checked;
+  b32 dancing;
 } AppState;
 
 HZ_APP_API void app_init(AppMemory *memory) {
@@ -297,9 +311,12 @@ HZ_APP_API void app_init(AppMemory *memory) {
   fig_attach(&s->figs, w, s->sim.player, FIG_STYLE_PLAYER, true, 0.0f);
   // the villagers, where they stood in the three.js village (studs * TOWN_STUD; the road plates are 0.4 studs high)
   fig_spawn_villager(&s->figs, w, FIG_STYLE_DEX, town_m(52.5f, 0.0f, -3.4f), -M_PI * 0.5f);
-  fig_spawn_villager(&s->figs, w, FIG_STYLE_PIP, town_m(-8.0f, 0.0f, 13.2f), 0.0f);
+  Minifig *pip = fig_spawn_villager(&s->figs, w, FIG_STYLE_PIP, town_m(-8.0f, 0.0f, 13.2f), 0.0f);
   fig_spawn_villager(&s->figs, w, FIG_STYLE_QUILL, town_m(-5.4f, 0.0f, -24.2f), 0.4f);
-  fig_spawn_villager(&s->figs, w, FIG_STYLE_MOM, town_m(-8.0f, 0.0f, -4.6f), 0.0f);
+  // in the rooms: Mom in the kitchen, Lumi at home, the Professor in her lab (the floors are 0.4 studs high)
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_MOM, town_m(193.4f, 0.4f, -4.4f), 0.0f);
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_LUMI, town_m(254.5f, 0.4f, 2.0f), M_PI * 0.5f);
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_QUILL, town_m(337.0f, 0.4f, -1.2f), -M_PI * 0.5f);
 
   // ---- UI (Clay): the HUD is built every frame after the scope, see app_update_and_render ----
   s->ui = ui_create(&(UIInitDesc){.max_glyphs = 4096}, assets);
@@ -311,7 +328,7 @@ HZ_APP_API void app_init(AppMemory *memory) {
   TouchControlsConfig touch = {.ui = s->ui,
                                .landscape = touch_controls_layout_default(TOUCH_ORIENTATION_LANDSCAPE),
                                .portrait = touch_controls_layout_default(TOUCH_ORIENTATION_PORTRAIT)};
-  touch.buttons[0] = (TouchButtonDesc){.enabled = true, .label = "Read"};
+  touch.buttons[0] = (TouchButtonDesc){.enabled = true, .label = "Use"};
   touch.landscape.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {200.0f, 70.0f},
                                                       .diameter_px = 86.0f};
   touch.portrait.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {80.0f, 210.0f},
@@ -332,10 +349,13 @@ HZ_APP_API void app_init(AppMemory *memory) {
 
   // ---- YOUR APP INIT HERE: presentation only (materials, sounds, HUD state); game state goes in game_sim_init ----
   // the town: one merged vertex-coloured mesh plus its static colliders
-  town_build(w, renderer, &s->allocator);
+  town_build(w, renderer, &s->allocator, s->blocks, &s->block_count, LIFE_MAX_BLOCKS);
   // background music: the town theme, looping on the music bus (the web starts it on the first tap or key)
   s->audio = audio_system_init(&s->allocator, NULL);
   ecs_audio_init(&s->audio, w);
+  sound_init(&s->snd, &s->audio, &s->allocator);
+  save_begin(&s->save);
+  life_init(&s->life, w, renderer, &s->snd, &s->save, &s->audio, &s->allocator, s->blocks, s->block_count, pip);
   ecs_audio_play(w, "brickhollow/music/home.hzt", &(EcsAudioPlayDesc){.volume = 0.55f, .loop = true, .bus = AUDIO_BUS_MUSIC});
 
   log_info("brickhollow initialized");
@@ -363,7 +383,7 @@ hz_internal void hud_draw(const TouchControls *touch) {
               .background_color = panel,
               .corner_radius = ui_corner_radius(6)}) {
     hud_text(ui_string("Brickhollow"), 18, ink);
-    hud_text(ui_string("WASD move   Shift run   Space jump   E read"), 14, ink);
+    hud_text(ui_string("WASD move   Shift run   Space jump   E use / talk   Q dance"), 14, ink);
     hud_text(ui_string("Hold right mouse to look   Wheel to zoom   R respawn"), 14, dim);
 #if GAME_DEV_TOOLS
     hud_text(ui_string("F1 editor   F5 save the level"), 14, dim);
@@ -394,7 +414,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       s->sim.scene = scene_save(&s->sim.scene_sys, s->sim.scene, GAME_SCENE_PATH);
 #endif
     // touch claims its fingers before anything else reads the pointer
-    touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0, s->world.reading);
+    touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0 || s->dlg.open || s->scr.kind != SCREEN_NONE, s->world.reading);
     TouchControlsFrame tf = touch_controls_update(&s->touch, input, memory->total_time);
     b32 touch_on = tf.active && !s->editor_open;
     // keys, pad and touch to camera-relative controls; R respawns
@@ -423,16 +443,120 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
                                : -input->scroll_delta.y * GAME_ZOOM_RATE - (touch_on ? tf.camera_pinch_px * GAME_PINCH_ZOOM : 0.0f),
     };
     s->look_locked = look;
-    // doors, stairs and signs (st_world.c): a door asks for a teleport, the camera snaps behind the player again
+    // ---- the game around the walking: the save, dialogues, screens, things to use, doors, village life ----
+    save_update(&s->save, dt);
     const WorldTransform *pwt = ecs_component_get(w, s->sim.player, WorldTransform);
+    const Character *pch = ecs_component_get(w, s->sim.player, Character);
+    Minifig *me = &s->figs.figs[0];
+    b32 use = input->buttons[KEY_E].pressed_this_frame || (touch_on && tf.buttons[0].pressed);
+    b32 advance = use || input->buttons[KEY_SPACE].pressed_this_frame || input->buttons[KEY_ENTER].pressed_this_frame;
+    // a new game wakes up in your room upstairs, with a thought about the day
+    if (!s->intro_checked && s->save.loaded && s->playable && memory->total_time > 1.0) {
+      s->intro_checked = true;
+      if (!s->save.data._reserved[3]) {
+        s->save.data._reserved[3] = 1; // the intro was seen
+        save_mark(&s->save);
+        controls.teleport = true;
+        controls.teleport_pos = town_m(197.4f, 0.5f, 41.2f);
+        controls.teleport_yaw = M_PI;
+        dialog_open(&s->dlg, dialog_script(s->touch.last_active ? DLG_INTRO_TOUCH : DLG_INTRO_KEYS), w, &s->audio);
+      }
+    }
+    b32 busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade;
     if (pwt && !s->editor_open) {
-      world_reading(&s->world, pwt->position,
-                    input->buttons[KEY_E].pressed_this_frame || (touch_on && tf.buttons[0].pressed),
-                    input->buttons[KEY_ESCAPE].pressed_this_frame);
-      world_doors(&s->world, pwt->position, &controls, dt);
+      if (s->dlg.open) {
+        dialog_update(&s->dlg, w, &s->audio, input, advance);
+        if (!s->dlg.open) {
+          DialogAction act = s->dlg.chosen;
+          s->dlg.chosen = ACT_NONE;
+          if (act == ACT_HIDE_SEEK)
+            life_hide_seek_start(&s->life);
+          else if (act == ACT_TAG)
+            life_toast(&s->life, "Tag! Sprint into Pip (hold Shift) and run!");
+        }
+        use = false;
+      } else if (s->scr.kind != SCREEN_NONE) {
+        screens_update(&s->scr, w, &s->audio, &s->snd, input, dt);
+        use = false;
+      }
+      v3 pip_studs = s->life.pip_p;
+      const Target *t = busy ? NULL
+                             : world_pick(&s->world, pwt->position, use, input->buttons[KEY_ESCAPE].pressed_this_frame, pip_studs,
+                                          s->life.chest_live && !s->life.chest_open, s->life.chest_p);
+      if (t) {
+        u32 weather = s->life.rain > 0.5f ? 2u : s->life.night > 0.5f ? 1u : 0u;
+        switch (t->kind) {
+        case T_TALK:
+          dialog_open(&s->dlg, dialog_script((DialogId)t->arg), w, &s->audio);
+          if (t->arg == DLG_PIP)
+            s->life.pip_yaw = m_atan2f(pwt->position.x / TOWN_STUD - s->life.pip_p.x, pwt->position.z / TOWN_STUD - s->life.pip_p.z);
+          break;
+        case T_FEED: life_feed(&s->life, v3_scale(pwt->position, 1.0f / TOWN_STUD)); break;
+        case T_SIT:
+          life_sit(&s->life, true);
+          controls.teleport = true;
+          controls.teleport_pos = town_m(15.0f, 0.1f, -8.3f);
+          controls.teleport_yaw = 0.0f;
+          break;
+        case T_SLEEP: life_sleep(&s->life); break;
+        case T_TV: screens_open(&s->scr, SCREEN_TV, w, &s->audio, weather); break;
+        case T_PIANO: screens_open(&s->scr, SCREEN_PIANO, w, &s->audio, weather); break;
+        case T_PC: screens_open(&s->scr, SCREEN_PC, w, &s->audio, weather); break;
+        case T_LAB: screens_open(&s->scr, SCREEN_LAB, w, &s->audio, weather); break;
+        case T_CHEST: life_open_chest(&s->life); break;
+        default: break;
+        }
+        sound_play(&s->snd, SND_BLIP, 1.2f, 0.4f);
+      }
+      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade;
+      b32 moving = v2_length(controls.move) > 0.2f;
+      // the bench: any move gets you up; Q dances (moving stops it)
+      if (s->life.sitting && moving && !busy)
+        life_sit(&s->life, false);
+      if (input->buttons[KEY_Q].pressed_this_frame && !busy && !s->life.sitting) {
+        s->dancing = !s->dancing;
+        if (s->dancing) {
+          sound_play(&s->snd, SND_FANFARE, 1.5f, 0.5f);
+          life_toast(&s->life, "Dance party! Everyone joins in.");
+        }
+      }
+      if (moving || busy)
+        s->dancing = false;
+      if (busy || s->life.sitting) {
+        controls.move = (v2){0};
+        controls.jump = false;
+      }
+      me->pose = s->life.sitting ? FIG_POSE_SIT : s->dancing ? FIG_POSE_DANCE : FIG_POSE_NORMAL;
+      me->spin = s->dancing ? me->spin + dt * 2.6f : 0.0f;
+      // the villagers within 10 studs dance along (Pip spins)
+      for (u32 i = 1; i < s->figs.count; i++) {
+        Minifig *v = &s->figs.figs[i];
+        if (v == s->life.pip)
+          continue;
+        const WorldTransform *vw = ecs_component_get(w, v->root, WorldTransform);
+        b32 close_by = vw && v3_length(v3_sub(vw->position, pwt->position)) < 10.0f * TOWN_STUD;
+        v->pose = s->dancing && close_by ? FIG_POSE_ARMS_UP : FIG_POSE_NORMAL;
+      }
+      // where the player walks (for kicking the ball) and the village around
+      f32 h = controls.heading;
+      v2 fwd = {-m_sinf(h), -m_cosf(h)}, right = {m_cosf(h), -m_sinf(h)};
+      v2 dir = v2_add(v2_scale(right, controls.move.x), v2_scale(fwd, controls.move.y));
+      f32 dl = v2_length(dir);
+      if (dl > 1e-3f)
+        dir = v2_scale(dir, 1.0f / dl);
+      f32 speed = pch ? character_planar_speed(pch) : 0.0f;
+      b32 outside = s->world.area < 0;
+      life_update(&s->life, pwt->position, dir, speed, controls.run && moving, outside, dt);
+      if (s->dancing && s->life.pip_mode == PIP_WALK) {
+        s->life.pip->pose = FIG_POSE_ARMS_UP;
+        s->life.pip->spin += dt * 4.0f;
+      } else
+        s->life.pip->spin = 0.0f;
+      if (!busy && !s->life.sitting)
+        world_doors(&s->world, pwt->position, &controls, dt);
       EcsEntity cam_e = ecs_query_get_singleton_entity(s->sim.camera_query);
       const CameraFollow *follow = cam_e != ECS_ENTITY_INVALID ? ecs_component_get(w, cam_e, CameraFollow) : NULL;
-      if (controls.teleport && follow) {
+      if (controls.teleport && follow && !s->life.sitting) {
         CameraFollow f = *follow;
         f.yaw = 0.0f; // the rooms and the houses face the camera (south); look north again
         f.snap = true;
@@ -476,7 +600,11 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // YOUR HUD HERE: ui_* calls; read game state from resources (ecs_resource_get), never mutate the world
     if (!s->editor_open) {
       hud_draw(&s->touch);
-      world_draw(&s->world, s->touch.last_active);
+      b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE;
+      world_draw(&s->world, s->touch.last_active, busy_ui);
+      life_draw(&s->life);
+      dialog_draw(&s->dlg, input, s->touch.last_active, (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f));
+      screens_draw(&s->scr, input, &s->save.data);
       touch_controls_draw_stick(&s->touch);
       touch_controls_draw_jump_button(&s->touch);
       touch_controls_draw_button(&s->touch, 0);

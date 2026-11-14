@@ -30,6 +30,7 @@ STYLES = {
     'dex': dict(torso='#7b2fbe', legs='#1b2a34', hair='#e8e8e8', hairStyle='spiky', decal='stripe', decalColor='#f2cd37'),
     'pip': dict(torso='#f2cd37', legs='#0055bf', hair='#583927', hairStyle='short', decal='stripe', decalColor='#c91a09'),
     'quill': dict(torso='#3d6fd1', legs='#e4cd9e', hair='#c8c8c8', hairStyle='bob', coat=True, decalColor='#c91a09', female=True),
+    'lumi': dict(torso='#ff9ecd', legs='#0055bf', hair='#f2cd37', hairStyle='bob', decal='star', decalColor='#f4f4f4', female=True),
     'mom': dict(torso='#a0bcac', legs='#583927', hair='#82422a', hairStyle='ponytail', decal='apron', decalColor='#f4f4f4', female=True),
 }
 

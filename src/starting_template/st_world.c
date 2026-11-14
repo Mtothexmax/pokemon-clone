@@ -11,7 +11,7 @@ typedef struct Readable {
   HzUIColor bg, fg;
 } Readable;
 
-#define READABLE_COUNT 13
+#define READABLE_COUNT 5
 #define READ_RADIUS 3.6f // studs
 
 hz_internal Readable readable(i32 i) {
@@ -71,11 +71,50 @@ hz_internal Readable readable(i32 i) {
   }
 }
 
+
+// everything you can do something with: read it, talk to someone, feed, sit, sleep, watch, play, use, open
+typedef enum TargetKind { T_READ, T_TALK, T_FEED, T_SIT, T_SLEEP, T_TV, T_PIANO, T_PC, T_LAB, T_CHEST } TargetKind;
+
+typedef struct Target {
+  TargetKind kind;
+  f32 x, z;     // studs
+  CString verb; // the prompt: "<verb> <label>"
+  CString label;
+  i32 arg;      // the readable or the DialogId
+} Target;
+
+#define STATIC_TARGETS 21
+
+hz_internal Target world_target(i32 i) {
+  if (i < READABLE_COUNT) {
+    Readable r = readable(i);
+    return (Target){T_READ, r.x, r.z, "Read", r.label, i};
+  }
+  switch (i - READABLE_COUNT) {
+  case 0: return (Target){T_FEED, -2.7f, 18.5f, "Feed", "the ducks", 0};
+  case 1: return (Target){T_SIT, 15.0f, -7.4f, "Sit on", "the park bench", 0};
+  case 2: return (Target){T_TV, 205.0f, -4.6f, "Watch", "TV", 0};
+  case 3: return (Target){T_TV, 269.0f, -4.4f, "Watch", "TV", 0};
+  case 4: return (Target){T_PIANO, 251.0f, -4.4f, "Play", "the piano", 0};
+  case 5: return (Target){T_PC, 201.4f, 36.6f, "Use", "your PC", 0};
+  case 6: return (Target){T_SLEEP, 196.2f, 38.6f, "Sleep in", "your bed", 0};
+  case 7: return (Target){T_LAB, 343.2f, -2.2f, "Use", "the lab computer", 0};
+  case 8: return (Target){T_LAB, 343.2f, 3.3f, "Use", "the lab computer", 0};
+  case 9: return (Target){T_TALK, 193.4f, -2.8f, "Talk to", "Mom", DLG_MOM};
+  case 10: return (Target){T_TALK, 335.4f, -1.2f, "Talk to", "Prof. Quill", DLG_PROF};
+  case 11: return (Target){T_TALK, 52.5f, -1.8f, "Talk to", "Dex", DLG_DEX};
+  case 12: return (Target){T_TALK, 256.1f, 2.0f, "Talk to", "Lumi", DLG_LUMI};
+  case 13: return (Target){T_TALK, -5.4f, -22.6f, "Talk to", "Prof. Quill", DLG_GATE};
+  default: return (Target){T_READ, 0, 0, "", "", 0};
+  }
+}
+
 typedef struct WorldState {
   i32 area;          // -1 outside, else the RoomId the player is in
   f32 door_cooldown; // seconds; after a teleport the doors rest a moment
-  i32 nearby;          // the readable in reach, -1 none
-  b32 reading;
+  i32 nearby;          // 1 when `target` is in reach, -1 none
+  Target target;       // the one in reach
+  b32 reading;         // a sign's text is open
   f32 title_t;       // seconds the area title still shows
   CString title;
 } WorldState;
@@ -149,26 +188,47 @@ hz_internal void world_doors(WorldState *ws, v3 pos_m, PlayerControls *controls,
   }
 }
 
-// main lane: which readable is in reach; E (or the touch button) opens and closes it, walking away closes it
-hz_internal void world_reading(WorldState *ws, v3 pos_m, b32 toggle, b32 cancel) {
+// main lane: what is in reach (the static targets, Pip and the chest); returns the target the player triggered with
+// `press` (E / the touch button), else NULL. A sign opens and closes its text here; walking away closes it.
+hz_internal const Target *world_pick(WorldState *ws, v3 pos_m, b32 press, b32 cancel, v3 pip, b32 chest, v3 chest_p) {
   v3 p = v3_scale(pos_m, 1.0f / TOWN_STUD);
-  i32 nearby = -1;
-  f32 best = READ_RADIUS * READ_RADIUS;
-  for (i32 i = 0; i < READABLE_COUNT; i++) {
-    Readable r = readable(i);
-    f32 dx = r.x - p.x, dz = r.z - p.z, d = dx * dx + dz * dz;
-    if (d < best) {
+  Target best_t = {0};
+  f32 best = 1e9f;
+  i32 found = -1;
+  for (i32 i = 0; i < STATIC_TARGETS + 2; i++) {
+    Target t;
+    if (i < STATIC_TARGETS)
+      t = world_target(i);
+    else if (i == STATIC_TARGETS)
+      t = (Target){T_TALK, pip.x, pip.z, "Talk to", "Pip", DLG_PIP};
+    else if (chest)
+      t = (Target){T_CHEST, chest_p.x, chest_p.z, "Open", "the treasure chest", 0};
+    else
+      continue;
+    if (!t.verb || !t.verb[0])
+      continue;
+    f32 r = t.kind == T_TALK ? (t.arg == DLG_PIP ? 6.0f : 4.2f) : READ_RADIUS; // Pip stops walking within 6
+    f32 dx = t.x - p.x, dz = t.z - p.z, d = dx * dx + dz * dz;
+    if (d < r * r && d < best) {
       best = d;
-      nearby = i;
+      best_t = t;
+      found = 1;
     }
   }
-  if (nearby != ws->nearby)
+  b32 same = found > 0 && ws->nearby > 0 && best_t.kind == ws->target.kind && best_t.x == ws->target.x && best_t.z == ws->target.z;
+  if (!same)
     ws->reading = false;
-  ws->nearby = nearby;
+  ws->nearby = found;
+  ws->target = best_t;
   if (cancel)
     ws->reading = false;
-  else if (toggle && nearby >= 0)
+  if (found < 0 || !press)
+    return NULL;
+  if (best_t.kind == T_READ) {
     ws->reading = !ws->reading;
+    return NULL;
+  }
+  return &ws->target;
 }
 
 hz_internal void world_text(CString s, u16 size, HzUIColor color, b32 wrap) {
@@ -179,7 +239,7 @@ hz_internal void world_text(CString s, u16 size, HzUIColor color, b32 wrap) {
 }
 
 // the UI frame: the area title, the "Read" prompt and the open sign
-hz_internal void world_draw(const WorldState *ws, b32 touch) {
+hz_internal void world_draw(const WorldState *ws, b32 touch, b32 busy) {
   OsSafeAreaInsets safe = os_get_safe_area();
   if (ws->title_t > 0.0f && ws->title) {
     u8 a = (u8)(255.0f * m_minf(1.0f, ws->title_t * 2.0f)); // fades out over the last half second
@@ -193,9 +253,9 @@ hz_internal void world_draw(const WorldState *ws, b32 touch) {
       world_text(ws->title, 22, (HzUIColor){255, 255, 255, a}, false);
     }
   }
-  if (ws->nearby < 0)
+  if (ws->nearby < 0 || busy)
     return;
-  Readable r = readable(ws->nearby);
+  Readable r = readable(ws->target.kind == T_READ ? ws->target.arg : 0);
   if (!ws->reading) {
     ui_element({.id = ui_id("ReadPrompt"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT,
@@ -212,8 +272,8 @@ hz_internal void world_draw(const WorldState *ws, b32 touch) {
           world_text("E", 16, (HzUIColor){27, 42, 52, 255}, false);
         }
       }
-      world_text(touch ? "Tap Read:" : "Read", 16, (HzUIColor){240, 242, 246, 255}, false);
-      world_text(r.label, 16, (HzUIColor){242, 205, 55, 255}, false);
+      world_text(ws->target.verb, 16, (HzUIColor){240, 242, 246, 255}, false);
+      world_text(ws->target.label, 16, (HzUIColor){242, 205, 55, 255}, false);
     }
     return;
   }
