@@ -146,6 +146,7 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 #include "st_world.c"
 #include "st_life.c"
 #include "st_screens.c"
+#include "st_debug.c"
 
 // ---- THE SIMULATION: all game state, shared by the app and headless runs (game_sim.h); no renderer, UI, audio or avatar ----
 
@@ -301,6 +302,10 @@ typedef struct AppState {
   Screens scr;     // TV, piano, PCs
   TownRect blocks[LIFE_MAX_BLOCKS];
   TownGroups groups;   // what is drawn per area (st_town.c)
+  TownTag tags[TOWN_MAX_TAGS]; // names for the debug picker
+  u32 tag_count;
+  SignZoom zoom;       // the camera at a sign's board
+  DebugPick dbg;
   i32 shown_area;      // the area the groups were last shown for
   f32 cam_lift;        // radians the camera is raised because something hides the player
   u32 block_count;
@@ -378,7 +383,7 @@ HZ_APP_API void app_init(AppMemory *memory) {
 
   // ---- YOUR APP INIT HERE: presentation only (materials, sounds, HUD state); game state goes in game_sim_init ----
   // the town: one merged vertex-coloured mesh plus its static colliders
-  town_build(w, renderer, &s->allocator, s->blocks, &s->block_count, LIFE_MAX_BLOCKS, &s->groups);
+  town_build(w, renderer, &s->allocator, s->blocks, &s->block_count, LIFE_MAX_BLOCKS, &s->groups, s->tags, &s->tag_count);
   // the villagers in the rooms belong to their room's group (figs 4, 5, 6: Mom, Lumi, the Professor)
   RoomId fig_room[3] = {ROOM_HOME, ROOM_DEX, ROOM_LAB};
   for (u32 i = 0; i < 3; i++)
@@ -593,11 +598,45 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         world_doors(&s->world, pwt->position, &controls, dt);
       EcsEntity cam_e = ecs_query_get_singleton_entity(s->sim.camera_query);
       const CameraFollow *follow = cam_e != ECS_ENTITY_INVALID ? ecs_component_get(w, cam_e, CameraFollow) : NULL;
+      // reading a sign with a board: the camera flies to it (moving closes it)
+      if (s->world.reading && v2_length(controls.move) > 0.3f)
+        s->world.reading = false;
+      b32 zoomed = sign_zoom_update(&s->zoom, w, s->sim.camera_query, s->world.reading && s->world.target.kind == T_READ,
+                                    s->world.target.arg, dt);
+      if (zoomed) {
+        controls.move = (v2){0};
+        controls.jump = false;
+      }
+      // the figure would stand between the camera and the board
+      {
+        b32 show_me = !(s->zoom.active && s->zoom.t > 0.25f);
+        for (u32 k = 0; k < FIG_PART_COUNT; k++) {
+          const EcsVisibility *v = ecs_component_get(w, me->part[k], EcsVisibility);
+          if (v && v->visible != show_me) {
+            EcsVisibility nv = *v;
+            nv.visible = show_me;
+            ecs_component_set(w, me->part[k], EcsVisibility, nv);
+          }
+        }
+      }
+      // debug: ` toggles the picker, a click names what is under the mouse
+      b32 dbg_toggled = input->buttons[KEY_BACKQUOTE].pressed_this_frame;
+      if (dbg_toggled)
+        s->dbg.on = !s->dbg.on;
+      // a click names the thing under the mouse; turning debug on names what is in the middle of the screen
+      if (s->dbg.on && (input->buttons[MOUSE_LEFT].pressed_this_frame || dbg_toggled)) {
+        Camera *pick_cam = ecs_query_get_singleton(Camera, s->sim.camera_query);
+        f32 mx = dbg_toggled ? (f32)memory->canvas_width * 0.5f : input->mouse_pos.x;
+        f32 my = dbg_toggled ? (f32)memory->canvas_height * 0.5f : input->mouse_pos.y;
+        if (pick_cam)
+          debug_pick(&s->dbg, w, pick_cam, mx, my, memory->canvas_width, memory->canvas_height, s->tags, s->tag_count, &s->life,
+                     &s->figs, s->sim.player);
+      }
       // the camera never zooms in on an obstacle: when something hides the player it rises and looks down over it,
       // and sinks back once the view is free (a ray from the head to the camera, checked a step lower)
       const CameraRigState *rs = ecs_resource_get(w, CameraRigState);
       const EcsPhysicsWorld *pw = ecs_resource_get(w, EcsPhysicsWorld);
-      if (follow) {
+      if (follow && !s->zoom.active) {
         CameraFollow f = *follow;
         f32 base = f.pitch - s->cam_lift;
         f32 lift = s->cam_lift;
@@ -702,6 +741,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       life_draw(&s->life);
       dialog_draw(&s->dlg, input, s->touch.last_active, (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f));
       screens_draw(&s->scr, input, &s->save.data);
+      debug_draw(&s->dbg);
       touch_controls_draw_stick(&s->touch);
       touch_controls_draw_jump_button(&s->touch);
       touch_controls_draw_button(&s->touch, 0);

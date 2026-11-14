@@ -47,6 +47,13 @@ typedef struct TownRect {
 #define TOWN_GROUPS 5
 #define TOWN_GROUP_MAX 512
 
+// a named thing for the debug picker: a circle (studs) around x, z
+typedef struct TownTag {
+  CString name;
+  f32 x, z, r;
+} TownTag;
+#define TOWN_MAX_TAGS 2048
+
 typedef struct TownGroups {
   EcsEntity ents[TOWN_GROUPS][TOWN_GROUP_MAX];
   u32 count[TOWN_GROUPS];
@@ -64,9 +71,16 @@ typedef struct Town {
   TownRect *solid; // the colliders only (town_block), handed to the game
   u32 solid_count;
   MeshBuilder *mbs; // one builder per draw group
+  TownTag *tags;    // the debug picker's names
+  u32 tag_count;
   u32 group;
   TownGroups *groups;
 } Town;
+
+hz_internal void town_tag(Town *t, CString name, f32 x, f32 z, f32 r) {
+  if (t->tags && t->tag_count < TOWN_MAX_TAGS)
+    t->tags[t->tag_count++] = (TownTag){name, x, z, r};
+}
 
 hz_internal void town_group_add(TownGroups *g, u32 group, EcsEntity e) {
   if (g && g->count[group] < TOWN_GROUP_MAX)
@@ -200,6 +214,7 @@ hz_internal void town_prop(Town *t, CString path, f32 x, f32 z, f32 y, f32 s, f3
                                              .casts_shadow = shadow,
                                              .static_shadow = shadow});
   town_group_add(t->groups, t->group, e);
+  town_tag(t, path, x, z, 0.8f + s * 0.25f);
   t->props++;
 }
 
@@ -629,7 +644,7 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 
 // main lane, once: the whole village into one slot; the parts become static renderer entities
 hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, TownRect *out_blocks, u32 *out_count, u32 cap,
-                            TownGroups *groups) {
+                            TownGroups *groups, TownTag *tags, u32 *tag_count) {
   ArenaAllocator *arena = arena_create(MB(128), MB(1));
   Allocator garena = make_arena_allocator(arena);
   MeshBuilder *mbs = ALLOC_ARRAY(&garena, MeshBuilder, TOWN_GROUPS);
@@ -639,6 +654,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
   Allocator scratch = make_arena_allocator(arena);
   Town town = {.b = &mbs[0],
                .mbs = mbs,
+               .tags = tags,
                .groups = groups,
                .rng = {.s = 20261114u},
                .world = w,
@@ -890,6 +906,37 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
     town_block(t, x1 - 0.2f, x1 + 0.2f, z0, z1);
   }
 
+  // ---- names for the debug picker ----
+  town_tag(t, "Your house", -15.0f, -11.0f, 7.5f);
+  town_tag(t, "Dex & Lumi's house", 47.0f, -12.0f, 9.5f);
+  town_tag(t, "Dex's garage", 35.0f, -10.0f, 5.0f);
+  town_tag(t, "Quill Lab", 13.0f, 11.0f, 9.0f);
+  town_tag(t, "The park bench", 15.0f, -9.5f, 2.0f);
+  town_tag(t, "The park", 15.0f, -11.0f, 7.0f);
+  town_tag(t, "The garden (fence)", -19.0f, 12.0f, 7.5f);
+  town_tag(t, "The pond", -8.0f, 18.5f, 5.0f);
+  town_tag(t, "The football goal", 25.75f, -6.0f, 2.2f);
+  town_tag(t, "Brick pile (red)", 45.0f, 16.5f, 3.8f);
+  town_tag(t, "Brick pile (yellow)", 57.5f, 16.5f, 3.8f);
+  town_tag(t, "Brick pile (blue)", 33.5f, 17.0f, 3.8f);
+  town_tag(t, "Brick pile (orange)", -17.0f, -21.5f, 3.8f);
+  town_tag(t, "Village sign", 5.9f, 20.2f, 2.2f);
+  town_tag(t, "Route 1 sign", 5.0f, -24.3f, 2.0f);
+  town_tag(t, "Garden sign", -23.0f, 8.9f, 1.8f);
+  town_tag(t, "Your mailbox", -18.2f, -3.8f, 1.0f);
+  town_tag(t, "Dex's mailbox", 43.8f, -3.8f, 1.0f);
+  town_tag(t, "Crates", 22.6f, 9.0f, 1.3f);
+  town_tag(t, "Tall grass (Route 1)", 0.0f, -35.0f, 9.0f);
+  for (i32 i = 0; i < 6; i++)
+    town_tag(t, "Lamp post", lamps[i][0], lamps[i][1], 0.8f);
+  {
+    CString room_names[ROOM_COUNT] = {"Home (inside)", "Dex & Lumi's house (inside)", "Quill Lab (inside)", "Your room (upstairs)"};
+    for (i32 i = 0; i < ROOM_COUNT; i++) {
+      RoomDef rd = room_def((RoomId)i);
+      town_tag(t, room_names[i], rd.ox, rd.oz, rd.w * 0.75f);
+    }
+  }
+
   // ---- the rooms, far east of the village (st_rooms.c) ----
   rooms_build(t);
   town_group_switch(t, 0);
@@ -940,6 +987,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
     log_info("town group %: % vertices, % tris, % parts, % colliders", fmt_u32(g), fmt_u32(built.vertex_count),
              fmt_u32(slot->tri_count), fmt_u32(slot->part_count), fmt_u32(built.collider_count));
   }
+  *tag_count = t->tag_count;
   *out_count = MIN(t->solid_count, cap);
   for (u32 i = 0; i < *out_count; i++)
     out_blocks[i] = t->solid[i];

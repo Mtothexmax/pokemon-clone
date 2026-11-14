@@ -2,6 +2,24 @@
 // the rooms of st_rooms.c), reading signs and looking at things (E, or the Read button on touch), the area title.
 // Included by starting_template.c above app_init.
 
+// a sign's painted board: centre (studs), the way it faces (yaw: 0 = +z) and its size
+typedef struct SignBoard {
+  v3 c;
+  f32 yaw;
+  f32 w, h;
+} SignBoard;
+
+// the boards of readables 0..3 (st_world.c), as town_build places them
+hz_internal b32 sign_board(i32 readable, SignBoard *out) {
+  switch (readable) {
+  case 0: *out = (SignBoard){{5.9f, 2.3f, 20.41f}, 0.0f, 3.8f, 2.0f}; return true;
+  case 1: *out = (SignBoard){{5.0f, 2.2f, -24.09f}, 0.0f, 3.4f, 1.8f}; return true;
+  case 2: *out = (SignBoard){{-22.91f, 2.1f, 8.9f}, M_PI * 0.5f, 2.8f, 1.5f}; return true;
+  case 3: *out = (SignBoard){{13.0f, 5.75f, 16.17f}, 0.0f, 5.2f, 1.9f}; return true;
+  default: return false;
+  }
+}
+
 typedef struct Readable {
   f32 x, z;        // where you stand to read it, studs
   CString label;   // the prompt: "Read <label>"
@@ -274,6 +292,19 @@ hz_internal void world_draw(const WorldState *ws, b32 touch, b32 busy) {
       }
       world_text(ws->target.verb, 16, (HzUIColor){240, 242, 246, 255}, false);
       world_text(ws->target.label, 16, (HzUIColor){242, 205, 55, 255}, false);
+    }
+    return;
+  }
+  SignBoard board;
+  if (ws->target.kind == T_READ && sign_board(ws->target.arg, &board)) {
+    ui_element({.id = ui_id("SignHint"),
+                .floating = {.attach_to = UI_ATTACH_TO_ROOT,
+                             .attach_points = {.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM},
+                             .offset = {0.0f, -safe.bottom - (touch ? 150.0f : 24.0f)}},
+                .layout = {.padding = {.left = 14, .right = 14, .top = 6, .bottom = 6}},
+                .background_color = {16, 18, 24, 190},
+                .corner_radius = ui_corner_radius(8)}) {
+      world_text(touch ? "tap Use or walk to close" : "E or walk to close", 15, (HzUIColor){240, 242, 246, 255}, false);
     }
     return;
   }

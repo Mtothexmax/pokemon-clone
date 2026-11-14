@@ -156,6 +156,13 @@ hz_internal void rooms_build(Town *t) {
     room_frame(t, r, 0.6f, 5.0f, 0x7fc0ffu);
     room_frame(t, r, 9.5f, 5.0f, 0xffb070u);
     // kitchen (back left): fridge, counter, stove
+    town_tag(t, "Fridge", ox - 11.4f, oz - 7.4f, 1.6f);
+    town_tag(t, "Kitchen counter and stove", ox - 6.6f, oz - 7.4f, 3.6f);
+    town_tag(t, "Dining table", ox - 6.0f, oz - 1.0f, 3.2f);
+    town_tag(t, "Sofa", ox + 5.0f, oz + 4.8f, 3.4f);
+    town_tag(t, "TV", ox + 5.0f, oz - 7.4f, 2.6f);
+    town_tag(t, "Bookshelf", ox + 10.6f, oz - 8.0f, 1.8f);
+    town_tag(t, "Stairs to your room", ox + 10.6f, oz - 1.0f, 3.0f);
     room_furn(t, C_WHITE, 2.6f, 6.4f, 2.2f, ox - 11.4f, 0.4f, oz - 7.4f, false);
     town_box(t, C_GRAY, 0.2f, 2.0f, 0.2f, ox - 10.4f, 3.4f, oz - 6.2f, false);
     room_furn(t, C_WHITE, 7.0f, 2.6f, 2.2f, ox - 6.6f, 0.4f, oz - 7.4f, false);
@@ -212,6 +219,11 @@ hz_internal void rooms_build(Town *t) {
     room_frame(t, r, -6.5f, 5.2f, C_YELLOW);
     room_frame(t, r, 3.4f, 5.2f, C_RED);
     // bed with a blanket in your jacket's teal
+    town_tag(t, "Your bed", ox - 6.4f, oz - 3.4f, 3.4f);
+    town_tag(t, "Your desk and PC", ox + 1.4f, oz - 5.9f, 2.4f);
+    town_tag(t, "Wardrobe", ox + 6.6f, oz - 5.8f, 1.8f);
+    town_tag(t, "Toy shelf", ox - 8.2f, oz + 3.4f, 2.0f);
+    town_tag(t, "Stairwell down", 207.0f, 44.0f, 2.2f);
     room_furn(t, C_RED_BROWN, 4.0f, 1.2f, 6.6f, ox - 6.4f, 0.4f, oz - 3.4f, false);
     town_box(t, C_BROWN, 4.0f, 3.0f, 0.4f, ox - 6.4f, 0.4f, oz - 6.7f, false);
     town_box(t, C_WHITE, 3.6f, 0.6f, 5.9f, ox - 6.4f, 1.6f, oz - 3.45f, false);
@@ -263,6 +275,12 @@ hz_internal void rooms_build(Town *t) {
       town_cyl(t, C_YELLOW, ox - 3.0f + (f32)i * 2.0f, 4.0f, oz - 7.8f, 0.35f, 0.3f, 0.3f, 10, true);
       town_cyl(t, C_YELLOW, ox - 3.0f + (f32)i * 2.0f, 4.3f, oz - 7.8f, 0.2f, 0.45f, 0.9f, 12, true);
     }
+    town_tag(t, "Lumi's piano", ox - 9.0f, oz - 6.5f, 3.0f);
+    town_tag(t, "Trophy shelf", ox, oz - 7.8f, 4.0f);
+    town_tag(t, "Gaming corner", ox + 9.0f, oz - 6.0f, 3.0f);
+    town_tag(t, "Couch", ox, oz + 3.4f, 3.2f);
+    town_tag(t, "Lumi's bed", ox - 11.0f, oz + 3.5f, 2.6f);
+    town_tag(t, "Dex's bed", ox + 11.0f, oz + 3.5f, 2.6f);
     // the piano
     room_furn(t, C_BLACK, 5.0f, 2.6f, 2.0f, ox - 9.0f, 0.4f, oz - 7.2f, false);
     town_box(t, C_BLACK, 5.0f, 2.2f, 0.6f, ox - 9.0f, 3.0f, oz - 7.9f, false);
@@ -300,6 +318,13 @@ hz_internal void rooms_build(Town *t) {
     room_sign(t, r, "brickhollow/signs/room_lab.glb", 0.0f, 7.4f);
     room_window(t, r, -4.0f, 3.0f, 2.4f);
     room_window(t, r, 4.0f, 3.0f, 2.4f);
+    town_tag(t, "Lab bookshelves", ox - 10.3f, oz - 10.0f, 5.5f);
+    town_tag(t, "Lab machines", ox + 11.6f, oz - 9.6f, 5.5f);
+    town_tag(t, "Aquarium", ox - 15.4f, oz - 2.0f, 2.6f);
+    town_tag(t, "Aquarium", ox - 15.4f, oz + 4.0f, 2.6f);
+    town_tag(t, "Lab computer", ox + 15.2f, oz - 2.0f, 2.2f);
+    town_tag(t, "Lab computer", ox + 15.2f, oz + 3.5f, 2.2f);
+    town_tag(t, "Table with the starter pedestals", ox, oz - 1.2f, 5.2f);
     room_bookshelf(t, ox - 13.0f, oz - 10.0f, 5.0f);
     room_bookshelf(t, ox - 7.6f, oz - 10.0f, 5.0f);
     // machines with screens and lights
