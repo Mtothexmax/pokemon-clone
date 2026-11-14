@@ -160,9 +160,9 @@ hz_internal void rooms_build(Town *t) {
     town_box(t, C_GRAY, 0.2f, 2.0f, 0.2f, ox - 10.4f, 3.4f, oz - 6.2f, false);
     room_furn(t, C_WHITE, 7.0f, 2.6f, 2.2f, ox - 6.6f, 0.4f, oz - 7.4f, false);
     town_box(t, C_DARK_GRAY, 7.2f, 0.3f, 2.4f, ox - 6.6f, 3.0f, oz - 7.4f, true);
-    town_box(t, C_BLACK, 2.4f, 0.15f, 1.6f, ox - 4.6f, 3.3f, oz - 7.4f, false);
+    town_box(t, C_BLACK, 2.4f, 0.15f, 1.6f, ox - 4.6f, 3.3f + TOWN_STUD_H, oz - 7.4f, false);
     for (i32 s = -1; s <= 1; s += 2)
-      town_box(t, C_RED, 0.7f, 0.1f, 0.7f, ox - 4.6f + (f32)s * 0.6f, 3.45f, oz - 7.4f, false);
+      town_box(t, C_RED, 0.7f, 0.1f, 0.7f, ox - 4.6f + (f32)s * 0.6f, 3.45f + TOWN_STUD_H, oz - 7.4f, false);
     // dining table and chairs
     room_furn(t, C_RED_BROWN, 5.0f, 0.4f, 3.0f, ox - 6.0f, 2.4f, oz - 1.0f, true);
     f32 legs[4][2] = {{-2.1f, -1.1f}, {2.1f, -1.1f}, {-2.1f, 1.1f}, {2.1f, 1.1f}};
@@ -176,7 +176,7 @@ hz_internal void rooms_build(Town *t) {
     town_flower_pot_on(t, ox - 6.0f, oz - 1.0f, 2.8f + TOWN_STUD_H);
     // living room: rug, sofa, TV
     town_box(t, 0x3d6fd1u, 9.0f, 0.12f, 7.0f, ox + 5.0f, 0.4f, oz + 0.5f, false);
-    town_box(t, 0x6fa0ffu, 7.6f, 0.13f, 5.6f, ox + 5.0f, 0.41f, oz + 0.5f, false);
+    town_box(t, 0x6fa0ffu, 7.6f, 0.13f, 5.6f, ox + 5.0f, 0.46f, oz + 0.5f, false); // above the outer rug
     room_furn(t, C_RED, 6.0f, 1.4f, 2.2f, ox + 5.0f, 0.4f, oz + 4.8f, true);
     town_box(t, C_RED, 6.0f, 2.2f, 0.7f, ox + 5.0f, 1.8f, oz + 5.6f, false);
     for (i32 s = -1; s <= 1; s += 2)
@@ -220,7 +220,7 @@ hz_internal void rooms_build(Town *t) {
     // desk, PC and chair
     room_furn(t, C_WHITE, 4.6f, 2.4f, 2.0f, ox + 1.4f, 0.4f, oz - 5.9f, true);
     room_screen(t, ox + 1.4f, 4.0f, oz - 6.5f, 2.6f, 1.6f, 0x3da0ffu);
-    town_box(t, C_BLACK, 1.8f, 0.15f, 0.6f, ox + 1.4f, 2.8f, oz - 5.4f, false);
+    town_box(t, C_BLACK, 1.8f, 0.15f, 0.6f, ox + 1.4f, 2.8f + TOWN_STUD_H, oz - 5.4f, false); // on the studs
     town_box(t, C_RED, 1.5f, 1.4f, 1.5f, ox + 1.4f, 0.4f, oz - 3.9f, true);
     town_box(t, C_RED, 1.5f, 1.8f, 0.3f, ox + 1.4f, 1.8f, oz - 3.3f, false);
     // wardrobe
@@ -229,11 +229,11 @@ hz_internal void rooms_build(Town *t) {
       town_box(t, C_YELLOW, 0.2f, 0.9f, 0.2f, ox + 6.6f + (f32)s * 0.35f, 3.4f, oz - 4.85f, false);
     // rug and a toy shelf with little brick beasts
     town_box(t, C_YELLOW, 6.0f, 0.12f, 4.4f, ox - 1.2f, 0.4f, oz + 1.6f, false);
-    town_box(t, C_ORANGE, 5.0f, 0.13f, 3.4f, ox - 1.2f, 0.41f, oz + 1.6f, false);
+    town_box(t, C_ORANGE, 5.0f, 0.13f, 3.4f, ox - 1.2f, 0.46f, oz + 1.6f, false); // above the outer rug
     room_furn(t, C_BROWN, 1.4f, 3.2f, 4.0f, ox - 8.2f, 0.4f, oz + 3.4f, true);
     u32 toys[] = {C_RED, C_BLUE, C_DARK_GREEN, C_YELLOW, 0x7b2fbeu};
     for (i32 i = 0; i < 5; i++)
-      town_box(t, toys[i], 0.8f, 0.8f, 0.6f, ox - 8.2f, 3.6f, oz + 1.8f + (f32)i * 0.8f, true);
+      town_box(t, toys[i], 0.8f, 0.8f, 0.6f, ox - 8.2f, 3.6f + TOWN_STUD_H, oz + 1.8f + (f32)i * 0.8f, true);
     room_plant(t, ox - 3.4f, oz - 5.8f, 1.8f, false);
     // the stairwell down: a dark opening, steps fading into the dark, railings
     TownRect wl = BED_WELL;
@@ -327,8 +327,8 @@ hz_internal void rooms_build(Town *t) {
       room_furn(t, C_WHITE, 2.6f, 0.4f, 4.0f, ox + 15.2f, 2.6f, z, true);
       for (i32 s = -1; s <= 1; s += 2)
         town_box(t, C_WHITE, 2.4f, 2.2f, 0.3f, ox + 15.2f, 0.4f, z + (f32)s * 1.8f, false);
-      town_box(t, C_GRAY, 1.6f, 1.6f, 1.4f, ox + 15.2f, 3.0f, z - 0.2f, false);
-      town_box_rot(t, 0x40c0ffu, (v3){1.3f, 0.9f, 0.1f}, (v3){ox + 15.2f - 0.75f, 3.9f, z - 0.2f}, (v3){0.0f, -M_PI * 0.5f, 0.0f});
+      town_box(t, C_GRAY, 1.6f, 1.6f, 1.4f, ox + 15.2f, 3.0f + TOWN_STUD_H, z - 0.2f, false);
+      town_box_rot(t, 0x40c0ffu, (v3){1.3f, 0.9f, 0.1f}, (v3){ox + 15.2f - 0.75f, 3.9f + TOWN_STUD_H, z - 0.2f}, (v3){0.0f, -M_PI * 0.5f, 0.0f});
     }
     // the central table with three glowing pedestals
     room_furn(t, C_RED_BROWN, 10.0f, 0.5f, 3.6f, ox, 2.6f, oz - 1.2f, true);
@@ -337,8 +337,8 @@ hz_internal void rooms_build(Town *t) {
       town_box(t, C_BROWN, 0.5f, 2.2f, 0.5f, ox + tl[i][0], 0.4f, oz - 1.2f + tl[i][1], false);
     u32 ped[3] = {0xff7a3du, 0x3d9bffu, 0x5ccb4cu};
     for (i32 i = 0; i < 3; i++) {
-      town_box(t, ped[i], 1.6f, 0.6f, 1.6f, ox - 3.0f + (f32)i * 3.0f, 3.1f, oz - 1.2f, false);
-      town_box(t, C_WHITE, 1.3f, 0.06f, 1.0f, ox - 3.0f + (f32)i * 3.0f, 3.7f, oz - 1.2f, false); // a starter card
+      town_box(t, ped[i], 1.6f, 0.6f, 1.6f, ox - 3.0f + (f32)i * 3.0f, 3.1f + TOWN_STUD_H, oz - 1.2f, false);
+      town_box(t, C_WHITE, 1.3f, 0.06f, 1.0f, ox - 3.0f + (f32)i * 3.0f, 3.7f + TOWN_STUD_H, oz - 1.2f, false); // a starter card
     }
     town_flower_pot_on(t, ox - 15.4f, oz + 8.4f, 0.4f);
     town_block(t, ox - 17.2f, ox - 13.6f, oz + 6.6f, oz + 10.2f);
