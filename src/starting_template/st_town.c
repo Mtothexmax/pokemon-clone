@@ -650,26 +650,27 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   // ---- the garden: a white fence with a gate, rows of flowers, a sign ----
   {
     f32 x0 = -25.0f, x1 = -13.0f, z0 = 7.0f, z1 = 17.0f;
-    town_fence(t, x0, z0, -20.2f, z0);
-    town_fence(t, -17.8f, z0, x1, z0);
+    // the gate: 4 studs wide around x -19 (the path from the road), the posts outside it
+    town_fence(t, x0, z0, -21.2f, z0);
+    town_fence(t, -16.8f, z0, x1, z0);
     town_fence(t, x0, z1, x1, z1);
     town_fence(t, x0, z0, x0, z1);
     town_fence(t, x1, z0, x1, z1);
-    town_box(t, C_WHITE, 0.8f, 2.0f, 0.8f, -20.4f, 0.0f, z0, true);
-    town_box(t, C_WHITE, 0.8f, 2.0f, 0.8f, -17.6f, 0.0f, z0, true);
+    town_box(t, C_WHITE, 0.8f, 2.0f, 0.8f, -21.4f, 0.0f, z0, true);
+    town_box(t, C_WHITE, 0.8f, 2.0f, 0.8f, -16.6f, 0.0f, z0, true);
     u32 cols[] = {C_RED, C_RED, C_YELLOW, C_PINK, C_WHITE, C_ORANGE};
     for (f32 x = x0 + 1.6f; x < x1 - 1.0f; x += 2.2f)
       for (f32 z = z0 + 1.9f; z < z1 - 1.0f; z += 2.2f) {
         if (town_rand(&t->rng) < 0.15f)
           continue;
-        if (z < 10.0f && (m_absf(x + 21.2f) < 0.5f || m_absf(x + 19.0f) < 0.5f))
+        if (z < 10.5f && (m_absf(x + 23.0f) < 0.8f || m_absf(x + 19.0f) < 1.8f)) // the sign and the way in
           continue;
         town_flower(t, x + (town_rand(&t->rng) - 0.5f) * 0.3f, z + (town_rand(&t->rng) - 0.5f) * 0.3f,
                     cols[(u32)(town_rand(&t->rng) * 6.0f) % 6u], 0.0f);
       }
-    town_box(t, C_BROWN, 0.3f, 2.6f, 0.3f, -21.35f, 0.0f, 8.9f, false);
-    town_box(t, C_TAN, 0.15f, 1.5f, 2.8f, -21.15f, 1.35f, 8.9f, false);
-    town_block(t, -21.55f, -21.05f, 7.6f, 10.2f);
+    town_box(t, C_BROWN, 0.3f, 2.6f, 0.3f, -23.2f, 0.0f, 8.9f, false);
+    town_box(t, C_TAN, 0.15f, 1.5f, 2.8f, -23.0f, 1.35f, 8.9f, false);
+    town_block(t, -23.4f, -22.9f, 7.6f, 10.2f);
   }
 
   // ---- the pond: a brown border with studs, a dark bed, water, lily pads, a fish and the duck family ----

@@ -311,7 +311,7 @@ class Glb:
         return len(self.j['accessors']) - 1
 
     def material(self, color, png=None, name='m'):
-        m = dict(name=name, pbrMetallicRoughness=dict(baseColorFactor=linear_rgba(color), metallicFactor=0.0, roughnessFactor=0.3),
+        m = dict(name=name, pbrMetallicRoughness=dict(baseColorFactor=linear_rgba(color), metallicFactor=0.0, roughnessFactor=0.5),
                  doubleSided=True)
         if png is not None:
             buf = io.BytesIO()
@@ -391,8 +391,20 @@ def build_style(name, style, meshes):
     print('minifig', name, '->', folder)
 
 
+def mirror(src):
+    """the left part mirrored to the right: x and normal x negated, winding flipped (the source's right arm and leg
+    are mirrored copies whose normals point inwards, they caught light and sky from the wrong side)"""
+    idx = list(src['idx'])
+    for t in range(0, len(idx), 3):
+        idx[t + 1], idx[t + 2] = idx[t + 2], idx[t + 1]
+    return dict(pos=[(-x, y, z) for x, y, z in src['pos']], nrm=[(-x, y, z) for x, y, z in src['nrm']], uv=src['uv'],
+                idx=idx, groups=src['groups'])
+
+
 if __name__ == '__main__':
     meshes = {p: read_bin(os.path.join(SRC, f'fig-{p}.bin')) for p in PARTS}
+    meshes['armR'] = mirror(meshes['armL'])
+    meshes['legR'] = mirror(meshes['legL'])
     for name, style in STYLES.items():
         build_style(name, style, meshes)
     print('pivots (m):', {p: tuple(round(c * STUD_M, 4) for c in PIVOT[p]) for p in PARTS})
