@@ -62,7 +62,7 @@
         };
         const addError = (text) => {
             errors.push(String(text).slice(0, 300));
-            if (failed || debug || errors.length > 0) showLog();
+            if (failed || debug) showLog(); // collected quietly otherwise: shown when the start fails
         };
         const fail = (msg) => {
             failed = true;

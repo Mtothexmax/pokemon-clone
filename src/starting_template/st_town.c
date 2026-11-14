@@ -1,13 +1,34 @@
-// Brickhollow: the starter town, built in code with the mesh builder: houses, the lab, a pond, fences, trees,
-// flowers, paths and a tree line around it. One vertex-coloured slot (the renderer's default material multiplies
-// the vertex colour), static colliders from the same calls. Included by starting_template.c above app_init.
+// Brickhollow: the LEGO village of the three.js version, rebuilt in code with the mesh builder. All coordinates below
+// are in STUDS like the original (1 stud = TOWN_STUD metres, a brick 1.2 studs high, a plate 0.4); x east, z south,
+// the house fronts face +z (south, towards the camera). One vertex-coloured slot drawn with the renderer's default
+// material, static colliders from the same calls. The baseplate's studs are drawn by the floor shader (st_grid.glsl).
+// Included by starting_template.c above app_init.
 
 #define TOWN_SLOT 0
-#define TOWN_HALF_X 19.0f // the walkable square: x in [-19, 19], z in [-21, 19]
-#define TOWN_NORTH -21.0f
-#define TOWN_SOUTH 19.0f
+#define TOWN_STUD 0.38f // metres per stud; the minifig (4.9 studs) is then 1.86 m, the character controller's size
+#define TOWN_STUD_H 0.17f  // stud height in studs
+#define TOWN_STUD_R 0.3f   // stud radius in studs
 
-// a tiny deterministic random stream for the trees' and flowers' jitter
+// the LEGO palette (sRGB)
+#define C_GREEN 0x4b9f4au
+#define C_DARK_GREEN 0x237841u
+#define C_PINE 0x1d6630u
+#define C_GRAY 0xa0a5a9u
+#define C_DARK_GRAY 0x6c6e68u
+#define C_RED 0xc91a09u
+#define C_BLUE 0x0055bfu
+#define C_ORANGE 0xfe8a18u
+#define C_TAN 0xe4cd9eu
+#define C_WHITE 0xf4f4f4u
+#define C_BROWN 0x583927u
+#define C_RED_BROWN 0x82422au
+#define C_YELLOW 0xf2cd37u
+#define C_GLASS 0x9fd8efu
+#define C_WATER 0x2a7fd4u
+#define C_BLACK 0x1b2a34u
+#define C_PINK 0xff8ac0u
+
+// a tiny deterministic random stream (the three.js version used Math.random; the layout only needs to look random)
 typedef struct TownRng {
   u32 s;
 } TownRng;
@@ -16,319 +37,693 @@ hz_internal f32 town_rand(TownRng *r) {
   return (f32)(r->s >> 8) / 16777216.0f;
 }
 
-hz_internal MeshBuilderStyle town_style(u32 hex, MeshBuilderColliderKind collider) {
-  return (MeshBuilderStyle){.slot = TOWN_SLOT, .color = mesh_builder_hex(hex), .flat = true, .collider = collider};
+typedef struct Town {
+  MeshBuilder *b;
+  TownRng rng;
+} Town;
+
+hz_internal v3 town_m(f32 x, f32 y, f32 z) { return (v3){x * TOWN_STUD, y * TOWN_STUD, z * TOWN_STUD}; }
+
+hz_internal MeshBuilderStyle town_style(u32 hex) {
+  return (MeshBuilderStyle){.slot = TOWN_SLOT, .color = mesh_builder_hex(hex), .flat = true};
 }
 
-// an axis-aligned box from its centre and size
-hz_internal void town_box(MeshBuilder *b, u32 hex, v3 center, v3 size, b32 solid) {
-  MeshBuilderStyle st = town_style(hex, solid ? MESH_BUILDER_COLLIDER_BOX : MESH_BUILDER_COLLIDER_NONE);
-  mesh_builder_box(b, &st, m4_trs(center, quat_identity(), V3_ONE), size);
+// a darker or lighter shade of a colour (the stepped roof alternates)
+hz_internal u32 town_shade(u32 hex, f32 k) {
+  u32 r = (u32)m_minf(255.0f, (f32)((hex >> 16) & 255u) * k);
+  u32 g = (u32)m_minf(255.0f, (f32)((hex >> 8) & 255u) * k);
+  u32 b = (u32)m_minf(255.0f, (f32)(hex & 255u) * k);
+  return (r << 16) | (g << 8) | b;
 }
 
-// a gable roof: a triangular prism along x, `width` across z, `height` from the eaves to the ridge, eaves at `base_y`
-hz_internal void town_roof(MeshBuilder *b, u32 hex, v3 center_xz, f32 base_y, f32 length, f32 width, f32 height) {
-  MeshBuilderStyle st = town_style(hex, MESH_BUILDER_COLLIDER_NONE);
-  // a 3-sided unit cylinder turned onto x: one corner up, the triangle spans y -0.5..1 and z +-0.866
-  f32 sx = height / 1.5f;
-  m4 xf = m4_trs((v3){center_xz.x, base_y + 0.5f * sx, center_xz.z}, quat_from_euler((v3){0.0f, 0.0f, M_PI * 0.5f}),
-                 (v3){sx, length, width / 1.732f});
-  mesh_builder_cylinder(b, &st, xf,
-                        &(PgCylinderDesc){.radius_top = 1.0f, .radius_bottom = 1.0f, .height = 1.0f, .radial_segments = 3,
-                                          .theta_start = M_PI * 0.5f});
+// one stud on top of a brick at (x, y, z), y = the brick's top
+hz_internal void town_stud(Town *t, u32 hex, f32 x, f32 y, f32 z) {
+  MeshBuilderStyle st = town_style(hex);
+  st.flat = false;
+  mesh_builder_cylinder(t->b, &st, m4_trs(town_m(x, y + TOWN_STUD_H * 0.5f, z), quat_identity(), V3_ONE),
+                        &(PgCylinderDesc){.radius_top = TOWN_STUD_R * TOWN_STUD, .radius_bottom = TOWN_STUD_R * TOWN_STUD,
+                                          .height = TOWN_STUD_H * TOWN_STUD, .radial_segments = 8});
 }
 
-// a sign board on a post; `face` +1 faces +z, -1 faces -z
-hz_internal void town_sign(MeshBuilder *b, v3 at, f32 face, u32 board_hex) {
-  town_box(b, 0x6b4a2b, (v3){at.x, 0.55f, at.z}, (v3){0.14f, 1.1f, 0.14f}, true);
-  town_box(b, 0x4a321c, (v3){at.x, 1.15f, at.z + face * 0.04f}, (v3){1.15f, 0.7f, 0.1f}, false);
-  town_box(b, board_hex, (v3){at.x, 1.15f, at.z + face * 0.1f}, (v3){0.95f, 0.5f, 0.03f}, false);
-}
-
-// a window: frame, glass and a sill, flat on a wall facing `face` along z
-hz_internal void town_window_z(MeshBuilder *b, v3 at, f32 face) {
-  town_box(b, 0xffffff, (v3){at.x, at.y, at.z + face * 0.03f}, (v3){1.15f, 1.0f, 0.06f}, false);
-  town_box(b, 0x8fd3ff, (v3){at.x, at.y, at.z + face * 0.07f}, (v3){0.95f, 0.8f, 0.04f}, false);
-  town_box(b, 0xffffff, (v3){at.x, at.y, at.z + face * 0.09f}, (v3){0.06f, 0.8f, 0.03f}, false);
-  town_box(b, 0xe8e0d0, (v3){at.x, at.y - 0.52f, at.z + face * 0.12f}, (v3){1.25f, 0.1f, 0.2f}, false);
-}
-
-// a window on a wall facing `face` along x
-hz_internal void town_window_x(MeshBuilder *b, v3 at, f32 face) {
-  town_box(b, 0xffffff, (v3){at.x + face * 0.03f, at.y, at.z}, (v3){0.06f, 1.0f, 1.15f}, false);
-  town_box(b, 0x8fd3ff, (v3){at.x + face * 0.07f, at.y, at.z}, (v3){0.04f, 0.8f, 0.95f}, false);
-  town_box(b, 0xe8e0d0, (v3){at.x + face * 0.12f, at.y - 0.52f, at.z}, (v3){0.2f, 0.1f, 1.25f}, false);
-}
-
-// a flower: a stem and a coloured head
-hz_internal void town_flower(MeshBuilder *b, v3 at, u32 hex) {
-  town_box(b, 0x3f8a2e, (v3){at.x, 0.14f, at.z}, (v3){0.05f, 0.28f, 0.05f}, false);
-  town_box(b, hex, (v3){at.x, 0.3f, at.z}, (v3){0.2f, 0.14f, 0.2f}, false);
-  town_box(b, 0xffe066, (v3){at.x, 0.38f, at.z}, (v3){0.08f, 0.04f, 0.08f}, false);
-}
-
-// petal colours: red, yellow, white, violet, orange
-hz_internal u32 town_petal(u32 i) {
-  switch (i % 5u) {
-  case 0: return 0xff5d73;
-  case 1: return 0xffd23f;
-  case 2: return 0xffffff;
-  case 3: return 0xb57cff;
-  default: return 0xff8c42;
-  }
-}
-
-// a flower bed along x from x0 to x1 at z
-hz_internal void town_flower_bed(MeshBuilder *b, f32 x0, f32 x1, f32 z, TownRng *rng) {
-  town_box(b, 0x6b4a2b, (v3){(x0 + x1) * 0.5f, 0.06f, z}, (v3){x1 - x0 + 0.3f, 0.12f, 0.9f}, false);
-  for (f32 x = x0 + 0.2f; x < x1; x += 0.45f)
-    for (i32 row = 0; row < 2; row++)
-      town_flower(b, (v3){x + (town_rand(rng) - 0.5f) * 0.12f, 0.0f, z - 0.2f + 0.4f * (f32)row},
-                  town_petal((u32)(town_rand(rng) * 5.0f)));
-}
-
-// a house: walls (solid), base stripe, roof, chimney, door with step and a lamp, windows, sign; `face` is the door side
-hz_internal void town_house(MeshBuilder *b, v3 c, v3 size, u32 wall, u32 roof, u32 door, f32 face, b32 chimney) {
-  f32 w = size.x, h = size.y, d = size.z;
-  f32 front = c.z + face * d * 0.5f;
-  town_box(b, wall, (v3){c.x, h * 0.5f, c.z}, size, true);
-  town_box(b, 0x8a7f72, (v3){c.x, 0.2f, c.z}, (v3){w + 0.12f, 0.4f, d + 0.12f}, false);
-  // the eaves trim and the roof
-  town_box(b, 0xffffff, (v3){c.x, h + 0.06f, c.z}, (v3){w + 0.3f, 0.12f, d + 0.3f}, false);
-  town_roof(b, roof, (v3){c.x, 0.0f, c.z}, h + 0.1f, w + 0.9f, d + 1.0f, d * 0.42f);
-  if (chimney)
-    town_box(b, 0x9c5a3c, (v3){c.x + w * 0.28f, h + d * 0.36f, c.z - face * d * 0.18f}, (v3){0.7f, 1.6f, 0.7f}, false);
-  // the door: frame, door, knob, step, a little awning and a lamp
-  town_box(b, 0xffffff, (v3){c.x, 1.1f, front + face * 0.03f}, (v3){1.5f, 2.3f, 0.08f}, false);
-  town_box(b, door, (v3){c.x, 1.05f, front + face * 0.08f}, (v3){1.2f, 2.1f, 0.06f}, false);
-  town_box(b, 0xffd23f, (v3){c.x + 0.4f, 1.0f, front + face * 0.13f}, (v3){0.1f, 0.1f, 0.06f}, false);
-  town_box(b, 0xbdb6aa, (v3){c.x, 0.08f, front + face * 0.45f}, (v3){1.8f, 0.16f, 0.8f}, false);
-  town_box(b, roof, (v3){c.x, 2.55f, front + face * 0.4f}, (v3){1.9f, 0.12f, 0.8f}, false);
-  town_box(b, 0xfff2b0, (v3){c.x - 1.0f, 2.0f, front + face * 0.12f}, (v3){0.18f, 0.3f, 0.18f}, false);
-  // windows: two on the front, one on each side, two on the back
-  f32 wy = h > 4.0f ? h * 0.55f : 1.75f;
-  town_window_z(b, (v3){c.x - w * 0.3f, wy, front}, face);
-  town_window_z(b, (v3){c.x + w * 0.3f, wy, front}, face);
-  town_window_z(b, (v3){c.x - w * 0.25f, wy, c.z - face * d * 0.5f}, -face);
-  town_window_z(b, (v3){c.x + w * 0.25f, wy, c.z - face * d * 0.5f}, -face);
-  town_window_x(b, (v3){c.x - w * 0.5f, wy, c.z}, -1.0f);
-  town_window_x(b, (v3){c.x + w * 0.5f, wy, c.z}, 1.0f);
-}
-
-// a picket fence from a to b (straight along x or z): posts, two rails and pickets; one box collider for the run
-hz_internal void town_fence(MeshBuilder *b, v3 a, v3 e) {
-  v3 d = v3_sub(e, a);
-  f32 len = v3_length(d);
-  if (len < 0.01f)
+// studs on a brick's top face, centred like real LEGO (one per full stud of its size)
+hz_internal void town_stud_rect(Town *t, u32 hex, f32 x0, f32 x1, f32 z0, f32 z1, f32 y) {
+  if (x1 - x0 < 0.7f || z1 - z0 < 0.7f)
     return;
-  v3 dir = v3_scale(d, 1.0f / len);
-  b32 along_x = m_absf(dir.x) > m_absf(dir.z);
-  i32 posts = (i32)(len / 1.2f) + 1;
-  for (i32 i = 0; i <= posts; i++) {
-    v3 p = v3_add(a, v3_scale(d, (f32)i / (f32)posts));
-    town_box(b, 0xfffaf0, (v3){p.x, 0.5f, p.z}, (v3){0.16f, 1.0f, 0.16f}, false);
-  }
-  v3 mid = v3_scale(v3_add(a, e), 0.5f);
-  v3 rail = along_x ? (v3){len, 0.08f, 0.06f} : (v3){0.06f, 0.08f, len};
-  town_box(b, 0xf2ead8, (v3){mid.x, 0.35f, mid.z}, rail, false);
-  town_box(b, 0xf2ead8, (v3){mid.x, 0.75f, mid.z}, rail, false);
-  mesh_builder_collider_box(b, (v3){mid.x, 0.6f, mid.z}, quat_identity(),
-                            along_x ? (v3){len * 0.5f, 0.6f, 0.15f} : (v3){0.15f, 0.6f, len * 0.5f});
+  i32 nx = (i32)m_maxf(1.0f, m_floorf(x1 - x0 + 0.05f));
+  i32 nz = (i32)m_maxf(1.0f, m_floorf(z1 - z0 + 0.05f));
+  f32 ox = x0 + (x1 - x0 - (f32)nx) * 0.5f + 0.5f, oz = z0 + (z1 - z0 - (f32)nz) * 0.5f + 0.5f;
+  for (i32 i = 0; i < nx; i++)
+    for (i32 k = 0; k < nz; k++)
+      town_stud(t, hex, ox + (f32)i, y, oz + (f32)k);
 }
 
-// a tree: trunk and two or three foliage cones, or a round crown
-hz_internal void town_tree(MeshBuilder *b, v3 at, f32 scale, b32 round, TownRng *rng, b32 solid) {
-  MeshBuilderStyle trunk = town_style(0x7a5232, MESH_BUILDER_COLLIDER_NONE);
-  f32 th = 1.2f * scale;
-  mesh_builder_cylinder(b, &trunk, m4_trs((v3){at.x, th * 0.5f, at.z}, quat_identity(), V3_ONE),
-                        &(PgCylinderDesc){.radius_top = 0.18f * scale, .radius_bottom = 0.26f * scale, .height = th,
-                                          .radial_segments = 6});
-  if (solid)
-    mesh_builder_collider_box(b, (v3){at.x, 1.0f, at.z}, quat_identity(), (v3){0.35f * scale, 1.0f, 0.35f * scale});
-  u32 greens[] = {0x2f8f3a, 0x3aa845, 0x267a33};
-  u32 g = greens[(u32)(town_rand(rng) * 3.0f) % 3];
-  if (round) {
-    MeshBuilderStyle leaf = town_style(g, MESH_BUILDER_COLLIDER_NONE);
-    mesh_builder_polyhedron(b, &leaf, m4_trs((v3){at.x, th + 0.9f * scale, at.z}, quat_identity(), v3_scale(V3_ONE, 1.15f * scale)),
-                            PG_POLYHEDRON_ICOSA, 0);
-    MeshBuilderStyle leaf2 = town_style(0x45b84f, MESH_BUILDER_COLLIDER_NONE);
-    mesh_builder_polyhedron(b, &leaf2,
-                            m4_trs((v3){at.x + 0.35f * scale, th + 1.4f * scale, at.z - 0.2f * scale}, quat_identity(),
-                                   v3_scale(V3_ONE, 0.7f * scale)),
-                            PG_POLYHEDRON_ICOSA, 0);
-    return;
+// a brick: size w x h x d studs, centred on x/z, its BOTTOM at y (as box() in the three.js town)
+hz_internal void town_box(Town *t, u32 hex, f32 w, f32 h, f32 d, f32 x, f32 y, f32 z, b32 studs) {
+  MeshBuilderStyle st = town_style(hex);
+  mesh_builder_box(t->b, &st, m4_trs(town_m(x, y + h * 0.5f, z), quat_identity(), V3_ONE), town_m(w, h, d));
+  if (studs)
+    town_stud_rect(t, hex, x - w * 0.5f, x + w * 0.5f, z - d * 0.5f, z + d * 0.5f, y + h);
+}
+
+// a rotated brick (centre, euler radians)
+hz_internal void town_box_rot(Town *t, u32 hex, v3 size, v3 center, v3 euler) {
+  MeshBuilderStyle st = town_style(hex);
+  mesh_builder_box(t->b, &st, m4_trs(town_m(center.x, center.y, center.z), quat_from_euler(euler), V3_ONE),
+                   town_m(size.x, size.y, size.z));
+}
+
+// a cylinder standing on y (bottom), radius r, height h, in studs
+hz_internal void town_cyl(Town *t, u32 hex, f32 x, f32 y, f32 z, f32 r_bottom, f32 r_top, f32 h, u32 seg, b32 smooth) {
+  MeshBuilderStyle st = town_style(hex);
+  st.flat = !smooth;
+  mesh_builder_cylinder(t->b, &st, m4_trs(town_m(x, y + h * 0.5f, z), quat_identity(), V3_ONE),
+                        &(PgCylinderDesc){.radius_top = r_top * TOWN_STUD, .radius_bottom = r_bottom * TOWN_STUD,
+                                          .height = h * TOWN_STUD, .radial_segments = seg});
+}
+
+// a solid block nobody walks through (the three.js "blockers"), 2 m high
+hz_internal void town_block(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
+  v3 c = town_m((x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f);
+  c.y = 1.0f;
+  mesh_builder_collider_box(t->b, c, quat_identity(), (v3){(x1 - x0) * 0.5f * TOWN_STUD, 1.0f, (z1 - z0) * 0.5f * TOWN_STUD});
+}
+
+// ---------------------------------------------------------------- plants
+
+// a LEGO flower plant: a 2x2 leaf star and a 1x1 flower with a yellow centre
+hz_internal void town_flower(Town *t, f32 x, f32 z, u32 hex, f32 y) {
+  MeshBuilderStyle leaf = town_style(C_DARK_GREEN);
+  f32 a0 = town_rand(&t->rng) * 6.283f;
+  for (i32 i = 0; i < 4; i++) {
+    f32 a = a0 + (f32)i * 1.5708f;
+    v3 base = town_m(x, y + 0.15f, z);
+    v3 tip = town_m(x + m_cosf(a) * 0.95f, y + 0.55f, z + m_sinf(a) * 0.95f);
+    mesh_builder_cone_between(t->b, &leaf, base, tip, 0.28f * TOWN_STUD, 4);
   }
-  for (i32 k = 0; k < 3; k++) {
-    MeshBuilderStyle leaf = town_style(k == 2 ? 0x45b84f : g, MESH_BUILDER_COLLIDER_NONE);
-    f32 base = th * 0.7f + (f32)k * 0.8f * scale;
-    f32 r = (1.5f - 0.38f * (f32)k) * scale;
-    mesh_builder_cone_between(b, &leaf, (v3){at.x, base, at.z}, (v3){at.x, base + 1.6f * scale, at.z}, r, 7);
+  town_cyl(t, C_DARK_GREEN, x, y, z, 0.12f, 0.12f, 1.1f, 5, false);
+  town_cyl(t, hex, x, y + 1.0f, z, 0.45f, 0.5f, 0.3f, 8, false);
+  town_cyl(t, C_YELLOW, x, y + 1.3f, z, 0.18f, 0.18f, 0.08f, 6, false);
+}
+
+// LEGO bamboo leaves (part 30176): five long leaves fanning out of one point
+hz_internal void town_leaves(Town *t, f32 x, f32 z, f32 s) {
+  MeshBuilderStyle leaf = town_style(C_DARK_GREEN);
+  f32 a0 = town_rand(&t->rng) * 6.283f;
+  for (i32 i = 0; i < 5; i++) {
+    f32 a = a0 + (f32)i * 1.2566f;
+    f32 up = 1.3f + 0.5f * (f32)(i % 2);
+    v3 base = town_m(x, 0.1f, z);
+    v3 tip = town_m(x + m_cosf(a) * 1.1f * s, up * s, z + m_sinf(a) * 1.1f * s);
+    mesh_builder_cone_between(t->b, &leaf, base, tip, 0.22f * s * TOWN_STUD, 4);
   }
 }
 
-// the pond: a stone rim (solid), water and a couple of lily pads
-hz_internal void town_pond(MeshBuilder *b, v3 c, f32 radius) {
-  MeshBuilderStyle rim = town_style(0x9a9a92, MESH_BUILDER_COLLIDER_CYLINDER);
-  mesh_builder_cylinder(b, &rim, m4_trs((v3){c.x, 0.25f, c.z}, quat_identity(), V3_ONE),
-                        &(PgCylinderDesc){.radius_top = radius + 0.4f, .radius_bottom = radius + 0.5f, .height = 0.5f,
-                                          .radial_segments = 14});
-  MeshBuilderStyle water = town_style(0x3d9be0, MESH_BUILDER_COLLIDER_NONE);
-  water.flat = false;
-  mesh_builder_cylinder(b, &water, m4_trs((v3){c.x, 0.52f, c.z}, quat_identity(), V3_ONE),
-                        &(PgCylinderDesc){.radius_top = radius, .radius_bottom = radius, .height = 0.06f, .radial_segments = 14});
-  MeshBuilderStyle pad = town_style(0x4fbf4a, MESH_BUILDER_COLLIDER_NONE);
-  v3 pads[] = {{c.x - 1.2f, 0.56f, c.z + 0.8f}, {c.x + 1.0f, 0.56f, c.z - 1.1f}, {c.x + 0.3f, 0.56f, c.z + 1.6f}};
-  for (u32 i = 0; i < 3; i++)
-    mesh_builder_cylinder(b, &pad, m4_trs(pads[i], quat_identity(), V3_ONE),
-                          &(PgCylinderDesc){.radius_top = 0.42f, .radius_bottom = 0.42f, .height = 0.03f, .radial_segments = 7});
-  town_flower(b, (v3){c.x - 1.2f, 0.3f, c.z + 0.8f}, 0xff9ad5);
+// a 4x4 LEGO flower pot: a terracotta pot, a green dome and flower heads around it
+hz_internal void town_flower_pot(Town *t, f32 x, f32 z, b32 pot) {
+  f32 y = 0.0f;
+  if (pot) {
+    town_cyl(t, C_RED_BROWN, x, 0.0f, z, 1.4f, 1.8f, 1.6f, 12, false);
+    town_cyl(t, 0x6b3a22u, x, 1.6f, z, 1.85f, 1.85f, 0.25f, 12, false);
+    y = 1.6f;
+  }
+  MeshBuilderStyle green = town_style(C_DARK_GREEN);
+  mesh_builder_polyhedron(t->b, &green, m4_trs(town_m(x, y + 0.5f, z), quat_identity(), town_m(1.6f, 1.2f, 1.6f)), PG_POLYHEDRON_ICOSA, 1);
+  u32 cols[] = {C_RED, C_YELLOW, C_PINK, C_WHITE, C_ORANGE};
+  for (i32 i = 0; i < 7; i++) {
+    f32 a = (f32)i * 0.9f + town_rand(&t->rng);
+    f32 r = i == 0 ? 0.0f : 1.05f;
+    f32 fy = y + (i == 0 ? 1.7f : 1.15f);
+    town_cyl(t, cols[(u32)(town_rand(&t->rng) * 5.0f) % 5u], x + m_cosf(a) * r, fy, z + m_sinf(a) * r, 0.4f, 0.45f, 0.3f, 8, false);
+  }
+  town_block(t, x - 1.8f, x + 1.8f, z - 1.8f, z + 1.8f);
 }
 
-// a patch of tall grass: clumps of blades as thin cones
-hz_internal void town_tall_grass(MeshBuilder *b, f32 x0, f32 z0, f32 x1, f32 z1, TownRng *rng) {
-  MeshBuilderStyle blade = town_style(0x2c7d2c, MESH_BUILDER_COLLIDER_NONE);
-  MeshBuilderStyle tip = town_style(0x5cc24a, MESH_BUILDER_COLLIDER_NONE);
-  for (f32 x = x0; x <= x1; x += 0.8f)
-    for (f32 z = z0; z <= z1; z += 0.8f) {
-      v3 p = {x + (town_rand(rng) - 0.5f) * 0.4f, 0.0f, z + (town_rand(rng) - 0.5f) * 0.4f};
-      for (i32 k = 0; k < 3; k++) {
-        v3 base = {p.x + (f32)(k - 1) * 0.18f, 0.0f, p.z + (town_rand(rng) - 0.5f) * 0.2f};
-        v3 top = {base.x + (town_rand(rng) - 0.5f) * 0.25f, 0.7f + town_rand(rng) * 0.35f, base.z};
-        mesh_builder_cone_between(b, k == 1 ? &tip : &blade, base, top, 0.14f, 4);
+// a brick spruce: a round trunk and four stacked green tiers with studs on the top one
+hz_internal void town_spruce(Town *t, f32 x, f32 z, f32 s) {
+  f32 k = s / 9.5f;
+  town_cyl(t, C_BROWN, x, 0.0f, z, 0.55f * k, 0.5f * k, 2.4f * k, 8, false);
+  u32 g = town_rand(&t->rng) < 0.5f ? C_PINE : C_DARK_GREEN;
+  f32 y = 1.6f * k;
+  for (i32 i = 0; i < 4; i++) {
+    f32 rb = (3.4f - 0.72f * (f32)i) * k, rt = rb * 0.42f, h = 2.3f * k;
+    town_cyl(t, i % 2 ? g : town_shade(g, 1.12f), x, y, z, rb, rt, h, 8, false);
+    y += h * 0.78f;
+  }
+  town_cyl(t, g, x, y, z, 0.7f * k, 0.15f * k, 1.4f * k, 6, false);
+}
+
+// a round brick tree: a trunk and a crown of stacked round bricks, the top one with studs
+hz_internal void town_round_tree(Town *t, f32 x, f32 z, f32 s) {
+  f32 k = s / 6.5f;
+  town_cyl(t, C_BROWN, x, 0.0f, z, 0.55f * k, 0.5f * k, 2.6f * k, 8, false);
+  f32 radii[] = {1.9f, 2.9f, 3.2f, 2.8f, 1.8f};
+  f32 y = 2.2f * k;
+  u32 g = town_rand(&t->rng) < 0.5f ? C_GREEN : 0x58ab41u;
+  for (i32 i = 0; i < 5; i++) {
+    f32 h = 1.0f * k;
+    town_cyl(t, i % 2 ? g : town_shade(g, 0.9f), x, y, z, radii[i] * k, radii[i] * k, h, 12, false);
+    y += h;
+  }
+  for (i32 i = 0; i < 4; i++) {
+    f32 a = (f32)i * 1.5708f + 0.785f;
+    town_stud(t, g, x + m_cosf(a) * 0.9f * k, y, z + m_sinf(a) * 0.9f * k);
+  }
+}
+
+// a LEGO bush: three overlapping green round bricks
+hz_internal void town_bush(Town *t, f32 x, f32 z, f32 s) {
+  for (i32 i = 0; i < 3; i++) {
+    f32 a = (f32)i * 2.094f + town_rand(&t->rng);
+    f32 r = (0.55f + 0.2f * (f32)i) * s * 0.55f;
+    town_cyl(t, i == 1 ? C_DARK_GREEN : C_GREEN, x + m_cosf(a) * 0.4f * s, 0.0f, z + m_sinf(a) * 0.4f * s, r, r * 0.8f,
+             (0.7f + 0.25f * (f32)(i % 2)) * s, 10, false);
+  }
+}
+
+// a LEGO grass stem: a round 1x1 plate with six flat blades and a centre blade
+hz_internal void town_grass_tuft(Town *t, f32 x, f32 z, f32 s, u32 hex) {
+  town_cyl(t, hex, x, 0.0f, z, 0.4f, 0.4f, 0.3f, 6, false);
+  MeshBuilderStyle blade = town_style(hex);
+  f32 a0 = town_rand(&t->rng) * 6.283f;
+  for (i32 i = 0; i < 7; i++) {
+    f32 a = a0 + (f32)i * 0.9f;
+    f32 lean = i == 6 ? 0.0f : 0.55f + 0.15f * (f32)(i % 2);
+    f32 h = (i == 6 ? 2.4f : 2.0f) * s;
+    v3 base = town_m(x, 0.25f, z);
+    v3 tip = town_m(x + m_cosf(a) * lean * s, h, z + m_sinf(a) * lean * s);
+    mesh_builder_cone_between(t->b, &blade, base, tip, 0.17f * TOWN_STUD, 3);
+  }
+}
+
+// ---------------------------------------------------------------- buildings
+
+// a window with a white frame, glass and a mullion; axis 'z' = in a wall facing +-z
+hz_internal void town_window(Town *t, f32 x, f32 y, f32 z, f32 w, f32 h, b32 along_z, f32 out) {
+  if (along_z) {
+    town_box(t, C_WHITE, w + 0.4f, h + 0.4f, 0.3f, x, y - 0.2f, z + out * 0.05f, false);
+    town_box(t, C_GLASS, w - 0.2f, h - 0.2f, 0.3f, x, y + 0.1f, z + out * 0.2f, false);
+    town_box(t, C_WHITE, 0.15f, h, 0.2f, x, y, z + out * 0.3f, false);
+  } else {
+    town_box(t, C_WHITE, 0.3f, h + 0.4f, w + 0.4f, x + out * 0.05f, y - 0.2f, z, false);
+    town_box(t, C_GLASS, 0.3f, h - 0.2f, w - 0.2f, x + out * 0.2f, y + 0.1f, z, false);
+    town_box(t, C_WHITE, 0.2f, h, 0.15f, x + out * 0.3f, y, z, false);
+  }
+}
+
+// a brick wall (bottom on the 0.4 foundation) with the courses drawn as thin grooves every brick (1.2 studs)
+hz_internal void town_wall(Town *t, u32 hex, f32 w, f32 h, f32 d, f32 x, f32 z) {
+  town_box(t, hex, w, h, d, x, 0.4f, z, false);
+  u32 groove = town_shade(hex, 0.86f);
+  for (f32 y = 0.4f + 1.2f; y < 0.4f + h - 0.3f; y += 1.2f)
+    town_box(t, groove, w + 0.06f, 0.07f, d + 0.06f, x, y - 0.035f, z, false);
+}
+
+// a two-storey village house (buildHouse): foundation, brick walls, floor band, door with step, windows, a stepped
+// brick roof with studs on the ridge, a chimney, the sign board above the door and a mailbox
+hz_internal void town_house(Town *t, f32 cx, f32 cz, f32 w, f32 d, u32 roof, u32 wall, u32 door, u32 mailbox) {
+  f32 x0 = cx - w * 0.5f, x1 = cx + w * 0.5f, z0 = cz - d * 0.5f, z1 = cz + d * 0.5f;
+  town_block(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f);
+  town_box(t, C_GRAY, w + 1.0f, 0.4f, d + 1.0f, cx, 0.0f, cz, false);
+  const f32 H = 7.2f;
+  town_wall(t, wall, w, H, 1.0f, cx, z1 - 0.5f);
+  town_wall(t, wall, w, H, 1.0f, cx, z0 + 0.5f);
+  town_wall(t, wall, 1.0f, H, d - 2.0f, x0 + 0.5f, cz);
+  town_wall(t, wall, 1.0f, H, d - 2.0f, x1 - 0.5f, cz);
+  town_box(t, wall, w - 2.0f, 0.4f, d - 2.0f, cx, H, cz, false); // the ceiling (no one looks in, but no gaps)
+  town_box(t, C_WHITE, w + 0.2f, 0.4f, d + 0.2f, cx, 3.8f, cz, false);
+  // door (front faces +z)
+  town_box(t, C_WHITE, 2.2f, 4.0f, 0.4f, cx, 0.4f, z1 + 0.1f, false);
+  town_box(t, door, 1.8f, 3.6f, 0.4f, cx, 0.4f, z1 + 0.25f, false);
+  town_box(t, C_YELLOW, 0.3f, 0.3f, 0.3f, cx + 0.55f, 2.05f, z1 + 0.5f, false);
+  town_box(t, C_DARK_GRAY, 3.0f, 0.4f, 1.2f, cx, 0.4f, z1 + 0.7f, true);
+  // windows: two below, two above at the sides (the middle above the door is the sign), one on each side wall
+  for (i32 s = -1; s <= 1; s += 2) {
+    f32 wx = cx + (f32)s * (w * 0.5f - 2.3f);
+    town_window(t, wx, 1.6f, z1, 2.4f, 1.8f, true, 1.0f);
+    town_window(t, wx, 5.0f, z1, 1.9f, 1.6f, true, 1.0f);
+    town_window(t, cx + (f32)s * w * 0.5f, 5.0f, cz, 2.4f, 1.6f, false, (f32)s);
+    town_window(t, wx, 5.0f, z0, 1.9f, 1.6f, true, -1.0f);
+  }
+  // stepped brick roof
+  const f32 ov = 0.8f;
+  for (i32 i = 0; i < 6; i++) {
+    f32 dd = d + ov * 2.0f - (f32)i * 1.9f;
+    if (dd <= 0.6f)
+      break;
+    town_box(t, i % 2 == 0 ? roof : town_shade(roof, 0.92f), w + ov * 2.0f, 0.6f, dd, cx, 0.4f + H + (f32)i * 0.6f, cz, false);
+  }
+  town_box(t, roof, w + ov * 2.0f, 0.4f, 1.0f, cx, 0.4f + H + 6.0f * 0.6f, cz, true);
+  town_box(t, C_RED_BROWN, 1.6f, 3.4f, 1.6f, cx + w * 0.5f - 2.2f, 0.4f + H + 0.6f, cz - 1.5f, true);
+  // the sign board above the door (white frame, a coloured board)
+  f32 sw = m_minf(3.4f, w - 7.4f), sh = sw / 4.0f;
+  town_box(t, C_WHITE, sw + 0.3f, sh + 0.3f, 0.2f, cx, 5.8f - sh * 0.5f - 0.15f, z1, false);
+  town_box(t, mailbox, sw, sh, 0.1f, cx, 5.8f - sh * 0.5f, z1 + 0.12f, false);
+  // mailbox
+  f32 mx = cx - 3.2f, mz = z1 + 2.2f;
+  town_box(t, C_DARK_GRAY, 0.4f, 1.6f, 0.4f, mx, 0.0f, mz, false);
+  town_box(t, mailbox, 1.0f, 0.9f, 1.4f, mx, 1.6f, mz, true);
+  town_block(t, mx - 0.6f, mx + 0.6f, mz - 0.8f, mz + 0.8f);
+}
+
+// Prof. Quill's lab (buildLab): tan walls, a green door, wide windows with striped awnings, round windows, a flat
+// roof with tiles, a rim with studs, solar panels, a chimney and a satellite dish
+hz_internal void town_lab(Town *t, f32 cx, f32 cz, f32 w, f32 d) {
+  f32 x0 = cx - w * 0.5f, x1 = cx + w * 0.5f, z0 = cz - d * 0.5f, z1 = cz + d * 0.5f;
+  town_block(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f);
+  town_box(t, C_GRAY, w + 1.0f, 0.4f, d + 1.0f, cx, 0.0f, cz, false);
+  const f32 H = 7.2f;
+  town_wall(t, C_TAN, w, H, 1.0f, cx, z1 - 0.5f);
+  town_wall(t, C_TAN, w, H, 1.0f, cx, z0 + 0.5f);
+  town_wall(t, C_TAN, 1.0f, H, d - 2.0f, x0 + 0.5f, cz);
+  town_wall(t, C_TAN, 1.0f, H, d - 2.0f, x1 - 0.5f, cz);
+  f32 fz = z1;
+  town_box(t, C_WHITE, 2.4f, 4.2f, 0.4f, cx, 0.4f, fz + 0.1f, false);
+  town_box(t, C_DARK_GREEN, 2.0f, 3.8f, 0.4f, cx, 0.4f, fz + 0.25f, false);
+  town_box(t, C_GLASS, 0.6f, 1.2f, 0.2f, cx, 2.6f, fz + 0.45f, false);
+  town_box(t, C_DARK_GRAY, 3.4f, 0.4f, 1.4f, cx, 0.4f, fz + 0.8f, true);
+  for (i32 s = -1; s <= 1; s += 2) {
+    f32 wx = cx + (f32)s * 4.6f;
+    town_window(t, wx, 1.6f, fz, 5.0f, 1.6f, true, 1.0f);
+    for (i32 i = 0; i < 3; i++)
+      town_box(t, i % 2 ? C_WHITE : C_RED, 5.4f, 0.3f, 0.6f, wx, 3.6f + (f32)i * 0.25f, fz + 0.4f + (f32)i * 0.35f, false);
+  }
+  // round windows
+  f32 rw[] = {-6.0f, -3.5f, 3.5f, 6.0f};
+  for (i32 i = 0; i < 4; i++) {
+    MeshBuilderStyle ring = town_style(C_DARK_GRAY);
+    quat up = quat_from_euler((v3){M_PI * 0.5f, 0.0f, 0.0f});
+    mesh_builder_cylinder(t->b, &ring, m4_trs(town_m(cx + rw[i], 5.8f, fz + 0.1f), up, V3_ONE),
+                          &(PgCylinderDesc){.radius_top = 0.85f * TOWN_STUD, .radius_bottom = 0.85f * TOWN_STUD,
+                                            .height = 0.3f * TOWN_STUD, .radial_segments = 14});
+    MeshBuilderStyle glass = town_style(0x40b8d8u);
+    mesh_builder_cylinder(t->b, &glass, m4_trs(town_m(cx + rw[i], 5.8f, fz + 0.18f), up, V3_ONE),
+                          &(PgCylinderDesc){.radius_top = 0.65f * TOWN_STUD, .radius_bottom = 0.65f * TOWN_STUD,
+                                            .height = 0.3f * TOWN_STUD, .radial_segments = 14});
+  }
+  // flat roof with white tiles and a rim with studs
+  town_box(t, C_DARK_GRAY, w + 1.0f, 0.6f, d + 1.0f, cx, 0.4f + H, cz, false);
+  for (f32 x = x0 + 1.0f; x < x1 - 0.5f; x += 2.5f)
+    for (f32 z = z0 + 1.0f; z < z1 - 0.5f; z += 2.5f)
+      town_box(t, C_WHITE, 2.3f, 0.25f, 2.3f, x + 1.15f, 0.4f + H + 0.6f, z + 1.15f, false);
+  town_box(t, C_GRAY, w + 1.0f, 0.8f, 0.6f, cx, 0.4f + H + 0.6f, z0 - 0.2f, true);
+  town_box(t, C_GRAY, w + 1.0f, 0.8f, 0.6f, cx, 0.4f + H + 0.6f, z1 + 0.2f, true);
+  town_box(t, C_GRAY, 0.6f, 0.8f, d, x0 - 0.2f, 0.4f + H + 0.6f, cz, false);
+  town_box(t, C_GRAY, 0.6f, 0.8f, d, x1 + 0.2f, 0.4f + H + 0.6f, cz, false);
+  // solar panels at the back of the roof
+  for (i32 i = 0; i < 3; i++) {
+    f32 px = x0 + 3.0f + (f32)i * 3.4f;
+    town_box_rot(t, 0x1d3f8au, (v3){3.0f, 0.2f, 2.0f}, (v3){px, 0.4f + H + 1.6f, z0 + 2.0f}, (v3){0.45f, 0.0f, 0.0f});
+    town_box(t, C_DARK_GRAY, 0.3f, 0.9f, 0.3f, px, 0.4f + H + 0.8f, z0 + 1.6f, false);
+  }
+  // chimney with a hole
+  town_box(t, C_RED_BROWN, 2.6f, 2.4f, 2.6f, x1 - 2.8f, 0.4f + H + 0.6f, z0 + 2.8f, false);
+  town_box(t, C_BLACK, 1.4f, 0.1f, 1.4f, x1 - 2.8f, 0.4f + H + 3.0f, z0 + 2.8f, false);
+  // satellite dish on a pole
+  town_box(t, C_DARK_GRAY, 0.4f, 1.6f, 0.4f, cx + 1.0f, 0.4f + H + 0.6f, cz, false);
+  MeshBuilderStyle dish = town_style(C_WHITE);
+  v3 rim_c = town_m(cx + 1.0f, 0.4f + H + 3.0f, cz + 0.6f);
+  mesh_builder_cone_between(t->b, &dish, rim_c, town_m(cx + 1.0f, 0.4f + H + 2.3f, cz - 0.2f), 1.4f * TOWN_STUD, 14);
+  // the lab sign: a blue board with a white frame over the door
+  town_box(t, C_WHITE, 5.4f, 2.1f, 0.15f, cx, 4.7f, fz + 0.02f, false);
+  town_box(t, 0x1e5aa8u, 5.0f, 1.7f, 0.1f, cx, 4.9f, fz + 0.1f, false);
+}
+
+// a white picket fence from (x0, z0) to (x1, z1): a post every stud, two rails, one collider
+hz_internal void town_fence(Town *t, f32 x0, f32 z0, f32 x1, f32 z1) {
+  f32 len = m_sqrtf((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
+  i32 n = (i32)m_maxf(1.0f, m_roundf(len));
+  for (i32 i = 0; i <= n; i++) {
+    f32 k = (f32)i / (f32)n;
+    town_box(t, C_WHITE, 0.22f, 1.5f, 0.22f, x0 + (x1 - x0) * k, 0.0f, z0 + (z1 - z0) * k, false);
+  }
+  b32 along_x = m_absf(x1 - x0) > m_absf(z1 - z0);
+  f32 mx = (x0 + x1) * 0.5f, mz = (z0 + z1) * 0.5f;
+  for (i32 r = 0; r < 2; r++)
+    town_box(t, C_WHITE, along_x ? len : 0.18f, 0.25f, along_x ? 0.18f : len, mx, 0.5f + 0.6f * (f32)r, mz, false);
+  town_block(t, m_minf(x0, x1) - 0.35f, m_maxf(x0, x1) + 0.35f, m_minf(z0, z1) - 0.35f, m_maxf(z0, z1) + 0.35f);
+}
+
+// a sign: posts and a board (colour of the board); facing +z
+hz_internal void town_sign_board(Town *t, f32 x, f32 z, f32 w, f32 h, f32 y, u32 board) {
+  town_box(t, C_WHITE, w + 0.2f, h + 0.2f, 0.25f, x, y - 0.1f, z, false);
+  town_box(t, board, w - 0.2f, h - 0.2f, 0.1f, x, y + 0.1f, z + 0.15f, false);
+}
+
+// a lamp post with a pale bulb and studs on the cap
+hz_internal void town_lamp(Town *t, f32 x, f32 z) {
+  town_box(t, C_BLACK, 0.35f, 5.0f, 0.35f, x, 0.0f, z, false);
+  town_box(t, C_BLACK, 0.9f, 0.2f, 0.9f, x, 5.0f, z, false);
+  town_box(t, 0xfff5c0u, 0.7f, 0.8f, 0.7f, x, 5.2f, z, false);
+  town_box(t, C_BLACK, 1.0f, 0.25f, 1.0f, x, 6.0f, z, true);
+  town_block(t, x - 0.4f, x + 0.4f, z - 0.4f, z + 0.4f);
+}
+
+// a pile of loose LEGO bricks (real brick sizes, studs on top), resting on each other
+hz_internal void town_brick_pile(Town *t, u32 seed, f32 cx, f32 cz, u32 color) {
+  TownRng rng = {.s = seed * 9973u + 17u};
+  f32 sizes[8][2] = {{2, 4}, {2, 2}, {2, 4}, {1, 2}, {1, 4}, {2, 3}, {2, 2}, {1, 1}};
+  u32 extra[] = {C_WHITE, C_YELLOW, C_BLUE, C_RED, C_GREEN, C_ORANGE};
+  f32 px[16], pz[16], pr[16], ptop[16];
+  i32 placed = 0;
+  const f32 R = 3.6f;
+  for (i32 i = 0; i < 16; i++) {
+    u32 si = (u32)(town_rand(&rng) * 8.0f) % 8u;
+    f32 w = sizes[si][0], d = sizes[si][1];
+    u32 col = town_rand(&rng) < 0.7f ? color : extra[(u32)(town_rand(&rng) * 6.0f) % 6u];
+    f32 my_r = m_sqrtf(w * w + d * d) * 0.5f;
+    f32 x = 0.0f, z = 0.0f, y = 99.0f;
+    for (i32 tries = 0; tries < 8 && y > 1.6f; tries++) {
+      f32 ang = town_rand(&rng) * 6.283f, dist = m_sqrtf(town_rand(&rng)) * R;
+      x = m_cosf(ang) * dist;
+      z = m_sinf(ang) * dist;
+      y = 0.0f;
+      for (i32 p = 0; p < placed; p++) {
+        f32 dx = px[p] - x, dz = pz[p] - z;
+        if (m_sqrtf(dx * dx + dz * dz) < (pr[p] + my_r) * 0.85f)
+          y = m_maxf(y, ptop[p]);
       }
     }
+    if (y > 2.0f)
+      continue;
+    f32 yaw = town_rand(&rng) * M_PI;
+    quat q = quat_from_euler((v3){0.0f, yaw, 0.0f});
+    MeshBuilderStyle st = town_style(col);
+    mesh_builder_box(t->b, &st, m4_trs(town_m(cx + x, y + 0.6f, cz + z), q, V3_ONE), town_m(w, 1.2f, d));
+    for (i32 sx = 0; sx < (i32)w; sx++)
+      for (i32 sz = 0; sz < (i32)d; sz++) {
+        v3 local = {(f32)sx - (w - 1.0f) * 0.5f, 0.0f, (f32)sz - (d - 1.0f) * 0.5f};
+        v3 rot = quat_rotate(q, local);
+        town_stud(t, col, cx + x + rot.x, y + 1.2f, cz + z + rot.z);
+      }
+    px[placed] = x;
+    pz[placed] = z;
+    pr[placed] = my_r;
+    ptop[placed] = y + 1.2f + TOWN_STUD_H;
+    placed++;
+  }
+  town_block(t, cx - R + 0.3f, cx + R - 0.3f, cz - R + 0.3f, cz + R - 0.3f);
 }
 
-// a flat strip of path, slightly above the grass
-hz_internal void town_path(MeshBuilder *b, f32 x0, f32 z0, f32 x1, f32 z1) {
-  town_box(b, 0xe2c98f, (v3){(x0 + x1) * 0.5f, 0.015f, (z0 + z1) * 0.5f}, (v3){x1 - x0, 0.03f, z1 - z0}, false);
-  // a darker edge on both long sides
-  if (x1 - x0 < z1 - z0) {
-    town_box(b, 0xc9ad72, (v3){x0, 0.02f, (z0 + z1) * 0.5f}, (v3){0.18f, 0.04f, z1 - z0}, false);
-    town_box(b, 0xc9ad72, (v3){x1, 0.02f, (z0 + z1) * 0.5f}, (v3){0.18f, 0.04f, z1 - z0}, false);
-  } else {
-    town_box(b, 0xc9ad72, (v3){(x0 + x1) * 0.5f, 0.02f, z0}, (v3){x1 - x0, 0.04f, 0.18f}, false);
-    town_box(b, 0xc9ad72, (v3){(x0 + x1) * 0.5f, 0.02f, z1}, (v3){x1 - x0, 0.04f, 0.18f}, false);
+// a yellow LEGO duck (body, head, orange beak); yaw 0 looks +x
+hz_internal void town_duck(Town *t, f32 x, f32 z, f32 s, f32 yaw, f32 y) {
+  quat q = quat_from_euler((v3){0.0f, yaw, 0.0f});
+  MeshBuilderStyle body = town_style(C_YELLOW);
+  body.flat = false;
+  v3 fwd = quat_rotate(q, (v3){1, 0, 0});
+  mesh_builder_sphere(t->b, &body, m4_trs(town_m(x, y + 0.45f * s, z), q, town_m(0.75f * s, 0.45f * s, 0.5f * s)), 10, 6);
+  v3 head = {x + fwd.x * 0.5f * s, y + 1.0f * s, z + fwd.z * 0.5f * s};
+  mesh_builder_sphere(t->b, &body, m4_trs(town_m(head.x, head.y, head.z), q, town_m(0.33f * s, 0.33f * s, 0.33f * s)), 8, 6);
+  town_box_rot(t, C_ORANGE, (v3){0.4f * s, 0.12f * s, 0.25f * s},
+               (v3){head.x + fwd.x * 0.35f * s, head.y - 0.05f * s, head.z + fwd.z * 0.35f * s}, (v3){0.0f, yaw, 0.0f});
+  town_box_rot(t, 0xf2b02cu, (v3){0.3f * s, 0.12f * s, 0.3f * s},
+               (v3){x - fwd.x * 0.7f * s, y + 0.7f * s, z - fwd.z * 0.7f * s}, (v3){0.0f, yaw, 0.0f});
+}
+
+// a LEGO cloud: stacked white plates
+hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
+  town_box(t, C_WHITE, 8.0f * s, 1.2f * s, 4.0f * s, x, y, z, false);
+  town_box(t, C_WHITE, 5.0f * s, 1.2f * s, 3.0f * s, x - 0.8f * s, y + 1.2f * s, z, false);
+  town_box(t, C_WHITE, 3.0f * s, 1.0f * s, 2.0f * s, x + 1.2f * s, y + 2.4f * s, z, false);
+  town_box(t, C_WHITE, 4.0f * s, 0.8f * s, 2.6f * s, x + 4.6f * s, y + 0.2f * s, z + 0.4f * s, false);
+}
+
+// ---------------------------------------------------------------- the village
+
+// grey road plates (0.4 high, studs on top), as the three.js roads list
+typedef struct TownRect {
+  f32 x0, x1, z0, z1;
+} TownRect;
+
+#define TOWN_ROAD_COUNT 7
+hz_internal TownRect town_road(i32 i) {
+  switch (i) {
+  case 0: return (TownRect){-3, 3, -27, 24};
+  case 1: return (TownRect){-26, 29, -2, 3};
+  case 2: return (TownRect){26, 29, 3, 10};
+  case 3: return (TownRect){29, 66, 7, 10};
+  case 4: return (TownRect){-16, -14, -6, -2};
+  case 5: return (TownRect){3, 15, 16.5f, 19.5f};
+  default: return (TownRect){-20, -18, 3, 7};
   }
 }
 
-// a mailbox on a post
-hz_internal void town_mailbox(MeshBuilder *b, v3 at, u32 hex) {
-  town_box(b, 0x6b4a2b, (v3){at.x, 0.5f, at.z}, (v3){0.12f, 1.0f, 0.12f}, false);
-  town_box(b, hex, (v3){at.x, 1.08f, at.z}, (v3){0.4f, 0.32f, 0.6f}, false);
-  town_box(b, 0xff3b3b, (v3){at.x + 0.22f, 1.2f, at.z + 0.15f}, (v3){0.04f, 0.3f, 0.08f}, false);
-}
-
-// main lane, once: the whole town into one slot; the parts become static renderer entities
+// main lane, once: the whole village into one slot; the parts become static renderer entities
 hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
-  ArenaAllocator *arena = arena_create(MB(64), MB(1));
+  ArenaAllocator *arena = arena_create(MB(128), MB(1));
   MeshBuilder mb;
-  mesh_builder_begin(&mb, arena, &(MeshBuilderDesc){.slot_count = 1, .vtx_reserve = 65536, .idx_reserve = 131072});
-  MeshBuilder *b = &mb;
-  TownRng rng = {.s = 20261114u};
+  mesh_builder_begin(&mb, arena, &(MeshBuilderDesc){.slot_count = 1, .vtx_reserve = 1u << 18, .idx_reserve = 1u << 19});
+  Town town = {.b = &mb, .rng = {.s = 20261114u}};
+  Town *t = &town;
 
-  // ---- paths: the main street north-south, a lane east-west past the houses, walks to the doors ----
-  town_path(b, -1.4f, TOWN_NORTH - 4.0f, 1.4f, 15.0f);
-  town_path(b, -13.0f, -3.0f, 13.0f, -0.2f);
-  town_path(b, -7.8f, -5.0f, -6.2f, -3.0f);
-  town_path(b, 6.2f, -5.0f, 7.8f, -3.0f);
+  // ---- roads: grey plates with studs, solid so the figure steps up onto them ----
+  for (i32 i = 0; i < TOWN_ROAD_COUNT; i++) {
+    TownRect rd = town_road(i);
+    MeshBuilderStyle st = town_style(C_GRAY);
+    st.collider = MESH_BUILDER_COLLIDER_BOX;
+    mesh_builder_box(t->b, &st, m4_trs(town_m((rd.x0 + rd.x1) * 0.5f, 0.2f, (rd.z0 + rd.z1) * 0.5f), quat_identity(), V3_ONE),
+                     town_m(rd.x1 - rd.x0, 0.4f, rd.z1 - rd.z0));
+    for (f32 x = rd.x0 + 0.5f; x < rd.x1; x += 1.0f)
+      for (f32 z = rd.z0 + 0.5f; z < rd.z1; z += 1.0f) {
+        // no studs where a road crosses another (each crossing has them once) or under the houses' steps
+        b32 dup = false;
+        for (i32 k = 0; k < i; k++) {
+          TownRect o = town_road(k);
+          if (x > o.x0 && x < o.x1 && z > o.z0 && z < o.z1)
+            dup = true;
+        }
+        if (!dup)
+          town_stud(t, C_GRAY, x, 0.4f, z);
+      }
+  }
 
-  // ---- your home (west) and the neighbour's (east), doors facing south to the lane ----
-  town_house(b, (v3){-7.0f, 0.0f, -8.5f}, (v3){7.0f, 3.6f, 6.0f}, 0xfff1dc, 0xd9463b, 0x8a5a33, 1.0f, true);
-  town_house(b, (v3){7.0f, 0.0f, -8.5f}, (v3){7.0f, 3.6f, 6.0f}, 0xf4ecff, 0x3b6fd9, 0x5a3b8a, 1.0f, false);
-  town_sign(b, (v3){-10.0f, 0.0f, -4.6f}, 1.0f, 0xffe7b0);
-  town_sign(b, (v3){10.0f, 0.0f, -4.6f}, 1.0f, 0xffe7b0);
-  town_mailbox(b, (v3){-4.6f, 0.0f, -4.4f}, 0xd9463b);
-  town_mailbox(b, (v3){4.6f, 0.0f, -4.4f}, 0x3b6fd9);
-  town_flower_bed(b, -9.8f, -8.2f, -4.9f, &rng);
-  town_flower_bed(b, 8.2f, 9.8f, -4.9f, &rng);
-  // a little garden fence behind each house
-  town_fence(b, (v3){-12.0f, 0.0f, -13.0f}, (v3){-2.0f, 0.0f, -13.0f});
-  town_fence(b, (v3){2.0f, 0.0f, -13.0f}, (v3){12.0f, 0.0f, -13.0f});
+  // ---- the houses: yours (west, blue roof) and Dex & Lumi's (east, red roof, yellow walls) ----
+  town_house(t, -15.0f, -11.0f, 12.0f, 10.0f, C_BLUE, C_WHITE, C_RED_BROWN, C_BLUE);
+  town_house(t, 47.0f, -12.0f, 16.0f, 12.0f, C_RED, C_YELLOW, C_BLUE, C_RED);
+  // Dex's garage next to it, with a grey door and a driveway plate
+  town_box(t, C_WHITE, 8.0f, 5.6f, 8.0f, 35.0f, 0.4f, -10.0f, false);
+  town_box(t, C_GRAY, 9.0f, 0.4f, 9.0f, 35.0f, 0.0f, -10.0f, false);
+  town_box(t, C_DARK_GRAY, 6.0f, 4.0f, 0.3f, 35.0f, 0.4f, -5.9f, false);
+  for (i32 i = 0; i < 4; i++)
+    town_box(t, C_GRAY, 6.0f, 0.1f, 0.35f, 35.0f, 1.2f + (f32)i * 0.9f, -5.75f, false);
+  town_box(t, C_RED, 9.0f, 0.6f, 9.0f, 35.0f, 6.0f, -10.0f, true);
+  town_block(t, 30.4f, 39.6f, -14.6f, -5.5f);
+  town_box(t, C_GRAY, 6.0f, 0.4f, 1.0f, 35.0f, 0.0f, -5.0f, false);
 
-  // ---- the lab (south-east): bigger, white with a grey roof, door facing west to the main street ----
+  // ---- the little park where Dex's old house used to be: trees, flowers, a bench ----
   {
-    v3 c = {9.0f, 0.0f, 9.0f};
-    v3 size = {10.0f, 4.6f, 7.0f};
-    town_box(b, 0xf6f8fa, (v3){c.x, size.y * 0.5f, c.z}, size, true);
-    town_box(b, 0x7d8a96, (v3){c.x, 0.2f, c.z}, (v3){size.x + 0.12f, 0.4f, size.z + 0.12f}, false);
-    town_box(b, 0xffffff, (v3){c.x, size.y + 0.06f, c.z}, (v3){size.x + 0.3f, 0.12f, size.z + 0.3f}, false);
-    town_roof(b, 0x66727e, (v3){c.x, 0.0f, c.z}, size.y + 0.1f, size.x + 0.9f, size.z + 1.0f, 1.8f);
-    // a dish and a vent on the roof
-    town_box(b, 0xc7d0d8, (v3){c.x + 3.0f, size.y + 1.0f, c.z + 1.2f}, (v3){0.25f, 1.4f, 0.25f}, false);
-    MeshBuilderStyle dish = town_style(0xe6ebef, MESH_BUILDER_COLLIDER_NONE);
-    mesh_builder_cone_between(b, &dish, (v3){c.x + 3.0f, size.y + 1.9f, c.z + 1.4f}, (v3){c.x + 3.0f, size.y + 1.5f, c.z + 1.0f},
-                              0.8f, 10);
-    // the entrance faces west (-x): door, frame, step, a blue band of windows on the long sides
-    f32 fx = c.x - size.x * 0.5f;
-    town_box(b, 0x2f5d8a, (v3){fx - 0.04f, 1.15f, c.z}, (v3){0.08f, 2.4f, 1.8f}, false);
-    town_box(b, 0x9fd7ff, (v3){fx - 0.08f, 1.1f, c.z}, (v3){0.06f, 2.1f, 1.5f}, false);
-    town_box(b, 0xbdb6aa, (v3){fx - 0.5f, 0.08f, c.z}, (v3){0.9f, 0.16f, 2.2f}, false);
-    town_box(b, 0x2f5d8a, (v3){fx - 0.45f, 2.75f, c.z}, (v3){0.9f, 0.14f, 2.4f}, false);
-    town_box(b, 0x2f5d8a, (v3){c.x, size.y - 0.7f, c.z - size.z * 0.5f - 0.03f}, (v3){size.x, 0.25f, 0.06f}, false);
-    town_box(b, 0x2f5d8a, (v3){c.x, size.y - 0.7f, c.z + size.z * 0.5f + 0.03f}, (v3){size.x, 0.25f, 0.06f}, false);
-    for (i32 i = 0; i < 4; i++) {
-      f32 x = c.x - 3.3f + 2.2f * (f32)i;
-      town_window_z(b, (v3){x, 2.0f, c.z - size.z * 0.5f}, -1.0f);
-      town_window_z(b, (v3){x, 2.0f, c.z + size.z * 0.5f}, 1.0f);
+    f32 cx = 15.0f, cz = -11.0f;
+    f32 tr[3][2] = {{-4.5f, -2.5f}, {4.5f, -3.0f}, {0.0f, -4.5f}};
+    for (i32 i = 0; i < 3; i++) {
+      town_round_tree(t, cx + tr[i][0], cz + tr[i][1], 5.5f + town_rand(&t->rng));
+      town_block(t, cx + tr[i][0] - 0.9f, cx + tr[i][0] + 0.9f, cz + tr[i][1] - 0.9f, cz + tr[i][1] + 0.9f);
     }
-    town_window_x(b, (v3){fx, 2.0f, c.z - 2.2f}, -1.0f);
-    town_window_x(b, (v3){fx, 2.0f, c.z + 2.2f}, -1.0f);
-    town_sign(b, (v3){fx - 1.2f, 0.0f, c.z + 2.4f}, 1.0f, 0xd6ecff);
-    // a fenced herb garden behind the lab
-    town_fence(b, (v3){5.0f, 0.0f, 14.0f}, (v3){14.0f, 0.0f, 14.0f});
-  }
-  // the walk to the lab door
-  town_path(b, 1.4f, 8.2f, 3.9f, 9.8f);
-
-  // ---- the pond (south-west) with a bench-like rock and flowers around ----
-  town_pond(b, (v3){-8.0f, 0.0f, 9.0f}, 3.4f);
-  for (i32 i = 0; i < 10; i++) {
-    f32 a = (f32)i * 0.63f + 0.3f;
-    town_flower(b, (v3){-8.0f + m_cosf(a) * 4.6f, 0.0f, 9.0f + m_sinf(a) * 4.6f}, town_petal((u32)i % 3u));
+    town_flower_pot(t, cx - 5.5f, cz + 3.0f, false);
+    town_flower_pot(t, cx + 5.5f, cz + 3.0f, false);
+    town_box(t, C_RED_BROWN, 3.2f, 0.4f, 1.2f, cx, 1.0f, cz + 1.5f, true);
+    town_box(t, C_RED_BROWN, 3.2f, 1.2f, 0.3f, cx, 1.4f, cz + 0.95f, false);
+    for (i32 s = -1; s <= 1; s += 2)
+      town_box(t, C_DARK_GRAY, 0.4f, 1.0f, 1.0f, cx + (f32)s * 1.3f, 0.0f, cz + 1.5f, false);
+    town_block(t, cx - 1.7f, cx + 1.7f, cz + 0.8f, cz + 2.2f);
   }
 
-  // ---- a few trees inside the town, round ones by the houses ----
-  town_tree(b, (v3){-13.5f, 0.0f, -3.5f}, 1.0f, true, &rng, true);
-  town_tree(b, (v3){13.5f, 0.0f, -3.5f}, 1.0f, true, &rng, true);
-  town_tree(b, (v3){-3.5f, 0.0f, 4.0f}, 0.9f, true, &rng, true);
-  town_tree(b, (v3){-14.0f, 0.0f, 15.0f}, 1.1f, false, &rng, true);
-  town_tree(b, (v3){3.5f, 0.0f, 15.5f}, 0.9f, true, &rng, true);
+  // ---- loose LEGO brick piles ----
+  town_brick_pile(t, 0, 45.0f, 16.5f, C_RED);
+  town_brick_pile(t, 2, 57.5f, 16.5f, C_YELLOW);
+  town_brick_pile(t, 3, 33.5f, 17.0f, C_BLUE);
+  town_brick_pile(t, 1, -17.0f, -21.5f, C_ORANGE);
 
-  // ---- the north exit: the street leads out between two fences, tall grass beyond, a sign ----
-  town_fence(b, (v3){-2.4f, 0.0f, -18.0f}, (v3){-2.4f, 0.0f, TOWN_NORTH});
-  town_fence(b, (v3){2.4f, 0.0f, -18.0f}, (v3){2.4f, 0.0f, TOWN_NORTH});
-  town_sign(b, (v3){3.4f, 0.0f, -16.5f}, 1.0f, 0xc8f0c0);
-  town_tall_grass(b, 4.5f, -19.5f, 12.0f, -15.5f, &rng);
-  town_tall_grass(b, -12.0f, -19.5f, -5.0f, -16.0f, &rng);
-  town_tall_grass(b, 12.0f, 1.5f, 17.0f, 4.0f, &rng);
+  // ---- the lab ----
+  town_lab(t, 13.0f, 11.0f, 16.0f, 10.0f);
 
-  // ---- the tree line around the town: two staggered rows outside the walkable square, invisible walls inside ----
-  for (i32 row = 0; row < 2; row++) {
-    f32 inset = 1.2f + 2.4f * (f32)row;
-    f32 step = 2.6f;
-    for (f32 x = -TOWN_HALF_X - inset; x <= TOWN_HALF_X + inset; x += step) {
-      f32 jx = (town_rand(&rng) - 0.5f) * 0.8f;
-      if (m_absf(x) > 3.2f) // the gap where the street leaves north
-        town_tree(b, (v3){x + jx, 0.0f, TOWN_NORTH - inset}, 1.0f + town_rand(&rng) * 0.4f, false, &rng, false);
-      town_tree(b, (v3){x + jx, 0.0f, TOWN_SOUTH + inset}, 1.0f + town_rand(&rng) * 0.4f, row == 1, &rng, false);
+  // ---- the garden: a white fence with a gate, rows of flowers, a sign ----
+  {
+    f32 x0 = -25.0f, x1 = -13.0f, z0 = 7.0f, z1 = 17.0f;
+    town_fence(t, x0, z0, -20.2f, z0);
+    town_fence(t, -17.8f, z0, x1, z0);
+    town_fence(t, x0, z1, x1, z1);
+    town_fence(t, x0, z0, x0, z1);
+    town_fence(t, x1, z0, x1, z1);
+    town_box(t, C_WHITE, 0.8f, 2.0f, 0.8f, -20.4f, 0.0f, z0, true);
+    town_box(t, C_WHITE, 0.8f, 2.0f, 0.8f, -17.6f, 0.0f, z0, true);
+    u32 cols[] = {C_RED, C_RED, C_YELLOW, C_PINK, C_WHITE, C_ORANGE};
+    for (f32 x = x0 + 1.6f; x < x1 - 1.0f; x += 2.2f)
+      for (f32 z = z0 + 1.9f; z < z1 - 1.0f; z += 2.2f) {
+        if (town_rand(&t->rng) < 0.15f)
+          continue;
+        if (z < 10.0f && (m_absf(x + 21.2f) < 0.5f || m_absf(x + 19.0f) < 0.5f))
+          continue;
+        town_flower(t, x + (town_rand(&t->rng) - 0.5f) * 0.3f, z + (town_rand(&t->rng) - 0.5f) * 0.3f,
+                    cols[(u32)(town_rand(&t->rng) * 6.0f) % 6u], 0.0f);
+      }
+    town_box(t, C_BROWN, 0.3f, 2.6f, 0.3f, -21.35f, 0.0f, 8.9f, false);
+    town_box(t, C_TAN, 0.15f, 1.5f, 2.8f, -21.15f, 1.35f, 8.9f, false);
+    town_block(t, -21.55f, -21.05f, 7.6f, 10.2f);
+  }
+
+  // ---- the pond: a brown border with studs, a dark bed, water, lily pads, a fish and the duck family ----
+  {
+    f32 x0 = -12.0f, x1 = -4.0f, z0 = 15.0f, z1 = 22.0f;
+    town_block(t, x0 - 0.4f, x1 + 0.4f, z0 - 0.4f, z1 + 0.4f);
+    town_box(t, C_RED_BROWN, x1 - x0 + 1.0f, 0.4f, 0.6f, (x0 + x1) * 0.5f, 0.0f, z0 - 0.2f, true);
+    town_box(t, C_RED_BROWN, x1 - x0 + 1.0f, 0.4f, 0.6f, (x0 + x1) * 0.5f, 0.0f, z1 + 0.2f, true);
+    town_box(t, C_RED_BROWN, 0.6f, 0.4f, z1 - z0, x0 - 0.2f, 0.0f, (z0 + z1) * 0.5f, true);
+    town_box(t, C_RED_BROWN, 0.6f, 0.4f, z1 - z0, x1 + 0.2f, 0.0f, (z0 + z1) * 0.5f, true);
+    town_box(t, 0x1d4a5eu, x1 - x0, 0.05f, z1 - z0, (x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f, false);
+    town_box(t, C_WATER, x1 - x0, 0.1f, z1 - z0, (x0 + x1) * 0.5f, 0.2f, (z0 + z1) * 0.5f, false);
+    f32 pads[3][2] = {{-10.0f, 17.0f}, {-6.5f, 20.0f}, {-8.0f, 18.8f}};
+    for (i32 i = 0; i < 3; i++)
+      town_cyl(t, C_GREEN, pads[i][0], 0.3f, pads[i][1], 0.6f, 0.6f, 0.08f, 12, false);
+    town_flower(t, -6.5f, 20.0f, C_PINK, 0.38f);
+    town_box_rot(t, C_ORANGE, (v3){0.8f, 0.3f, 0.35f}, (v3){-7.0f, 0.3f, 16.5f}, (v3){0.0f, 0.4f, 0.0f});
+    town_duck(t, -9.2f, 19.2f, 1.2f, 0.4f, 0.3f);
+    town_duck(t, -7.6f, 19.9f, 0.7f, 0.2f, 0.3f);
+    town_duck(t, -6.4f, 20.6f, 0.7f, -0.3f, 0.3f);
+    town_box(t, C_RED_BROWN, 3.0f, 0.3f, 1.0f, -7.5f, 0.9f, 22.4f + 0.0f, false); // bench near the pond
+    town_box(t, C_DARK_GRAY, 0.4f, 0.9f, 0.8f, -8.7f, 0.0f, 22.4f, false);
+    town_box(t, C_DARK_GRAY, 0.4f, 0.9f, 0.8f, -6.3f, 0.0f, 22.4f, false);
+  }
+
+  // ---- signs ----
+  town_box(t, C_BROWN, 0.35f, 3.2f, 0.35f, 4.4f, 0.0f, 20.0f, false);
+  town_box(t, C_BROWN, 0.35f, 3.2f, 0.35f, 7.4f, 0.0f, 20.0f, false);
+  town_sign_board(t, 5.9f, 20.2f, 3.8f, 2.0f, 1.3f, C_WHITE);
+  town_box(t, C_RED, 3.0f, 0.35f, 0.05f, 5.9f, 2.55f, 20.45f, false); // the title stripe on the village sign
+  town_block(t, 4.0f, 7.8f, 19.6f, 20.6f);
+  town_box(t, C_BROWN, 0.35f, 3.2f, 0.35f, 5.0f, 0.0f, -24.5f, false);
+  town_sign_board(t, 5.0f, -24.3f, 3.4f, 1.8f, 1.3f, 0xfff6c8u);
+  town_block(t, 4.5f, 5.5f, -25.0f, -24.0f);
+  town_sign_board(t, 13.0f, 17.05f, 0.1f, 0.1f, 0.0f, C_WHITE); // (the lab's sign is on its wall)
+
+  // ---- lamp posts ----
+  f32 lamps[6][2] = {{-4, -4}, {4, 4}, {-4, 10}, {4, -14}, {-22, 4}, {22, -3.5f}};
+  for (i32 i = 0; i < 6; i++)
+    town_lamp(t, lamps[i][0], lamps[i][1]);
+
+  // ---- round trees inside the village ----
+  f32 rt[6][2] = {{22, 20}, {-24, -20}, {8, -20}, {-9, -20}, {24, 4}, {21, -21}};
+  for (i32 i = 0; i < 6; i++) {
+    town_round_tree(t, rt[i][0], rt[i][1], 6.5f);
+    town_block(t, rt[i][0] - 0.9f, rt[i][0] + 0.9f, rt[i][1] - 0.9f, rt[i][1] + 0.9f);
+  }
+
+  // ---- bamboo leaves around the pond, along the walls, by the garden and the exit ----
+  f32 lv[][3] = {{-13, 15.5f, 1.6f}, {-13, 21, 1.7f}, {-3.4f, 17, 1.5f}, {-12.6f, 23.6f, 1.6f}, {-8, 23.8f, 1.6f},
+                 {-20.6f, -5.2f, 1.2f}, {-18.6f, -5.2f, 1.2f}, {-11.6f, -5.2f, 1.2f},
+                 {35, 10.6f, 1.5f}, {39, 10.6f, 1.5f}, {59, 10.6f, 1.5f}, {62, 10.6f, 1.5f},
+                 {6, 17, 1.25f}, {18, 17, 1.25f}, {20, 17, 1.25f},
+                 {-24, 8.5f, 1.3f}, {-24, 15.6f, 1.3f}, {-14, 15.6f, 1.3f},
+                 {-25.5f, -4, 1.8f}, {25.5f, 8, 1.8f}, {-25.5f, 18, 1.8f}, {25.5f, -18, 1.8f}, {6.5f, -25.6f, 1.8f},
+                 {-6.5f, -25.6f, 1.8f}};
+  for (u32 i = 0; i < sizeof(lv) / sizeof(lv[0]); i++)
+    town_leaves(t, lv[i][0], lv[i][1], lv[i][2]);
+
+  // ---- flower beds, single flowers and flower pots ----
+  for (f32 x = 4.2f; x <= 6.3f; x += 2.1f)
+    town_flower(t, x, 18.6f, town_rand(&t->rng) < 0.5f ? C_RED : C_YELLOW, 0.0f);
+  for (f32 x = 19.7f; x <= 21.8f; x += 2.1f)
+    town_flower(t, x, 18.6f, town_rand(&t->rng) < 0.5f ? C_RED : C_YELLOW, 0.0f);
+  for (f32 x = -11.5f; x <= -4.8f; x += 2.1f)
+    town_flower(t, x, 23.7f, town_rand(&t->rng) < 0.5f ? C_PINK : C_WHITE, 0.0f);
+  f32 fl[3][2] = {{8, -9.5f}, {8, -16}, {22, -16}};
+  for (i32 i = 0; i < 3; i++)
+    town_flower(t, fl[i][0], fl[i][1], C_ORANGE, 0.0f);
+  town_flower_pot(t, -11.8f, -4.3f, true);
+  town_flower_pot(t, -22.5f, -4.3f, true);
+  town_flower_pot(t, 23.5f, 12.0f, true);
+  town_flower_pot(t, 55.5f, -4.6f, true);
+  // crates by the lab
+  town_box(t, C_BROWN, 1.6f, 1.6f, 1.6f, 22.6f, 0.0f, 9.0f, true);
+  town_box(t, C_TAN, 1.6f, 1.6f, 1.6f, 22.6f, 1.6f, 9.0f, true);
+  town_block(t, 21.6f, 23.6f, 8.0f, 10.0f);
+
+  // ---- tall grass north of the village gap (Route 1 starts here) ----
+  {
+    u32 greens[] = {0x58ab41u, C_GREEN, 0x7fc04au, 0x3c8c3au};
+    i32 n = 0;
+    for (f32 x = -8.6f + 0.5f; x < 8.6f; x += 1.05f)
+      for (f32 z = -42.0f + 0.5f; z < -28.2f; z += 1.05f)
+        town_grass_tuft(t, x + (town_rand(&t->rng) - 0.5f) * 0.4f, z + (town_rand(&t->rng) - 0.5f) * 0.4f,
+                        0.8f + town_rand(&t->rng) * 0.5f, greens[(n++) % 4]);
+  }
+
+  // ---- trees: the borders around the village (two staggered rows), the line between village and route ----
+  {
+    const f32 step = 3.6f;
+    for (f32 z = -45.0f; z <= 27.0f; z += step) {
+      f32 xs[4] = {-30.3f, -27.4f, 70.3f, 67.4f};
+      for (i32 k = 0; k < 4; k++) {
+        f32 x = xs[k] + (town_rand(&t->rng) - 0.5f) * 0.8f, zz = z + (k % 2 ? step * 0.5f : 0.0f);
+        if (town_rand(&t->rng) < 0.25f)
+          town_round_tree(t, x, zz, 6.0f + town_rand(&t->rng) * 1.5f);
+        else
+          town_spruce(t, x, zz, 8.5f + town_rand(&t->rng) * 2.5f);
+      }
     }
-    for (f32 z = TOWN_NORTH; z <= TOWN_SOUTH; z += step) {
-      f32 jz = (town_rand(&rng) - 0.5f) * 0.8f;
-      town_tree(b, (v3){-TOWN_HALF_X - inset, 0.0f, z + jz}, 1.0f + town_rand(&rng) * 0.4f, row == 0, &rng, false);
-      town_tree(b, (v3){TOWN_HALF_X + inset, 0.0f, z + jz}, 1.0f + town_rand(&rng) * 0.4f, row == 1, &rng, false);
+    for (f32 x = -24.0f; x <= 64.0f; x += step) {
+      town_round_tree(t, x + (town_rand(&t->rng) - 0.5f) * 0.8f, 27.2f, 3.0f + town_rand(&t->rng) * 0.6f);
+      town_bush(t, x + step * 0.5f, 25.0f, 1.6f + town_rand(&t->rng) * 0.5f);
+    }
+    for (f32 x = -25.0f; x <= 25.0f; x += step) {
+      if (m_absf(x) > 6.0f)
+        town_spruce(t, x, -27.6f, 8.5f + town_rand(&t->rng) * 2.5f);
+      if (m_absf(x + step * 0.5f) > 11.0f)
+        town_spruce(t, x + step * 0.5f, -30.2f, 8.5f + town_rand(&t->rng) * 2.5f);
+    }
+    for (f32 x = 28.0f; x <= 66.0f; x += step) {
+      town_spruce(t, x, -29.6f, 9.0f + town_rand(&t->rng) * 2.0f);
+      town_spruce(t, x + step * 0.5f, -32.4f, 9.0f + town_rand(&t->rng) * 2.0f);
+    }
+    for (f32 x = 11.5f; x <= 27.0f; x += step)
+      for (f32 z = -44.5f; z <= -32.0f; z += step) {
+        town_spruce(t, x, z, 8.5f + town_rand(&t->rng) * 2.5f);
+        town_spruce(t, -x, z, 8.5f + town_rand(&t->rng) * 2.5f);
+      }
+    for (f32 x = -9.0f; x <= 9.0f; x += step) {
+      if (m_absf(x) > 4.5f)
+        town_spruce(t, x, -45.0f, 9.5f);
+      if (m_absf(x + step * 0.5f) > 4.5f)
+        town_spruce(t, x + step * 0.5f, -43.2f, 9.5f);
+    }
+    f32 bushes[][2] = {{-7.2f, -26.2f}, {7.2f, -26.2f}, {-24, 22}, {24, 22}, {-24, -24}, {-9, 22.5f},
+                       {18, 22.5f},     {-26, 6},       {24, 14}, {64, 14}, {64, -24}};
+    for (u32 i = 0; i < sizeof(bushes) / sizeof(bushes[0]); i++) {
+      town_bush(t, bushes[i][0], bushes[i][1], 2.4f);
+      town_block(t, bushes[i][0] - 1.1f, bushes[i][0] + 1.1f, bushes[i][1] - 1.1f, bushes[i][1] + 1.1f);
     }
   }
-  // beyond the north gap: more forest, the route is for later
-  for (f32 x = -2.0f; x <= 2.0f; x += 2.0f)
-    town_tree(b, (v3){x, 0.0f, TOWN_NORTH - 4.5f}, 1.2f, false, &rng, false);
-  f32 cz = (TOWN_NORTH + TOWN_SOUTH) * 0.5f, half_z = (TOWN_SOUTH - TOWN_NORTH) * 0.5f;
-  mesh_builder_collider_box(b, (v3){-TOWN_HALF_X - 0.5f, 2.0f, cz}, quat_identity(), (v3){0.5f, 2.0f, half_z + 1.0f});
-  mesh_builder_collider_box(b, (v3){TOWN_HALF_X + 0.5f, 2.0f, cz}, quat_identity(), (v3){0.5f, 2.0f, half_z + 1.0f});
-  mesh_builder_collider_box(b, (v3){0.0f, 2.0f, TOWN_SOUTH + 0.5f}, quat_identity(), (v3){TOWN_HALF_X + 1.0f, 2.0f, 0.5f});
-  mesh_builder_collider_box(b, (v3){0.0f, 2.0f, TOWN_NORTH - 0.5f}, quat_identity(), (v3){TOWN_HALF_X + 1.0f, 2.0f, 0.5f});
 
-  MeshBuilderResult built = mesh_builder_finish(b, &(MeshBuilderFinishDesc){.renderer = r, .world = w, .alloc = alloc});
+  // ---- the villagers stand here (st_minifig.c spawns them): Dex, Pip, Prof. Quill, Mom ----
+  f32 npcs[4][2] = {{52.5f, -3.4f}, {-8.0f, 13.2f}, {-5.4f, -24.2f}, {-8.0f, -4.6f}};
+  for (i32 i = 0; i < 4; i++)
+    town_block(t, npcs[i][0] - 0.9f, npcs[i][0] + 0.9f, npcs[i][1] - 0.7f, npcs[i][1] + 0.7f);
+
+  // ---- LEGO clouds ----
+  town_cloud(t, -10.0f, 32.0f, -60.0f, 1.6f);
+  town_cloud(t, 30.0f, 36.0f, -70.0f, 2.0f);
+  town_cloud(t, 70.0f, 30.0f, -50.0f, 1.4f);
+  town_cloud(t, -45.0f, 34.0f, -20.0f, 1.5f);
+
+  // ---- where you can walk: the village, the gap north and the grass patch (walls along the edges) ----
+  {
+    TownRect walls[] = {
+        {-26.2f, 66.2f, 23.4f, 24.4f},    // south
+        {-27.2f, -26.2f, -25.6f, 23.4f},  // west
+        {66.2f, 67.2f, -25.6f, 23.4f},    // east
+        {-26.2f, -3.6f, -26.6f, -25.6f},  // north, west of the gap
+        {3.6f, 66.2f, -26.6f, -25.6f},    // north, east of the gap
+        {-4.6f, -3.6f, -28.6f, -25.6f},   // the gap
+        {3.6f, 4.6f, -28.6f, -25.6f},
+        {-8.4f, -3.6f, -29.6f, -28.6f},   // the grass patch
+        {3.6f, 8.4f, -29.6f, -28.6f},
+        {-9.4f, -8.4f, -41.6f, -28.6f},
+        {8.4f, 9.4f, -41.6f, -28.6f},
+        {-9.4f, 9.4f, -42.6f, -41.6f},
+    };
+    for (u32 i = 0; i < sizeof(walls) / sizeof(walls[0]); i++)
+      town_block(t, walls[i].x0, walls[i].x1, walls[i].z0, walls[i].z1);
+  }
+
+  MeshBuilderResult built = mesh_builder_finish(t->b, &(MeshBuilderFinishDesc){.renderer = r, .world = w, .alloc = alloc});
   HzHandleT(RendererMaterial) mat = renderer_default_material(r);
   const MeshBuilderSlotOut *slot = &built.slots[TOWN_SLOT];
   for (u32 i = 0; i < slot->part_count; i++)

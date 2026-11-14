@@ -24,22 +24,22 @@ properties 6
   name "color"
   type MAT_PROP_COLOR4
   c4
-    r 0.180000
-    g 0.420000
-    b 0.090000
+    r 0.070000
+    g 0.346000
+    b 0.068000
     a 1.000000
 
   name "line_color"
   type MAT_PROP_COLOR4
   c4
-    r 0.150000
-    g 0.360000
-    b 0.075000
+    r 0.095000
+    g 0.420000
+    b 0.090000
     a 1.000000
 
   name "cell_size"
   type MAT_PROP_FLOAT
-  f 1.000000
+  f 0.380000
 
   name "major_every"
   type MAT_PROP_FLOAT
@@ -47,7 +47,7 @@ properties 6
 
   name "line_width"
   type MAT_PROP_FLOAT
-  f 0.015000
+  f 0.300000
 
   name "smoothness"
   type MAT_PROP_FLOAT

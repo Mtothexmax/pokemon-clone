@@ -1,4 +1,5 @@
-// Starting template floor: a lit surface with a world-space grid, 1 m cells and a stronger line every major_every cells.
+// Brickhollow floor: a LEGO baseplate, one stud per cell_size (line_width = stud radius in cells, line_color = the
+// studs' top tint; major_every is unused).
 #include "renderer.glsl"
 
 @vs
@@ -59,28 +60,34 @@ struct StGridMaterial {
     float smoothness;  // 1 - roughness
 };
 
-// coverage of lines `width` cells wide on a unit grid, filtered to the pixel; settles to the mean once a cell is under a pixel
-float st_grid_lines(vec2 p, float width) {
-    vec2 w = max(fwidth(p), vec2(1e-5));
-    vec2 d = abs(fract(p + 0.5) - 0.5);
-    vec2 line = 1.0 - smoothstep(vec2(width * 0.5) - w, vec2(width * 0.5) + w, d);
-    line = mix(line, vec2(width), smoothstep(0.3, 1.0, w));
-    return max(line.x, line.y);
-}
-
+// LEGO baseplate: one stud per cell. The stud is shaded with a bent normal (its rim catches the sun, its top is flat)
+// and a soft contact shadow around it; once a cell is smaller than a few pixels it fades to the plain plate.
 void main() {
     StGridMaterial mat = StGridMaterial_unpack(v_material_offset);
     vec2 p = v_world_pos.xz / max(mat.cell_size, 1e-3);
-    float minor = st_grid_lines(p, mat.line_width);
-    float major = st_grid_lines(p / max(mat.major_every, 1.0), mat.line_width * 2.0 / max(mat.major_every, 1.0));
-    float line = max(minor * 0.45, major);
+    vec2 f = fract(p) - 0.5;
+    float d = length(f);
+    float r = mat.line_width;               // stud radius in cells
+    float px = max(fwidth(p.x), fwidth(p.y)); // cells per pixel
+    float detail = 1.0 - smoothstep(0.12, 0.35, px);
+    float aa = max(px, 1e-4);
+    float top = 1.0 - smoothstep(r - 0.06 - aa, r - 0.06 + aa, d);  // the flat top
+    float side = (1.0 - smoothstep(r - aa, r + aa, d)) - top;        // the rounded rim
+    float shadow = smoothstep(r + 0.16, r, d) * (1.0 - top - side);  // contact shadow on the plate
 
     vec3 n = normalize(v_normal);
+    vec2 dir = d > 1e-4 ? f / d : vec2(0.0);
+    vec3 bent = normalize(vec3(dir.x, 0.9, dir.y));
+    n = normalize(mix(n, bent, side * detail));
+
     HzSurface s = hz_surface_default();
     s.normal = n;
-    s.geo_normal = n;
-    s.albedo = mix(mat.color.rgb, mat.line_color.rgb, line);
-    s.smoothness = mat.smoothness;
+    s.geo_normal = normalize(v_normal);
+    vec3 albedo = mat.color.rgb;
+    albedo = mix(albedo, mat.line_color.rgb, top * detail * 0.6);
+    albedo *= 1.0 - shadow * detail * 0.35;
+    s.albedo = albedo;
+    s.smoothness = mix(mat.smoothness, mat.smoothness + 0.25, (top + side) * detail);
 #ifdef HZ_RENDERER_GTAO
     s.ambient_occlusion = min(s.ambient_occlusion, hz_ao(gl_FragCoord.xy));
 #endif

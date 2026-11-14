@@ -52,17 +52,8 @@
 #define GAME_TOUCH_LOOK 0.005f       // radians per dragged point
 #define GAME_ZOOM_RATE 0.1f
 #define GAME_PINCH_ZOOM 0.02f // zoom per point of pinch spread
-#define GAME_SPAWN ((v3){-5.0f, 0.1f, 1.5f}) // on the lane in front of your house
+#define GAME_SPAWN ((v3){-5.7f, 0.3f, 0.2f}) // on the road in front of your house (stud -15, 0.5)
 #define GAME_FALL_Y -20.0f // below this the player respawns
-// the player's avatar: the Kaigen bot, female (0, default) or male (1); same clips on both
-#ifndef GAME_AVATAR_MALE
-#define GAME_AVATAR_MALE 0
-#endif
-#if GAME_AVATAR_MALE
-#define GAME_AVATAR "starting_template/characters/kaigen_bot"
-#else
-#define GAME_AVATAR "starting_template/characters/kaigen_bot_female"
-#endif
 
 ECS_COMPONENT_TYPEDEF(AppMemory);
 
@@ -118,6 +109,7 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
 #include "st_town.c"
+#include "st_minifig.c"
 
 // ---- THE SIMULATION: all game state, shared by the app and headless runs (game_sim.h); no renderer, UI, audio or avatar ----
 
@@ -264,6 +256,7 @@ typedef struct AppState {
 #endif
   b32 playable; // the first frame with nothing left to load has been logged
   AudioSystem audio;
+  MinifigSet figs; // the LEGO player and the villagers
 } AppState;
 
 HZ_APP_API void app_init(AppMemory *memory) {
@@ -294,15 +287,13 @@ HZ_APP_API void app_init(AppMemory *memory) {
   day_night_init(w, renderer, &s->allocator, DAY_NIGHT_SKY_STYLIZED);
   day_night_stylized_base(w)->haze = 0.6f; // the floor's edge fades into the sky
 
-  // ---- the player's look: the Kaigen bot avatar with the Quaternius idle/sprint/jump clips retargeted onto its rig ----
-  // (art-studio kaigen_bot[_female]); pick it with GAME_AVATAR_MALE; {0} = the block's default avatar
-  character_avatar_add(w, s->sim.player,
-                       &(CharacterAvatarDesc){
-                           .model_path = GAME_AVATAR ".glb",
-                           .idle_clip_path = GAME_AVATAR "/Idle_Loop.hza",
-                           .run_clip_path = GAME_AVATAR "/Sprint_Loop.hza",
-                           .fall_clip_path = GAME_AVATAR "/Jump_Loop.hza",
-                       });
+  // ---- the player's look: a LEGO minifigure (st_minifig.c) hung under the character, posed every frame ----
+  fig_attach(&s->figs, w, s->sim.player, FIG_STYLE_PLAYER, true, 0.0f);
+  // the villagers, where they stood in the three.js village (studs * TOWN_STUD; the road plates are 0.4 studs high)
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_DEX, town_m(52.5f, 0.0f, -3.4f), -M_PI * 0.5f);
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_PIP, town_m(-8.0f, 0.0f, 13.2f), 0.0f);
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_QUILL, town_m(-5.4f, 0.0f, -24.2f), 0.4f);
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_MOM, town_m(-8.0f, 0.0f, -4.6f), 0.0f);
 
   // ---- UI (Clay): the HUD is built every frame after the scope, see app_update_and_render ----
   s->ui = ui_create(&(UIInitDesc){.max_glyphs = 4096}, assets);
@@ -419,6 +410,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     s->look_locked = look;
     // the editor pauses the simulation
     game_sim_begin_frame(&s->sim, &controls, dt, s->editor_open);
+    fig_animate(&s->figs, w, s->sim.player, dt);
   }
   lane_sync(); // publishes the main-lane writes above to every lane
 
