@@ -103,6 +103,8 @@ typedef struct Target {
 
 #define STATIC_TARGETS 21
 
+hz_internal f32 g_gate_prof_x = -5.4f; // where Prof. Quill stands at the gap (in the middle while it is closed)
+
 hz_internal Target world_target(i32 i) {
   if (i < READABLE_COUNT) {
     Readable r = readable(i);
@@ -122,7 +124,7 @@ hz_internal Target world_target(i32 i) {
   case 10: return (Target){T_TALK, 335.4f, -1.2f, "Talk to", "Prof. Quill", DLG_PROF};
   case 11: return (Target){T_TALK, 52.5f, -1.8f, "Talk to", "Dex", DLG_DEX};
   case 12: return (Target){T_TALK, 256.1f, 2.0f, "Talk to", "Lumi", DLG_LUMI};
-  case 13: return (Target){T_TALK, -5.4f, -22.6f, "Talk to", "Prof. Quill", DLG_GATE};
+  case 13: return (Target){T_TALK, g_gate_prof_x, -22.6f, "Talk to", "Prof. Quill", DLG_GATE};
   default: return (Target){T_READ, 0, 0, "", "", 0};
   }
 }

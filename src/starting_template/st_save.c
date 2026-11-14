@@ -17,6 +17,18 @@ typedef struct GameSave {
   b32 legendary; // all golden studs found
   f32 time_of_day; // 0..1, saved so the day goes on where you left it
   u32 _reserved[16];
+  // ---- cards and Voxelmon (appended: older saves load with these zero) ----
+  b32 has_deck;
+  u64 collection;    // a bit per card (CardId)
+  u8 deck[12];       // the battle deck, CardIds
+  u8 deck_count;
+  u8 card_level[64]; // upgrade stage per CardId (0 basic .. 4 Voxelmon)
+  u32 exp;
+  u32 wins, losses, rival_wins;
+  i32 voxelmon;      // the companion: CardId + 1, 0 none
+  b32 gate_open;
+  u32 vox_wins;
+  b32 met_rival;
 } GameSave;
 
 typedef struct SaveState {

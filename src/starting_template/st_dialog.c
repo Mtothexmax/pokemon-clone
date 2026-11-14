@@ -10,6 +10,11 @@ typedef enum DialogAction {
   ACT_HIDE_SEEK, // Pip: play hide and seek
   ACT_TAG,       // Pip: play tag
   ACT_SLEEP,     // your bed
+  ACT_GIVE_STARTER,    // Prof. Quill: the starter cards (then the rewards, then DLG_PROF_AFTER)
+  ACT_BATTLE_RIVAL,    // Dex
+  ACT_BATTLE_PRACTICE, // Lumi
+  ACT_DEX_SCARED,      // Dex: "Not now"
+  ACT_OPEN_GATE,       // Prof. Quill at the gap: you have a Voxelmon
 } DialogAction;
 
 typedef struct DialogLine {
@@ -23,6 +28,7 @@ typedef struct Dialog {
   u32 count;
   CString choice[2];
   DialogAction action[2];
+  DialogAction on_end; // when the dialog closes without a choice
 } Dialog;
 
 typedef enum DialogId {
@@ -34,6 +40,12 @@ typedef enum DialogId {
   DLG_LUMI,
   DLG_PIP,
   DLG_GATE,
+  DLG_PROF_AFTER, // after the starter cards
+  DLG_DEX_SCARED,
+  DLG_DEX_WON, // after a battle: you won
+  DLG_DEX_LOST,
+  DLG_LUMI_WON,
+  DLG_LUMI_LOST,
   DLG_COUNT
 } DialogId;
 
@@ -91,6 +103,111 @@ hz_internal Dialog dialog_script(DialogId id) {
   }
 }
 
+// "You have N of 34 Brick Beast cards." as recorded for every N
+hz_internal CString prof_count_voice(u32 n) {
+  static const CString ids[35] = {VOICE("8b373374"), VOICE("925f7191"), VOICE("cacfe5d2"), VOICE("adec45f7"), VOICE("cfe9e390"), VOICE("3266cefd"), VOICE("fbb93e1e"), VOICE("7e9955e3"), VOICE("2df970fc"), VOICE("6ed80a59"), VOICE("dc71ff0d"), VOICE("9c57c1a0"), VOICE("ce9262b3"), VOICE("2c64cb2e"), VOICE("e2242121"), VOICE("aff263c4"), VOICE("a3629d07"), VOICE("4c501aa2"), VOICE("3bc9d495"), VOICE("6088ca08"), VOICE("c512a37c"), VOICE("05f13cd9"), VOICE("85280dda"), VOICE("6abac11f"), VOICE("ba89a838"), VOICE("8c9677c5"), VOICE("d7a87066"), VOICE("85ce9c2b"), VOICE("225065f4"), VOICE("2978a411"), VOICE("0f30fe4f"), VOICE("09b26b0a"), VOICE("6afa0609"), VOICE("b6afd02c"), VOICE("522b0d4b")};
+  return ids[n < 35 ? n : 34];
+}
+
+// the lines as they depend on your progress (the three.js talk()): deck, wins, Voxelmon
+hz_internal Dialog dialog_for(DialogId id, const GameSave *s, b32 has_voxelmon, char *buf, u32 cap) {
+  Dialog d = dialog_script(id);
+  switch (id) {
+  case DLG_MOM:
+    if (s->has_deck)
+      d = (Dialog){.speaker = "Mom",
+                   .lines = {s->wins ? (DialogLine)L("So many wins already? I'm so proud of you!", VOICE("2dcf3ee1"))
+                                     : (DialogLine)L("Off on an adventure? Be careful in that tall grass!", VOICE("e212973d")),
+                             L("Remember: you can rebuild your deck any time with the Deck button (C).", VOICE("33a0ab32")),
+                             L("And snap only when you feel lucky. Your father lost a whole bucket of studs that way!", VOICE("79f91424"))},
+                   .count = 3};
+    break;
+  case DLG_PROF:
+    if (!s->has_deck) {
+      d = (Dialog){.speaker = "Prof. Hazel Quill",
+                   .lines = {L("Ah, there you are! Welcome to Quill Lab.", VOICE("df9ece56")),
+                             L("All around Brickhollow live BRICK BEASTS \xe2\x80\x94 little creatures snapped together from living bricks!", VOICE("97e8d994")),
+                             L("Trainers here battle with decks of 12 Beast cards, fighting over 3 zones for 6 turns.", VOICE("faa6ffcd")),
+                             L("Here are 18 cards to start your collection. I've already built you a deck of 12!", VOICE("83c29583")),
+                             L("Wild Beasts hide in the tall grass on Route 1, north of the village. Beat them to collect new cards!", VOICE("a633cd6e"))},
+                   .count = 5, .on_end = ACT_GIVE_STARTER};
+    } else {
+      u32 n = 0;
+      for (i32 c = 0; c < CARD_POOL; c++)
+        n += (u32)((s->collection >> c) & 1ull);
+      cstr_format(buf, cap, "You have % of % Brick Beast cards. %", fmt_u32(n), fmt_i32(CARD_POOL),
+                  fmt_cstr(n >= CARD_POOL ? "A complete collection \xe2\x80\x94 incredible!" : "Keep exploring Route 1!"));
+      d = (Dialog){.speaker = "Prof. Hazel Quill",
+                   .lines = {{buf, prof_count_voice(n)},
+                             L("Did you know? Glimmerlings fold light into tiny bricks. Fascinating creatures.", VOICE("c83f36f4"))},
+                   .count = 2};
+    }
+    break;
+  case DLG_PROF_AFTER:
+    d = (Dialog){.speaker = "Prof. Hazel Quill",
+                 .lines = {L("Lumi, Dex's sister, knows the rules by heart \xe2\x80\x94 visit their big house in the east for a practice match.", VOICE("2a919bfb")),
+                           L("And watch out for my grandson Dex. He has been itching for a battle all week!", VOICE("5facc525"))},
+                 .count = 2};
+    break;
+  case DLG_DEX:
+    if (s->has_deck && s->rival_wins)
+      d = (Dialog){.speaker = "Dex",
+                   .lines = {L("Back for more? This time I upgraded my deck!", VOICE("755b07b2")), L("Ready?", VOICE("bd46fed4"))},
+                   .count = 2, .choice = {"Battle!", "Not now"}, .action = {ACT_BATTLE_RIVAL, ACT_DEX_SCARED}};
+    else if (s->has_deck)
+      d = (Dialog){.speaker = "Dex",
+                   .lines = {L("So Grandma gave you a deck, huh? Mine is WAY cooler.", VOICE("676ff784")),
+                             L("Let's battle \xe2\x80\x94 right here, right now!", VOICE("4493640a"))},
+                   .count = 2, .choice = {"Battle!", "Not now"}, .action = {ACT_BATTLE_RIVAL, ACT_DEX_SCARED}};
+    break;
+  case DLG_DEX_SCARED:
+    d = (Dialog){.speaker = "Dex", .lines = {L("Scared? Ha! Come back when you are ready.", VOICE("e4e22ae0"))}, .count = 1};
+    break;
+  case DLG_DEX_WON:
+    d = (Dialog){.speaker = "Dex",
+                 .lines = {L("WHAT?! No way... my deck was perfect!", VOICE("1d5e5e86")),
+                           L("Fine. You win this time. I'm going to train on Route 1!", VOICE("e454c49a"))},
+                 .count = 2};
+    break;
+  case DLG_DEX_LOST:
+    d = (Dialog){.speaker = "Dex",
+                 .lines = {L("Ha! Told you my deck was cooler.", VOICE("8c7da71a")), L("Come back when you have some better cards!", VOICE("d12633cc"))},
+                 .count = 2};
+    break;
+  case DLG_LUMI_WON:
+    d = (Dialog){.speaker = "Lumi", .lines = {L("Wow, you learn fast! Here, keep that card.", VOICE("f8de2d54"))}, .count = 1};
+    break;
+  case DLG_LUMI_LOST:
+    d = (Dialog){.speaker = "Lumi", .lines = {L("Good try! Watch which zones you can still win and focus there.", VOICE("2a3279f7"))}, .count = 1};
+    break;
+  case DLG_LUMI:
+    if (s->has_deck) {
+      d.choice[0] = "Practice battle";
+      d.choice[1] = "Thanks!";
+      d.action[0] = ACT_BATTLE_PRACTICE;
+      d.action[1] = ACT_NONE;
+    }
+    break;
+  case DLG_GATE:
+    if (s->has_deck && !has_voxelmon)
+      d = (Dialog){.speaker = "Prof. Hazel Quill",
+                   .lines = {L("Hold on! Cards alone won't protect you out there.", VOICE("eeac3b70")),
+                             L("The wild Beasts on Route 1 are real Voxelmon, made of living bricks!", VOICE("5376fc4a")),
+                             L("Win card battles to earn EXP, and upgrade your cards in the Deck menu.", VOICE("d85cccae")),
+                             L("Once a six energy card reaches its final stage, it becomes a real Voxelmon. Then you may pass!", VOICE("13e542b8"))},
+                   .count = 4};
+    else if (s->has_deck)
+      d = (Dialog){.speaker = "Prof. Hazel Quill",
+                   .lines = {L("Oh my! A real Voxelmon! Then you are ready.", VOICE("e99f9d41")),
+                             L("Press 1 and 2 in battle to use its attacks. Good luck out there!", VOICE("b9510f9e"))},
+                   .count = 2, .on_end = ACT_OPEN_GATE};
+    break;
+  default:
+    break;
+  }
+  return d;
+}
+
 typedef struct DialogState {
   b32 open;
   Dialog d;
@@ -121,6 +238,8 @@ hz_internal void dialog_open(DialogState *ds, Dialog d, EcsWorld *w, AudioSystem
 
 hz_internal void dialog_close(DialogState *ds, AudioSystem *audio) {
   ds->open = false;
+  if (ds->chosen == ACT_NONE)
+    ds->chosen = ds->d.on_end;
   audio_voice_stop(audio, ds->voice, 0.15f);
 }
 

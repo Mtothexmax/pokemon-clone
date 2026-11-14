@@ -142,9 +142,14 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 #include "st_minifig.c"
 #include "st_sound.c"
 #include "st_save.c"
+#include "st_cards.c"
 #include "st_dialog.c"
+#include "st_battle.c"
+#include "st_cardui.c"
 #include "st_world.c"
 #include "st_life.c"
+#include "st_cardgame.c"
+#include "st_vox.c"
 #include "st_screens.c"
 #include "st_debug.c"
 
@@ -311,6 +316,11 @@ typedef struct AppState {
   u32 block_count;
   b32 intro_checked;
   b32 dancing;
+  CardGame cards;      // battles, rewards, the deck menu (st_cardgame.c)
+  Vox vox;             // your Voxelmon and the fights in the tall grass (st_vox.c)
+  b32 gate_shown;      // the gate prof stands where the save says
+  b32 mom_talked, kid_talked; // for the "!" markers
+  char dlg_buf[128];   // a dialogue line built from the save
 } AppState;
 
 HZ_APP_API void app_init(AppMemory *memory) {
@@ -398,7 +408,8 @@ HZ_APP_API void app_init(AppMemory *memory) {
   sound_init(&s->snd, &s->audio, &s->allocator);
   save_begin(&s->save);
   life_init(&s->life, w, renderer, &s->snd, &s->save, &s->audio, &s->allocator, s->blocks, s->block_count, pip);
-  ecs_audio_play(w, "brickhollow/music/home.hzt", &(EcsAudioPlayDesc){.volume = 0.55f, .loop = true, .bus = AUDIO_BUS_MUSIC});
+  cg_init(&s->cards, w, &s->audio, (u32)(os_time_unix_ms() & 0xffffffffu));
+  vox_init(&s->vox, &s->life, (u32)(os_time_unix_ms() >> 3));
 
   log_info("brickhollow initialized");
 }
@@ -454,6 +465,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       s->editor_open = !s->editor_open;
     if (s->editor_open && input->buttons[KEY_F5].pressed_this_frame)
       s->sim.scene = scene_save(&s->sim.scene_sys, s->sim.scene, GAME_SCENE_PATH);
+    if (input->buttons[KEY_F9].pressed_this_frame) { // dev builds: 200 EXP to try the upgrades and the Voxelmon
+      s->save.data.exp += 200;
+      save_mark(&s->save);
+    }
 #endif
     // touch claims its fingers before anything else reads the pointer
     touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0 || s->dlg.open || s->scr.kind != SCREEN_NONE, s->world.reading);
@@ -515,11 +530,47 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
             life_hide_seek_start(&s->life);
           else if (act == ACT_TAG)
             life_toast(&s->life, "Tag! Sprint into Pip (hold Shift) and run!");
+          else if (act == ACT_OPEN_GATE) {
+            s->save.data.gate_open = true;
+            save_mark(&s->save);
+            sound_play(&s->snd, SND_FANFARE, 1.0f, 0.8f);
+            life_toast(&s->life, "The way to Route 1 is open!");
+            s->gate_shown = false;
+          } else
+            cg_dialog_action(&s->cards, act, &s->save, &s->dlg, &s->snd, w, &s->audio);
         }
         use = false;
       } else if (s->scr.kind != SCREEN_NONE) {
         screens_update(&s->scr, w, &s->audio, &s->snd, input, dt);
         use = false;
+      }
+      // the cards: a battle, the rewards or the deck menu own the screen
+      b32 cards = cg_update(&s->cards, &s->save, &s->life, &s->dlg, &s->snd, w, &s->audio, input, busy, dt);
+      if (cards)
+        use = false;
+      busy |= cards;
+      // your Voxelmon: it follows you; in the tall grass a fight holds you in place
+      b32 fight = vox_update(&s->vox, &s->save, &s->cards, w, &s->audio, input, pwt->position, controls.heading, s->world.area, busy, dt);
+      vox_reward(&s->vox, &s->save, &s->cards);
+      vox_after(&s->vox, &s->cards, dt);
+      if (fight)
+        use = false;
+      busy |= fight;
+      // the gap north: Prof. Quill blocks it until you have a Voxelmon (then she steps aside)
+      if (!s->gate_shown && s->save.loaded) {
+        s->gate_shown = true;
+        b32 open = s->save.data.gate_open;
+        g_gate_prof_x = open ? -5.4f : 0.0f;
+        fig_place(w, &s->figs.figs[3], open ? town_m(-5.4f, 0.0f, -24.2f) : town_m(0.0f, 0.0f, -24.4f), open ? 0.4f : 0.0f);
+      }
+      {
+        f32 gx = pwt->position.x / TOWN_STUD, gz = pwt->position.z / TOWN_STUD;
+        if (!s->save.data.gate_open && gz < -25.3f && gz > -27.5f && m_absf(gx) < 5.0f && !s->dlg.open) {
+          controls.teleport = true;
+          controls.teleport_pos = town_m(gx, 0.2f, -22.6f);
+          controls.teleport_yaw = 0.0f;
+          dialog_open(&s->dlg, dialog_for(DLG_GATE, &s->save.data, s->save.data.voxelmon > 0, s->dlg_buf, sizeof(s->dlg_buf)), w, &s->audio);
+        }
       }
       v3 pip_studs = s->life.pip_p;
       const Target *t = busy ? NULL
@@ -529,7 +580,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         u32 weather = s->life.rain > 0.5f ? 2u : s->life.night > 0.5f ? 1u : 0u;
         switch (t->kind) {
         case T_TALK:
-          dialog_open(&s->dlg, dialog_script((DialogId)t->arg), w, &s->audio);
+          dialog_open(&s->dlg, dialog_for((DialogId)t->arg, &s->save.data, s->save.data.voxelmon > 0, s->dlg_buf, sizeof(s->dlg_buf)), w,
+                      &s->audio);
+          s->mom_talked |= t->arg == DLG_MOM;
+          s->kid_talked |= t->arg == DLG_PIP;
           if (t->arg == DLG_PIP)
             s->life.pip_yaw = m_atan2f(pwt->position.x / TOWN_STUD - s->life.pip_p.x, pwt->position.z / TOWN_STUD - s->life.pip_p.z);
           break;
@@ -540,7 +594,11 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           controls.teleport_pos = town_m(15.0f, 0.1f, -8.3f);
           controls.teleport_yaw = 0.0f;
           break;
-        case T_SLEEP: life_sleep(&s->life); break;
+        case T_SLEEP:
+          life_sleep(&s->life);
+          s->vox.me.hp = s->vox.me.max; // a good night: your Voxelmon is fit again
+          s->vox.me.tired = false;
+          break;
         case T_TV: screens_open(&s->scr, SCREEN_TV, w, &s->audio, weather); break;
         case T_PIANO: screens_open(&s->scr, SCREEN_PIANO, w, &s->audio, weather); break;
         case T_PC: screens_open(&s->scr, SCREEN_PC, w, &s->audio, weather); break;
@@ -550,7 +608,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         }
         sound_play(&s->snd, SND_BLIP, 1.2f, 0.4f);
       }
-      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade;
+      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade || cg_busy(&s->cards) || fight;
       b32 moving = v2_length(controls.move) > 0.2f;
       // the bench: any move gets you up; Q dances (moving stops it)
       if (s->life.sitting && moving && !busy)
@@ -567,6 +625,11 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       if (busy || s->life.sitting) {
         controls.move = (v2){0};
         controls.jump = false;
+      }
+      if (fight && v2_length(s->vox.walk) > 0.01f) { // step back from the fight (a world direction to camera-relative)
+        f32 hh = controls.heading;
+        v2 fw = {-m_sinf(hh), -m_cosf(hh)}, rt = {m_cosf(hh), -m_sinf(hh)};
+        controls.move = (v2){v2_dot(s->vox.walk, rt), v2_dot(s->vox.walk, fw)};
       }
       me->pose = s->life.sitting ? FIG_POSE_SIT : s->dancing ? FIG_POSE_DANCE : FIG_POSE_NORMAL;
       me->spin = s->dancing ? me->spin + dt * 2.6f : 0.0f;
@@ -735,11 +798,28 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
 #endif
     // YOUR HUD HERE: ui_* calls; read game state from resources (ecs_resource_get), never mutate the world
     if (!s->editor_open) {
-      hud_draw(&s->touch);
-      b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE;
-      world_draw(&s->world, s->touch.last_active, busy_ui);
-      life_draw(&s->life);
-      dialog_draw(&s->dlg, input, s->touch.last_active, (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f));
+      f32 ui_w = (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f), ui_h = (f32)memory->canvas_height / m_maxf(memory->dpr, 0.5f);
+      b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
+      if (!cards_screen) {
+        hud_draw(&s->touch);
+        b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
+        world_draw(&s->world, s->touch.last_active, busy_ui);
+        life_draw(&s->life);
+      }
+      if (!cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && s->world.area < 0 && !s->zoom.active)
+        cg_quest_draw(&s->cards, &s->save.data);
+      if (!cards_screen && !s->zoom.active) {
+        const WorldTransform *mp = ecs_component_get(w, s->sim.player, WorldTransform);
+        u32 gold = 0;
+        for (u32 k = 0; k < GOLDEN_COUNT; k++)
+          gold += (s->save.data.golden_mask >> k) & 1u;
+        if (mp)
+          cg_markers_draw(&s->save.data, &s->figs, w, cam, mp->position, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->mom_talked, s->kid_talked, gold);
+      }
+      if (!cards_screen)
+        vox_draw(&s->vox, input, cam, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->world.area < 0 && !s->dlg.open);
+      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
+      dialog_draw(&s->dlg, input, s->touch.last_active, ui_w);
       screens_draw(&s->scr, input, &s->save.data);
       debug_draw(&s->dbg);
       touch_controls_draw_stick(&s->touch);
