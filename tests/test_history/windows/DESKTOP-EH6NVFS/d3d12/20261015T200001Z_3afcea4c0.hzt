@@ -1,0 +1,31 @@
+type TestHistoryRun
+version 1
+---
+commit "3afcea4c0"
+started_unix_ms 1792094401588
+date "2026-10-15"
+platform "windows"
+machine "DESKTOP-EH6NVFS"
+backend "d3d12"
+build "debug"
+filter "st_sim"
+kinds ""
+lanes 8
+graphics true
+performance false
+capture false
+complete true
+wall_us 97633
+logic_us 70
+multicore_us 95103
+ui_us 29
+gfx_us 0
+perf_us 0
+results 1
+  name "test_st_sim_walks_the_route"
+  kind "logic_multicore"
+  outcome "pass"
+  duration_us 94812
+  detail ""
+heavy false
+result_tiers 1 0

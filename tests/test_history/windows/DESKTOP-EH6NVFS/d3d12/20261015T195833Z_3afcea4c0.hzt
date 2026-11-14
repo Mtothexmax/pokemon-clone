@@ -1,0 +1,26 @@
+type TestHistoryRun
+version 1
+---
+commit "3afcea4c0"
+started_unix_ms 1792094313157
+date "2026-10-15"
+platform "windows"
+machine "DESKTOP-EH6NVFS"
+backend "d3d12"
+build "debug"
+filter "st_sim"
+kinds ""
+lanes 8
+graphics true
+performance false
+capture false
+complete false
+wall_us 929
+logic_us 58
+multicore_us 0
+ui_us 0
+gfx_us 0
+perf_us 0
+results 0
+heavy false
+result_tiers 0
