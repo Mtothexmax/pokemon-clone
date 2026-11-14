@@ -682,16 +682,25 @@ hz_internal void cu_zone_texts(CardUi *ui, const Battle *b, i32 z, f32 name_px, 
 }
 
 // the location's background: its picture with a dark fade (revealed), or grey dots (not yet)
-hz_internal void cu_zone_fill(CardUi *ui, const Battle *b, i32 z, f32 bw, f32 bh, i16 zi) {
-  if (b->zone_rev[z]) {
-    i32 id = b->zone[z];
-    GpuTexture tex = cu_zone_tex(ui, id);
+// the location's picture with a dark fade, inside a frame of the tile's size whose rounded corners mask it (the tile's
+// own clip is a rectangle: the picture's corners stuck out of the rounded frame). Nothing while it is unrevealed
+hz_internal void cu_zone_fill(CardUi *ui, const Battle *b, i32 z, f32 bw, f32 bh, f32 radius, i16 zi) {
+  if (!b->zone_rev[z])
+    return;
+  i32 id = b->zone[z];
+  GpuTexture tex = cu_zone_tex(ui, id);
+  if (!handle_is_valid(tex))
+    return;
+  HzUIClipPath round = {.round = ui_corner_radius(radius)};
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = zi, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+              .layout = {.sizing = {.width = ui_sizing_fixed(bw), .height = ui_sizing_fixed(bh)}},
+              .clip = {.horizontal = true, .vertical = true},
+              .clip_path = round}) {
     cu_cover(tex, (f32)ui->zone_w[id], (f32)ui->zone_h[id], bw, bh, zi);
-    if (handle_is_valid(tex))
-      ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .clip_to = UI_CLIP_TO_ATTACHED_PARENT, .z_index = zi,
-                               .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
-                  .layout = {.sizing = {.width = ui_sizing_fixed(bw), .height = ui_sizing_fixed(bh)}},
-                  .gradient = cu_lin(0.0f, 2, (f32[]){0.0f, 0.75f}, (HzUIColor[]){cu_black(0.72f), cu_black(0.15f)})}) {}
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .clip_to = UI_CLIP_TO_ATTACHED_PARENT, .z_index = zi,
+                             .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                .layout = {.sizing = {.width = ui_sizing_fixed(bw), .height = ui_sizing_fixed(bh)}},
+                .gradient = cu_lin(0.0f, 2, (f32[]){0.0f, 0.75f}, (HzUIColor[]){cu_black(0.72f), cu_black(0.15f)})}) {}
   }
 }
 
@@ -908,7 +917,7 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
                       .transform = cu_tf(0, 0, tsc, 0)}) {
             if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame && !modal)
               ui->click_zone = z;
-            cu_zone_fill(ui, b, z, colw, tile_h, 33);
+            cu_zone_fill(ui, b, z, colw, tile_h, 14.0f, 33);
             ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 34, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
                                      .attach_points = {.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM},
                                      .offset = {0.0f, -14.0f}},
@@ -1300,7 +1309,7 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
                     .corner_radius = ui_corner_radius(22),
                     .clip = {.horizontal = true, .vertical = true},
                     .shadow = {.color = cu_black(0.4f), .offset_y = 12.0f, .blur = 30.0f}}) {
-          cu_zone_fill(ui, b, z, zw, zh, 56);
+          cu_zone_fill(ui, b, z, zw, zh, 22.0f, 56);
           ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 57, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
                                    .attach_points = {.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM}, .offset = {0, -20}},
                       .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 4, .sizing = {.width = ui_sizing_fixed(zw - 40.0f)},
@@ -1502,29 +1511,33 @@ hz_internal void battle_input(CardUi *ui, Battle *b, const InputSystem *in, Soun
   ui->press_card = -1;
   if (ui->drag >= 0) {
     i32 ci = ui->drag;
-    ui->drag_dx = mx - ui->drag_x0;
-    ui->drag_dy = my - ui->drag_y0;
-    f32 vx = mx - ui->drag_lastx;
-    ui->drag_lastx = mx;
-    ui->drag_tilt = m_clampf(ui->drag_tilt * 0.75f + vx * 0.6f, -14.0f, 14.0f);
-    b32 can_drag = !ui->drag_from_hand || cu_playable(b, ci);
-    if (!ui->drag_moved && can_drag && m_sqrtf(ui->drag_dx * ui->drag_dx + ui->drag_dy * ui->drag_dy) > 8.0f) {
-      ui->drag_moved = true;
-      if (ui->drag_from_hand)
-        ui->selected = ci; // light up the locations it can go to
-      sound_play(snd, SND_BLIP, 1.3f, 0.3f);
-    }
-    if (ui->drag_moved) {
-      ui->drag_over = -1;
-      for (i32 z = 0; z < 3 && ui->drag_over < 0; z++) {
-        Clay_BoundingBox r1 = cu_box_of(ui_idi("ZoneTile", (u32)z)), r2 = cu_box_of(ui_idi("MySlots", (u32)z));
-        if ((mx >= r1.x && mx <= r1.x + r1.width && my >= r1.y && my <= r1.y + r1.height) ||
-            (mx >= r2.x && mx <= r2.x + r2.width && my >= r2.y && my <= r2.y + r2.height))
-          ui->drag_over = z;
+    // follow the finger only while it is down: on the frame it lifts, the pointer can jump (a touch's end restores the
+    // last mouse position), so the drop goes where the finger was last seen
+    if (in->buttons[MOUSE_LEFT].is_pressed) {
+      ui->drag_dx = mx - ui->drag_x0;
+      ui->drag_dy = my - ui->drag_y0;
+      f32 vx = mx - ui->drag_lastx;
+      ui->drag_lastx = mx;
+      ui->drag_tilt = m_clampf(ui->drag_tilt * 0.75f + vx * 0.6f, -14.0f, 14.0f);
+      b32 can_drag = !ui->drag_from_hand || cu_playable(b, ci);
+      if (!ui->drag_moved && can_drag && m_sqrtf(ui->drag_dx * ui->drag_dx + ui->drag_dy * ui->drag_dy) > 8.0f) {
+        ui->drag_moved = true;
+        if (ui->drag_from_hand)
+          ui->selected = ci; // light up the locations it can go to
+        sound_play(snd, SND_BLIP, 1.3f, 0.3f);
       }
-      Clay_BoundingBox hb = cu_box_of(ui_id("BattleBottom"));
-      if (ui->drag_over < 0 && my >= hb.y && hb.height > 0.0f)
-        ui->drag_over = 3;
+      if (ui->drag_moved) {
+        ui->drag_over = -1;
+        for (i32 z = 0; z < 3 && ui->drag_over < 0; z++) {
+          Clay_BoundingBox r1 = cu_box_of(ui_idi("ZoneTile", (u32)z)), r2 = cu_box_of(ui_idi("MySlots", (u32)z));
+          if ((mx >= r1.x && mx <= r1.x + r1.width && my >= r1.y && my <= r1.y + r1.height) ||
+              (mx >= r2.x && mx <= r2.x + r2.width && my >= r2.y && my <= r2.y + r2.height))
+            ui->drag_over = z;
+        }
+        Clay_BoundingBox hb = cu_box_of(ui_id("BattleBottom"));
+        if (ui->drag_over < 0 && my >= hb.y && hb.height > 0.0f)
+          ui->drag_over = 3;
+      }
     }
     if (!in->buttons[MOUSE_LEFT].is_pressed) {
       if (!ui->drag_moved) { // a tap: the card big (a hand card is also selected)
