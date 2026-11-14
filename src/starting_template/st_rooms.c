@@ -122,6 +122,27 @@ hz_internal void room_screen(Town *t, f32 x, f32 y, f32 z, f32 w, f32 h, u32 glo
   town_box(t, glow, w, h, 0.32f, x, y, z + 0.03f, false);
 }
 
+// warm ceiling lights in every room (point lights; the rooms lie far from the village and from each other)
+hz_internal void room_light(EcsWorld *w, f32 x, f32 z, f32 intensity) {
+  EcsEntity e = ecs_entity_create(w);
+  v3 at = town_m(x, 8.5f, z);
+  ecs_component_set(w, e, LocalTransform, {.position = at, .rotation = quat_identity(), .scale = V3_ONE});
+  ecs_component_set(w, e, WorldTransform, {.position = at, .rotation = quat_identity(), .scale = V3_ONE});
+  ecs_component_set(w, e, EcsPointLight, {.color = {1.0f, 0.84f, 0.62f, 1.0f}, .radius = 9.0f, .intensity = intensity});
+}
+
+hz_internal void rooms_lights(EcsWorld *w) {
+  for (i32 i = 0; i < ROOM_COUNT; i++) {
+    RoomDef r = room_def((RoomId)i);
+    f32 n = r.w > 30.0f ? 3.0f : 2.0f;
+    for (f32 k = 0; k < n; k++) {
+      f32 x = r.ox - r.w * 0.5f + r.w * (k + 0.5f) / n;
+      room_light(w, x, r.oz - r.d * 0.15f, 600000.0f);
+    }
+    room_light(w, r.ox, r.oz + r.d * 0.3f, 350000.0f);
+  }
+}
+
 hz_internal void rooms_build(Town *t) {
 
   // ======================= HOME =======================

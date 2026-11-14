@@ -89,6 +89,32 @@ ecs_system(player_input_system, EcsIn(Player), EcsIn(WorldTransform), EcsInOut(C
   }
 }
 
+// resource: how much of the sun reaches you (1 outside; inside the rooms the warm ceiling lights take over)
+typedef struct IndoorLight {
+  f32 sun_scale;
+} IndoorLight;
+ECS_COMPONENT_TYPEDEF(IndoorLight);
+
+// per sun, after day_night_schedule wrote this frame's light: dimmed indoors
+ecs_system(indoor_light_system, EcsInOut(EcsDirectionalLight), EcsResIn(IndoorLight)) {
+  const IndoorLight *il = ecs_sys_get_resource(IndoorLight);
+  for (i32 i = 0; i < it->count; i++)
+    ecs_sys_get_component_mut(EcsDirectionalLight, i)->intensity *= il->sun_scale;
+}
+
+// the scene's ambient light: indoors darker and warm, so the ceiling lights carry the room
+ecs_system(indoor_ambient_system, EcsInOut(EcsSceneSettings), EcsResIn(IndoorLight)) {
+  const IndoorLight *il = ecs_sys_get_resource(IndoorLight);
+  f32 in = 1.0f - il->sun_scale; // 0 outside .. ~1 inside
+  for (i32 i = 0; i < it->count; i++) {
+    EcsSceneSettings *ss = ecs_sys_get_component_mut(EcsSceneSettings, i);
+    ss->ambient_intensity *= 1.0f - 0.7f * in;
+    ss->ambient_color.r = m_lerpf(ss->ambient_color.r, 1.0f, in * 0.5f);
+    ss->ambient_color.g = m_lerpf(ss->ambient_color.g, 0.86f, in * 0.5f);
+    ss->ambient_color.b = m_lerpf(ss->ambient_color.b, 0.7f, in * 0.5f);
+  }
+}
+
 // the scene authors the camera rig without a target: it follows the player once the player exists
 ecs_system(camera_target_system, EcsInOut(CameraFollow), EcsResIn(PlayerRef)) {
   const PlayerRef *ref = ecs_sys_get_resource(PlayerRef);
@@ -276,7 +302,7 @@ typedef struct AppState {
   TownRect blocks[LIFE_MAX_BLOCKS];
   TownGroups groups;   // what is drawn per area (st_town.c)
   i32 shown_area;      // the area the groups were last shown for
-  f32 boom_radius;     // the camera's obstacle sphere outside (inside the rooms it is off)
+  f32 cam_lift;        // radians the camera is raised because something hides the player
   u32 block_count;
   b32 intro_checked;
   b32 dancing;
@@ -295,7 +321,7 @@ HZ_APP_API void app_init(AppMemory *memory) {
   // ---- engine modules the app adds to the simulation's: delete the ones your game does not use ----
   ecs_input_init(w);
   ecs_assets_init(w, NULL);
-  ecs_renderer_init(w, &(RendererInitDesc){.shadows_enabled = true, .bloom_enabled = true});
+  ecs_renderer_init(w, &(RendererInitDesc){.shadows_enabled = true, .bloom_enabled = true, .max_lights = 32}); // the rooms' ceiling lights
   // the hardware's quality level: without one every feature keeps its highest default
   RendererHardware hw = renderer_hardware(ecs_resource_get(w, RendererState));
   renderer_set_quality(ecs_resource_get_mut(w, RendererState), renderer_quality_for_hardware(&hw));
@@ -359,6 +385,8 @@ HZ_APP_API void app_init(AppMemory *memory) {
     for (u32 k = 0; k < FIG_PART_COUNT; k++)
       town_group_add(&s->groups, 1 + fig_room[i], s->figs.figs[4 + i].part[k]);
   s->shown_area = -99;
+  ecs_resource_set(w, IndoorLight, {.sun_scale = 1.0f});
+  rooms_lights(w);
   // background music: the town theme, looping on the music bus (the web starts it on the first tap or key)
   s->audio = audio_system_init(&s->allocator, NULL);
   ecs_audio_init(&s->audio, w);
@@ -565,19 +593,47 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         world_doors(&s->world, pwt->position, &controls, dt);
       EcsEntity cam_e = ecs_query_get_singleton_entity(s->sim.camera_query);
       const CameraFollow *follow = cam_e != ECS_ENTITY_INVALID ? ecs_component_get(w, cam_e, CameraFollow) : NULL;
-      if (follow && s->boom_radius <= 0.0f && follow->boom_radius > 0.0f)
-        s->boom_radius = follow->boom_radius;
-      // inside a room (open at the top, low at the front) the camera does not dodge furniture: it would jump in close
-      f32 boom = s->world.area >= 0 ? 0.0f : s->boom_radius;
-      if (follow && ((controls.teleport && !s->life.sitting) || follow->boom_radius != boom)) {
+      // the camera never zooms in on an obstacle: when something hides the player it rises and looks down over it,
+      // and sinks back once the view is free (a ray from the head to the camera, checked a step lower)
+      const CameraRigState *rs = ecs_resource_get(w, CameraRigState);
+      const EcsPhysicsWorld *pw = ecs_resource_get(w, EcsPhysicsWorld);
+      if (follow) {
         CameraFollow f = *follow;
+        f32 base = f.pitch - s->cam_lift;
+        f32 lift = s->cam_lift;
+        if (rs && rs->ready && pw && !controls.teleport) {
+          v3 head = v3_add(pwt->position, (v3){0.0f, f.focus_height, 0.0f});
+          EcsPhysicsQuery q = {.ignore = s->sim.player};
+          f32 dist = m_maxf(rs->distance, 1.0f);
+          f32 sy = m_sinf(f.yaw), cy = m_cosf(f.yaw);
+          v3 at, at_lower;
+          {
+            f32 p = base + lift, cp = m_cosf(p);
+            at = v3_add(head, v3_scale((v3){sy * cp, m_sinf(p), cy * cp}, dist));
+            f32 pl = base + m_maxf(0.0f, lift - 0.15f), cpl = m_cosf(pl);
+            at_lower = v3_add(head, v3_scale((v3){sy * cpl, m_sinf(pl), cy * cpl}, dist));
+          }
+          EcsPhysicsHit hit;
+          b32 blocked = ecs_physics_raycast(pw, head, at, &q, &hit);
+          if (blocked)
+            lift = m_minf(lift + dt * 1.8f, m_maxf(0.0f, 1.48f - base));
+          else if (lift > 0.0f && !ecs_physics_raycast(pw, head, at_lower, &q, &hit))
+            lift = m_maxf(0.0f, lift - dt * 0.7f);
+        }
         if (controls.teleport && !s->life.sitting) {
           f.yaw = 0.0f; // the rooms and the houses face the camera (south); look north again
           f.snap = true;
+          lift = 0.0f;
         }
-        f.boom_radius = boom;
+        f.boom_radius = 0.0f;
+        f.pitch = base + lift;
+        s->cam_lift = lift;
         ecs_component_set(w, cam_e, CameraFollow, f);
       }
+      // inside a room the sun is only a soft remainder: the warm ceiling lights light it
+      IndoorLight *il = ecs_resource_get_mut(w, IndoorLight);
+      f32 want_sun = s->world.area >= 0 ? 0.04f : 1.0f;
+      il->sun_scale += (want_sun - il->sun_scale) * m_minf(1.0f, dt * 6.0f);
       // draw only the village outside, only this room inside
       if (s->world.area != s->shown_area) {
         s->shown_area = s->world.area;
@@ -611,6 +667,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
   // ALL lanes enter the scope. Never call is_main_thread() in here: schedule systems instead.
   ecs_scope(w) {
     day_night_schedule(w); // turns the Sun, sets the light, ambient and fog
+    ecs_schedule(w, indoor_light_system);
+    ecs_schedule(w, indoor_ambient_system);
     ecs_audio_schedule(w);
     game_sim_schedule(&s->sim, dt);
     ecs_renderer_schedule(w);

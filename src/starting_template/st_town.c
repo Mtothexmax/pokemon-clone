@@ -143,6 +143,16 @@ hz_internal void town_occupy(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
     t->used[t->used_count++] = (TownRect){x0, x1, z0, z1};
 }
 
+// a block `h` metres high (buildings are as high as their roofs: the camera's view ray must not pass over them)
+hz_internal void town_block_h(Town *t, f32 x0, f32 x1, f32 z0, f32 z1, f32 h) {
+  town_occupy(t, x0, x1, z0, z1);
+  if (t->solid && t->solid_count < TOWN_MAX_RECTS)
+    t->solid[t->solid_count++] = (TownRect){x0, x1, z0, z1};
+  v3 c = town_m((x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f);
+  c.y = h * 0.5f;
+  mesh_builder_collider_box(t->b, c, quat_identity(), (v3){(x1 - x0) * 0.5f * TOWN_STUD, h * 0.5f, (z1 - z0) * 0.5f * TOWN_STUD});
+}
+
 hz_internal void town_block(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
   town_occupy(t, x0, x1, z0, z1);
   if (t->solid && t->solid_count < TOWN_MAX_RECTS)
@@ -400,7 +410,7 @@ hz_internal void town_wall(Town *t, u32 hex, f32 w, f32 h, f32 d, f32 x, f32 z) 
 hz_internal void town_house(Town *t, f32 cx, f32 cz, f32 w, f32 d, u32 roof, u32 wall, u32 door, u32 mailbox,
                              CString sign) {
   f32 x0 = cx - w * 0.5f, x1 = cx + w * 0.5f, z0 = cz - d * 0.5f, z1 = cz + d * 0.5f;
-  town_block(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f);
+  town_block_h(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f, 11.0f * TOWN_STUD);
   town_box(t, C_GRAY, w + 1.0f, 0.4f, d + 1.0f, cx, 0.0f, cz, false);
   const f32 H = 7.2f;
   town_wall(t, wall, w, H, 1.0f, cx, z1 - 0.5f);
@@ -448,7 +458,7 @@ hz_internal void town_house(Town *t, f32 cx, f32 cz, f32 w, f32 d, u32 roof, u32
 // roof with tiles, a rim with studs, solar panels, a chimney and a satellite dish
 hz_internal void town_lab(Town *t, f32 cx, f32 cz, f32 w, f32 d) {
   f32 x0 = cx - w * 0.5f, x1 = cx + w * 0.5f, z0 = cz - d * 0.5f, z1 = cz + d * 0.5f;
-  town_block(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f);
+  town_block_h(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f, 8.6f * TOWN_STUD);
   town_box(t, C_GRAY, w + 1.0f, 0.4f, d + 1.0f, cx, 0.0f, cz, false);
   const f32 H = 7.2f;
   town_wall(t, C_TAN, w, H, 1.0f, cx, z1 - 0.5f);
@@ -662,7 +672,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
   for (i32 i = 0; i < 4; i++)
     town_box(t, C_GRAY, 6.0f, 0.1f, 0.35f, 35.0f, 1.2f + (f32)i * 0.9f, -5.75f, false);
   town_box(t, C_RED, 9.0f, 0.6f, 9.0f, 35.0f, 6.0f, -10.0f, true);
-  town_block(t, 30.4f, 39.6f, -14.6f, -5.5f);
+  town_block_h(t, 30.4f, 39.6f, -14.6f, -5.5f, 6.6f * TOWN_STUD);
   town_box(t, C_GRAY, 6.0f, 0.4f, 1.0f, 35.0f, 0.0f, -5.0f, false);
 
   // ---- the little park where Dex's old house used to be: trees, flowers, a bench ----

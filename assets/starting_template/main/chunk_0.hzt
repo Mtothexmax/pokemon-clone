@@ -164,7 +164,7 @@ component CameraFollow
   yaw 0.000000
   pitch 0.500000
   min_pitch -0.100000
-  max_pitch 1.200000
+  max_pitch 1.500000
   distance 8.000000
   min_distance 2.000000
   max_distance 18.000000
