@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#3a8f3f">
+    <link rel="icon" href="data:,">
+    <title>Brickhollow</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; background: #1d3b22; overflow: hidden; overscroll-behavior: none; }
+        #canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; }
+        #start {
+            position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 18px; background: radial-gradient(circle at 50% 35%, #7cc96b 0%, #3a8f3f 55%, #1d3b22 100%);
+            color: #fff; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; text-align: center; padding: 16px;
+            cursor: pointer; user-select: none; -webkit-user-select: none; z-index: 10; transition: opacity 0.4s;
+        }
+        #start h1 { font-size: clamp(34px, 9vw, 64px); letter-spacing: 1px; text-shadow: 0 4px 0 #1d3b22; }
+        #start p { font-size: 15px; opacity: 0.85; max-width: 420px; line-height: 1.5; }
+        #play {
+            font: 600 20px system-ui, sans-serif; color: #1d3b22; background: #ffd23f; border: 0; border-radius: 999px;
+            padding: 14px 40px; box-shadow: 0 5px 0 #b8901a; cursor: pointer;
+        }
+        #status { font-size: 13px; opacity: 0.75; min-height: 1.2em; }
+        #start.hidden { opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="start">
+        <h1>Brickhollow</h1>
+        <p>A little starter town. Walk around, visit the houses, the lab and the pond.<br>
+           Keyboard: WASD to walk, Shift to run. Phone: the stick on the left.</p>
+        <button id="play">Tap to play</button>
+        <div id="status">Loading...</div>
+    </div>
+    <script type="module">
+        import { createGame } from "./main.js";
+        const start = document.getElementById("start");
+        const status = document.getElementById("status");
+        const canvas = document.getElementById("canvas");
+
+        if (!navigator.gpu) {
+            status.textContent = "This browser has no WebGPU. Try a current Chrome, Edge or Safari (iOS 26+).";
+        }
+        const game = createGame({ canvas, allowFullscreen: true });
+        game.ready.then(() => { status.textContent = "Ready"; })
+            .catch((e) => {
+                const code = e && e.code ? e.code : "";
+                status.textContent = code === "webgpu_unavailable"
+                    ? "WebGPU is not available here. Try a current Chrome, Edge or Safari."
+                    : "Could not start: " + (e && e.message ? e.message : e);
+            });
+        game.oncrash = () => { status.textContent = "The game crashed. Reload the page."; start.classList.remove("hidden"); };
+        // the first tap is the browser's permission to play sound (the engine resumes audio on pointerdown)
+        start.addEventListener("pointerdown", () => {
+            start.classList.add("hidden");
+            canvas.focus();
+        }, { once: true });
+    </script>
+</body>
+</html>

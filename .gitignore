@@ -1,5 +1,5 @@
-out/
-cooked/
+/out/
+/cooked/
 src/generated/
 logs/
 crashes/
@@ -14,3 +14,6 @@ hz
 *.dSYM/
 .cache
 *.log
+
+# Kaigen local build records
+.kaigen/

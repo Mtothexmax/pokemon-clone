@@ -161,13 +161,13 @@ component Camera
 
 component CameraFollow
   focus_height 1.500000
-  yaw 3.141593
-  pitch 0.350000
+  yaw 0.000000
+  pitch 0.500000
   min_pitch -0.100000
   max_pitch 1.200000
-  distance 6.000000
+  distance 8.000000
   min_distance 2.000000
-  max_distance 14.000000
+  max_distance 18.000000
   focus_lambda 14.000000
   boom_in_lambda 20.000000
   boom_out_lambda 3.000000

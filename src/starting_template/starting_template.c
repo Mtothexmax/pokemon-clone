@@ -14,6 +14,8 @@
 #include "gameplay/camera_rig/camera_rig.h"
 #include "gameplay/character/character.h"
 #include "gameplay/day_night/day_night.h"
+#include "gameplay/mesh_builder/mesh_builder.h"
+#include "ecs/audio/ecs_audio.h"
 #include "gameplay/touch_controls/touch_controls.h"
 #include "input.h"
 #include "lib/hzmath.h"
@@ -49,7 +51,7 @@
 #define GAME_TOUCH_LOOK 0.005f       // radians per dragged point
 #define GAME_ZOOM_RATE 0.1f
 #define GAME_PINCH_ZOOM 0.02f // zoom per point of pinch spread
-#define GAME_SPAWN ((v3){0.0f, 0.1f, 0.0f})
+#define GAME_SPAWN ((v3){-5.0f, 0.1f, 1.5f}) // on the lane in front of your house
 #define GAME_FALL_Y -20.0f // below this the player respawns
 // the player's avatar: the Kaigen bot, female (0, default) or male (1); same clips on both
 #ifndef GAME_AVATAR_MALE
@@ -114,6 +116,7 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 }
 
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
+#include "st_town.c"
 
 // ---- THE SIMULATION: all game state, shared by the app and headless runs (game_sim.h); no renderer, UI, audio or avatar ----
 
@@ -258,6 +261,7 @@ typedef struct AppState {
   EcsEditorDefault editor;
 #endif
   b32 playable; // the first frame with nothing left to load has been logged
+  AudioSystem audio;
 } AppState;
 
 HZ_APP_API void app_init(AppMemory *memory) {
@@ -320,8 +324,14 @@ HZ_APP_API void app_init(AppMemory *memory) {
 #endif
 
   // ---- YOUR APP INIT HERE: presentation only (materials, sounds, HUD state); game state goes in game_sim_init ----
+  // the town: one merged vertex-coloured mesh plus its static colliders
+  town_build(w, renderer, &s->allocator);
+  // background music: the town theme, looping on the music bus (the web starts it on the first tap or key)
+  s->audio = audio_system_init(&s->allocator, NULL);
+  ecs_audio_init(&s->audio, w);
+  ecs_audio_play(w, "brickhollow/music/home.hzt", &(EcsAudioPlayDesc){.volume = 0.55f, .loop = true, .bus = AUDIO_BUS_MUSIC});
 
-  log_info("starting template initialized");
+  log_info("brickhollow initialized");
 }
 
 // one line of HUD text
@@ -345,6 +355,7 @@ hz_internal void hud_draw(const TouchControls *touch) {
                          .child_gap = 4},
               .background_color = panel,
               .corner_radius = ui_corner_radius(6)}) {
+    hud_text(ui_string("Brickhollow"), 18, ink);
     hud_text(ui_string("WASD move   Shift run   Space jump"), 14, ink);
     hud_text(ui_string("Hold right mouse to look   Wheel to zoom   R respawn"), 14, dim);
 #if GAME_DEV_TOOLS
@@ -412,6 +423,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
   // ALL lanes enter the scope. Never call is_main_thread() in here: schedule systems instead.
   ecs_scope(w) {
     day_night_schedule(w); // turns the Sun, sets the light, ambient and fog
+    ecs_audio_schedule(w);
     game_sim_schedule(&s->sim, dt);
     ecs_renderer_schedule(w);
     ecs_flush(w, dt);
