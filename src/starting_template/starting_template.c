@@ -77,7 +77,11 @@ ecs_system(player_input_system, EcsIn(Player), EcsIn(WorldTransform), EcsInOut(C
     ci->heading = c->heading;
     ci->run = p->sprint_enabled && c->run;
     ci->jump |= c->jump; // consumed by the next fixed step
-    if (c->respawn || wt->position.y < GAME_FALL_Y) {
+    if (c->teleport) {
+      ci->teleport = true;
+      ci->teleport_pos = c->teleport_pos;
+      ci->teleport_yaw = c->teleport_yaw;
+    } else if (c->respawn || wt->position.y < GAME_FALL_Y) {
       ci->teleport = true;
       ci->teleport_pos = GAME_SPAWN;
       ci->teleport_yaw = 0.0f;
@@ -110,6 +114,7 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
 #include "st_town.c"
 #include "st_minifig.c"
+#include "st_world.c"
 
 // ---- THE SIMULATION: all game state, shared by the app and headless runs (game_sim.h); no renderer, UI, audio or avatar ----
 
@@ -257,6 +262,7 @@ typedef struct AppState {
   b32 playable; // the first frame with nothing left to load has been logged
   AudioSystem audio;
   MinifigSet figs; // the LEGO player and the villagers
+  WorldState world; // doors, stairs, signs, the area title
 } AppState;
 
 HZ_APP_API void app_init(AppMemory *memory) {
@@ -301,9 +307,17 @@ HZ_APP_API void app_init(AppMemory *memory) {
   ui_system_attach_to_renderer(s->ui, renderer);
 
   // ---- touch: a stick on the left, a jump button on the right, drag elsewhere to look; shown once a touch arrives ----
-  s->touch = touch_controls_init((TouchControlsConfig){.ui = s->ui,
-                                                       .landscape = touch_controls_layout_default(TOUCH_ORIENTATION_LANDSCAPE),
-                                                       .portrait = touch_controls_layout_default(TOUCH_ORIENTATION_PORTRAIT)});
+  // touch button 0 reads a sign (shown only in reach of one), left of the jump button / above it in portrait
+  TouchControlsConfig touch = {.ui = s->ui,
+                               .landscape = touch_controls_layout_default(TOUCH_ORIENTATION_LANDSCAPE),
+                               .portrait = touch_controls_layout_default(TOUCH_ORIENTATION_PORTRAIT)};
+  touch.buttons[0] = (TouchButtonDesc){.enabled = true, .label = "Read"};
+  touch.landscape.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {200.0f, 70.0f},
+                                                      .diameter_px = 86.0f};
+  touch.portrait.buttons[0] = (TouchButtonPlacement){.anchor = TOUCH_ANCHOR_BOTTOM_RIGHT, .corner_offset_px = {80.0f, 210.0f},
+                                                     .diameter_px = 86.0f};
+  s->touch = touch_controls_init(touch);
+  s->world = (WorldState){.area = -2, .nearby = -1};
 
 #if GAME_DEV_TOOLS
   ecs_editor_default_init(&s->editor, &(EcsEditorDefaultDesc){.world = w,
@@ -349,7 +363,7 @@ hz_internal void hud_draw(const TouchControls *touch) {
               .background_color = panel,
               .corner_radius = ui_corner_radius(6)}) {
     hud_text(ui_string("Brickhollow"), 18, ink);
-    hud_text(ui_string("WASD move   Shift run   Space jump"), 14, ink);
+    hud_text(ui_string("WASD move   Shift run   Space jump   E read"), 14, ink);
     hud_text(ui_string("Hold right mouse to look   Wheel to zoom   R respawn"), 14, dim);
 #if GAME_DEV_TOOLS
     hud_text(ui_string("F1 editor   F5 save the level"), 14, dim);
@@ -380,6 +394,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       s->sim.scene = scene_save(&s->sim.scene_sys, s->sim.scene, GAME_SCENE_PATH);
 #endif
     // touch claims its fingers before anything else reads the pointer
+    touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0, s->world.reading);
     TouchControlsFrame tf = touch_controls_update(&s->touch, input, memory->total_time);
     b32 touch_on = tf.active && !s->editor_open;
     // keys, pad and touch to camera-relative controls; R respawns
@@ -408,6 +423,22 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
                                : -input->scroll_delta.y * GAME_ZOOM_RATE - (touch_on ? tf.camera_pinch_px * GAME_PINCH_ZOOM : 0.0f),
     };
     s->look_locked = look;
+    // doors, stairs and signs (st_world.c): a door asks for a teleport, the camera snaps behind the player again
+    const WorldTransform *pwt = ecs_component_get(w, s->sim.player, WorldTransform);
+    if (pwt && !s->editor_open) {
+      world_reading(&s->world, pwt->position,
+                    input->buttons[KEY_E].pressed_this_frame || (touch_on && tf.buttons[0].pressed),
+                    input->buttons[KEY_ESCAPE].pressed_this_frame);
+      world_doors(&s->world, pwt->position, &controls, dt);
+      EcsEntity cam_e = ecs_query_get_singleton_entity(s->sim.camera_query);
+      const CameraFollow *follow = cam_e != ECS_ENTITY_INVALID ? ecs_component_get(w, cam_e, CameraFollow) : NULL;
+      if (controls.teleport && follow) {
+        CameraFollow f = *follow;
+        f.yaw = 0.0f; // the rooms and the houses face the camera (south); look north again
+        f.snap = true;
+        ecs_component_set(w, cam_e, CameraFollow, f);
+      }
+    }
     // the editor pauses the simulation
     game_sim_begin_frame(&s->sim, &controls, dt, s->editor_open);
     fig_animate(&s->figs, w, s->sim.player, dt);
@@ -445,8 +476,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // YOUR HUD HERE: ui_* calls; read game state from resources (ecs_resource_get), never mutate the world
     if (!s->editor_open) {
       hud_draw(&s->touch);
+      world_draw(&s->world, s->touch.last_active);
       touch_controls_draw_stick(&s->touch);
       touch_controls_draw_jump_button(&s->touch);
+      touch_controls_draw_button(&s->touch, 0);
 #ifndef HZ_PUBLISH
       perf_stats_draw(input, memory->dt); // the editor's hierarchy sits where the stats draw
 #endif

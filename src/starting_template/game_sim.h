@@ -12,6 +12,9 @@ typedef struct PlayerControls {
   b32 jump;
   b32 run;
   b32 respawn;
+  b32 teleport;     // a door or the stairs: put the player at teleport_pos facing teleport_yaw
+  v3 teleport_pos;
+  f32 teleport_yaw; // yaw 0 faces +z
 } PlayerControls;
 ECS_COMPONENT_TYPEDEF(PlayerControls);
 

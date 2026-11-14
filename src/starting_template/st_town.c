@@ -222,6 +222,11 @@ hz_internal void town_flower_pot(Town *t, f32 x, f32 z, b32 pot) {
   town_block(t, x - 1.8f, x + 1.8f, z - 1.8f, z + 1.8f);
 }
 
+// the flower pot standing on something (a table), no collider of its own
+hz_internal void town_flower_pot_on(Town *t, f32 x, f32 z, f32 y) {
+  town_prop(t, PROP("flowerpot"), x, z, y, 1.0f, town_rot(t), true);
+}
+
 hz_internal void town_spruce(Town *t, f32 x, f32 z, f32 s) { town_prop(t, PROP("spruce"), x, z, 0.0f, s, town_rot(t), true); }
 
 hz_internal void town_round_tree(Town *t, f32 x, f32 z, f32 s) {
@@ -364,7 +369,8 @@ hz_internal void town_wall(Town *t, u32 hex, f32 w, f32 h, f32 d, f32 x, f32 z) 
 
 // a two-storey village house (buildHouse): foundation, brick walls, floor band, door with step, windows, a stepped
 // brick roof with studs on the ridge, a chimney, the sign board above the door and a mailbox
-hz_internal void town_house(Town *t, f32 cx, f32 cz, f32 w, f32 d, u32 roof, u32 wall, u32 door, u32 mailbox) {
+hz_internal void town_house(Town *t, f32 cx, f32 cz, f32 w, f32 d, u32 roof, u32 wall, u32 door, u32 mailbox,
+                             CString sign) {
   f32 x0 = cx - w * 0.5f, x1 = cx + w * 0.5f, z0 = cz - d * 0.5f, z1 = cz + d * 0.5f;
   town_block(t, x0 - 0.6f, x1 + 0.6f, z0 - 0.6f, z1 + 0.5f);
   town_box(t, C_GRAY, w + 1.0f, 0.4f, d + 1.0f, cx, 0.0f, cz, false);
@@ -402,6 +408,7 @@ hz_internal void town_house(Town *t, f32 cx, f32 cz, f32 w, f32 d, u32 roof, u32
   f32 sw = m_minf(3.4f, w - 7.4f), sh = sw / 4.0f;
   town_box(t, C_WHITE, sw + 0.3f, sh + 0.3f, 0.2f, cx, 5.8f - sh * 0.5f - 0.15f, z1, false);
   town_box(t, mailbox, sw, sh, 0.1f, cx, 5.8f - sh * 0.5f, z1 + 0.12f, false);
+  town_prop(t, sign, cx, z1 + 0.19f, 5.8f, 1.0f, 0.0f, false);
   // mailbox
   f32 mx = cx - 3.2f, mz = z1 + 2.2f;
   town_box(t, C_DARK_GRAY, 0.4f, 1.6f, 0.4f, mx, 0.0f, mz, false);
@@ -470,6 +477,7 @@ hz_internal void town_lab(Town *t, f32 cx, f32 cz, f32 w, f32 d) {
   // the lab sign: a blue board with a white frame over the door
   town_box(t, C_WHITE, 5.4f, 2.1f, 0.15f, cx, 4.7f, fz + 0.02f, false);
   town_box(t, 0x1e5aa8u, 5.0f, 1.7f, 0.1f, cx, 4.9f, fz + 0.1f, false);
+  town_prop(t, "brickhollow/signs/lab.glb", cx, fz + 0.17f, 5.75f, 1.0f, 0.0f, false);
 }
 
 // a white picket fence from (x0, z0) to (x1, z1): a post every stud, two rails, one collider
@@ -573,6 +581,8 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 
 // ---------------------------------------------------------------- the village
 
+#include "st_rooms.c"
+
 // main lane, once: the whole village into one slot; the parts become static renderer entities
 hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   ArenaAllocator *arena = arena_create(MB(128), MB(1));
@@ -609,8 +619,8 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   }
 
   // ---- the houses: yours (west, blue roof) and Dex & Lumi's (east, red roof, yellow walls) ----
-  town_house(t, -15.0f, -11.0f, 12.0f, 10.0f, C_BLUE, C_WHITE, C_RED_BROWN, C_BLUE);
-  town_house(t, 47.0f, -12.0f, 16.0f, 12.0f, C_RED, C_YELLOW, C_BLUE, C_RED);
+  town_house(t, -15.0f, -11.0f, 12.0f, 10.0f, C_BLUE, C_WHITE, C_RED_BROWN, C_BLUE, "brickhollow/signs/house_home.glb");
+  town_house(t, 47.0f, -12.0f, 16.0f, 12.0f, C_RED, C_YELLOW, C_BLUE, C_RED, "brickhollow/signs/house_dex.glb");
   // Dex's garage next to it, with a grey door and a driveway plate
   town_box(t, C_WHITE, 8.0f, 5.6f, 8.0f, 35.0f, 0.4f, -10.0f, false);
   town_box(t, C_GRAY, 9.0f, 0.4f, 9.0f, 35.0f, 0.0f, -10.0f, false);
@@ -670,6 +680,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
       }
     town_box(t, C_BROWN, 0.3f, 2.6f, 0.3f, -23.2f, 0.0f, 8.9f, false);
     town_box(t, C_TAN, 0.15f, 1.5f, 2.8f, -23.0f, 1.35f, 8.9f, false);
+    town_prop(t, "brickhollow/signs/garden.glb", -22.91f, 8.9f, 2.1f, 1.0f, M_PI * 0.5f, false); // faces the gate (+x)
     town_block(t, -23.4f, -22.9f, 7.6f, 10.2f);
   }
 
@@ -700,12 +711,12 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   town_box(t, C_BROWN, 0.35f, 3.2f, 0.35f, 4.4f, 0.0f, 20.0f, false);
   town_box(t, C_BROWN, 0.35f, 3.2f, 0.35f, 7.4f, 0.0f, 20.0f, false);
   town_sign_board(t, 5.9f, 20.2f, 3.8f, 2.0f, 1.3f, C_WHITE);
-  town_box(t, C_RED, 3.0f, 0.35f, 0.05f, 5.9f, 2.55f, 20.45f, false); // the title stripe on the village sign
+  town_prop(t, "brickhollow/signs/village.glb", 5.9f, 20.41f, 2.3f, 1.0f, 0.0f, false);
   town_block(t, 4.0f, 7.8f, 19.6f, 20.6f);
   town_box(t, C_BROWN, 0.35f, 3.2f, 0.35f, 5.0f, 0.0f, -24.5f, false);
   town_sign_board(t, 5.0f, -24.3f, 3.4f, 1.8f, 1.3f, 0xfff6c8u);
+  town_prop(t, "brickhollow/signs/route.glb", 5.0f, -24.09f, 2.2f, 1.0f, 0.0f, false);
   town_block(t, 4.5f, 5.5f, -25.0f, -24.0f);
-  town_sign_board(t, 13.0f, 17.05f, 0.1f, 0.1f, 0.0f, C_WHITE); // (the lab's sign is on its wall)
 
   // ---- lamp posts ----
   f32 lamps[6][2] = {{-4, -4}, {4, 4}, {-4, 10}, {4, -14}, {-22, 4}, {22, -3.5f}};
@@ -809,6 +820,9 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc) {
   f32 npcs[4][2] = {{52.5f, -3.4f}, {-8.0f, 13.2f}, {-5.4f, -24.2f}, {-8.0f, -4.6f}};
   for (i32 i = 0; i < 4; i++)
     town_block(t, npcs[i][0] - 0.9f, npcs[i][0] + 0.9f, npcs[i][1] - 0.7f, npcs[i][1] + 0.7f);
+
+  // ---- the rooms, far east of the village (st_rooms.c) ----
+  rooms_build(t);
 
   // ---- the wild LEGO plants wherever there is room (the garden inside its fence stays as it is) ----
   town_occupy(t, -25.0f, -13.0f, 7.0f, 17.0f);

@@ -79,7 +79,19 @@ class Geo:
     def __init__(self):
         self.p, self.n, self.i = [], [], []
 
-    def add(self, pts, tris, double=False):
+    def add(self, pts, tris, double=False, outward=True):
+        if outward:
+            # face away from the piece's centre (a curved shell): flip the winding when the faces point inwards
+            c = [sum(q[k] for q in pts) / len(pts) for k in range(3)]
+            score = 0.0
+            for a, b, cc in tris:
+                pa, pb, pc = pts[a], pts[b], pts[cc]
+                u = [pb[k] - pa[k] for k in range(3)]
+                v = [pc[k] - pa[k] for k in range(3)]
+                fn = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+                score += sum(fn[k] * (pa[k] - c[k]) for k in range(3))
+            if score < 0:
+                tris = [(a, cc, b) for a, b, cc in tris]
         base = len(self.p)
         nrm = [[0.0, 0.0, 0.0] for _ in pts]
         for a, b, c in tris:
@@ -174,10 +186,11 @@ def hair_geo(style):
     hs = style['hairStyle']
     group = dict(scale=(1.04, 1.2, 1.04), pos=(0, 0.32, 0))
 
-    def put(pts, tris, double=False, into=None, **child):
+    def put(pts, tris, double=False, into=None, outward=True, **child):
         pts = xf(pts, **child)
         pts = xf(pts, **group)
-        (into or g).add(pts, tris, double)
+        # the hair material is double-sided: a second, flipped copy of the faces only fought with the first (grey band)
+        (into or g).add(pts, tris, False, outward)
 
     if hs == 'cap':
         p, t = sphere_cap(0.72, 24, 6, math.pi / 2)
@@ -196,7 +209,7 @@ def hair_geo(style):
                 a = i * 2
                 # outer i, inner i, outer i+1 ...: (a, a+2, a+1) faces up
                 tris += [(a, a + 2, a + 1), (a + 1, a + 2, a + 3)] if up else [(a, a + 1, a + 2), (a + 1, a + 3, a + 2)]
-            put(pts, tris, pos=(0, 0.42, 0))
+            put(pts, tris, outward=False, pos=(0, 0.42, 0))
         p, t = cylinder(0.7, 0.66, 0.5, 16, math.pi * 0.6, math.pi * 0.8)
         put(p, t, double=True, into=band, pos=(0, 0.1, 0))
         return [(g, style['cap']), (band, style['hair'])]
