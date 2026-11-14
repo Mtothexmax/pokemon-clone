@@ -44,9 +44,10 @@
 #define GAME_SCENE_PATH "starting_template/main.hzt"
 #define GAME_GRAVITY 9.81f
 #define GAME_FIXED_HZ 60.0f
-#define GAME_MAX_SUBSTEPS 4
-// wall-clock dt is not clamped by the engine: a hitch must not become one giant simulation step
-#define GAME_MAX_DT (1.0f / 20.0f)
+#define GAME_MAX_SUBSTEPS 8 // catch-up at 60 Hz down to 7.5 fps: a slow phone must not slow the world down
+// wall-clock dt is not clamped by the engine: a hitch must not become one giant simulation step. Only real hitches:
+// a phone drawing at 10-20 fps must still move the player at full speed (fixed steps, not a slower clock)
+#define GAME_MAX_DT (1.0f / 8.0f)
 #define GAME_LOOK_SENSITIVITY 0.003f // radians per mouse pixel
 #define GAME_TOUCH_LOOK 0.005f       // radians per dragged point
 #define GAME_ZOOM_RATE 0.1f
@@ -144,6 +145,7 @@ hz_internal void game_sim_init(GameSim *sim, EcsWorld *w, AssetSystem *assets, A
   character_controller_init(w);
   camera_rig_init(w);
   sim->sim_clock = fixed_timestep_make(GAME_FIXED_HZ, GAME_MAX_SUBSTEPS);
+  sim->sim_clock.max_frame_dt = GAME_MAX_DT; // the accumulator keeps the whole (clamped) frame, see GAME_MAX_DT
 
   // ---- the level: the sun, the floor and the camera come from the scene file ----
   scene_system_create(&sim->scene_sys, w, assets, alloc);
