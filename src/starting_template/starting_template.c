@@ -718,7 +718,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           EcsPhysicsHit hit;
           b32 blocked = ecs_physics_raycast(pw, head, at, &q, &hit);
           if (blocked)
-            lift = m_minf(lift + dt * 1.8f, m_maxf(0.0f, 1.48f - base));
+            lift = m_minf(lift + dt * 0.8f, m_maxf(0.0f, 1.48f - base)); // rises gently (was 1.8 rad/s)
           else if (lift > 0.0f && !ecs_physics_raycast(pw, head, at_lower, &q, &hit))
             lift = m_maxf(0.0f, lift - dt * 0.7f);
         }

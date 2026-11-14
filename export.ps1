@@ -1,7 +1,10 @@
 # export.ps1 - Static web export for GitHub Pages (Brickhollow, Kaigen/HZ engine)
-# Builds the single-threaded web bundle (the engine's mobile web profile: no SharedArrayBuffer, so it runs without
-# the COOP/COEP headers GitHub Pages cannot send) and copies it into docs/ for
-# https://mtothexmax.github.io/pokemon-clone/.
+# Builds two web bundles and copies them into docs/ for https://mtothexmax.github.io/pokemon-clone/:
+# - the threaded build at the root (desktop and Android): the only one with sound. It needs SharedArrayBuffer, which
+#   needs COOP/COEP headers; GitHub Pages cannot send them, so coi-sw.js (a service worker) adds them in the browser
+# - the single-threaded build in docs/ios/ (just its scripts and game.wasm) for iPhones and iPads, whose Safari does
+#   not run the threaded one. It reads the shared cooked/ at the root (the threaded cook is a superset of its own)
+# index.html picks one.
 #
 # GitHub Pages serves files as they are, with no Content-Encoding: br. Where the engine requests cooked/X.br it
 # relies on the server to decode it, so docs/ also holds the raw bytes under the .br name; game.wasm goes out
@@ -9,7 +12,7 @@
 #
 # Usage (from the project root):
 #   powershell -ExecutionPolicy Bypass -File .\export.ps1
-#   .\export.ps1 -NoBuild      # reuse the last publish build in out/
+#   .\export.ps1 -NoBuild      # reuse the last publish builds in out/
 param(
     [switch]$NoBuild
 )
@@ -21,25 +24,37 @@ Write-Host "=== Brickhollow export for GitHub Pages ===" -ForegroundColor Cyan
 Write-Host "Output: docs/"
 Write-Host ""
 
-# 1. Build the single-threaded web bundle
+# 1. Build both web bundles
 if (-not $NoBuild) {
-    Write-Host "[1/4] Building the web bundle (hzbuild wasm ios publish)..." -ForegroundColor Yellow
+    Write-Host "[1/5] Building the threaded web bundle (hzbuild wasm publish)..." -ForegroundColor Yellow
+    & .\hz\hzbuild wasm publish
+    if ($LASTEXITCODE -ne 0) { throw "hzbuild wasm publish failed (exit $LASTEXITCODE)" }
+    Write-Host "      and the single-threaded one for iOS (hzbuild wasm ios publish)..." -ForegroundColor Yellow
     & .\hz\hzbuild wasm ios publish
-    if ($LASTEXITCODE -ne 0) { throw "hzbuild publish failed (exit $LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "hzbuild wasm ios publish failed (exit $LASTEXITCODE)" }
 } else {
-    Write-Host "[1/4] Skipping the build (-NoBuild)" -ForegroundColor Green
+    Write-Host "[1/5] Skipping the builds (-NoBuild)" -ForegroundColor Green
 }
 
-$bundle = Get-ChildItem 'out/wasm-ios/publish' -Recurse -Directory -Filter '*-web-single' |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $bundle) { throw "No web bundle found under out/wasm-ios/publish - run without -NoBuild" }
-Write-Host "      bundle: $($bundle.FullName)"
+function Get-Bundle($root, $filter) {
+    $b = Get-ChildItem $root -Recurse -Directory -Filter $filter | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $b) { throw "No web bundle $filter under $root - run without -NoBuild" }
+    return $b.FullName
+}
+$src = Get-Bundle 'out/wasm/publish' '*-web'
+$ios = Get-Bundle 'out/wasm-ios/publish' '*-web-single'
+Write-Host "      threaded: $src"
+Write-Host "      ios:      $ios"
 
-# 2. Fresh docs/
-Write-Host "[2/4] Copying the bundle into docs/ (raw files, raw copies under the .br names, no _headers or dev index.html)..." -ForegroundColor Yellow
+function Expand-Wasm($from, $to) {
+    & node -e "const z=require('zlib'),fs=require('fs');fs.writeFileSync(process.argv[2],z.brotliDecompressSync(fs.readFileSync(process.argv[1])))" $from $to
+    if ($LASTEXITCODE -ne 0) { throw "Could not decompress $from (is Node installed?)" }
+}
+
+# 2. Fresh docs/ with the threaded bundle
+Write-Host "[2/5] Copying the threaded bundle into docs/ (raw files, raw copies under the .br names)..." -ForegroundColor Yellow
 if (Test-Path 'docs') { Remove-Item 'docs' -Recurse -Force }
 New-Item -ItemType Directory -Path 'docs' | Out-Null
-$src = $bundle.FullName
 # The engine reads some asset TYPES through their brotli sibling (X.br: clips, scene chunks, textures) and expects
 # the server to decode it (Content-Encoding: br). GitHub Pages cannot, so those files go out twice: the raw X, and
 # the same raw bytes under the X.br name. Font pages (cooked/engine/fonts, most of the size) are read raw: no copy.
@@ -57,17 +72,21 @@ Get-ChildItem $src -Recurse -File | Where-Object {
         Copy-Item -LiteralPath $_.FullName ($dest + '.br')
     }
 }
+Expand-Wasm (Join-Path $src 'game.wasm.br') (Join-Path (Resolve-Path 'docs') 'game.wasm')
 
-# 3. game.wasm uncompressed (Node's built-in brotli), and our own start page
-Write-Host "[3/4] Unpacking game.wasm and writing the start page..." -ForegroundColor Yellow
-$wasmBr = Join-Path $src 'game.wasm.br'
-$wasmOut = (Join-Path (Resolve-Path 'docs') 'game.wasm')
-& node -e "const z=require('zlib'),fs=require('fs');fs.writeFileSync(process.argv[2],z.brotliDecompressSync(fs.readFileSync(process.argv[1])))" $wasmBr $wasmOut
-if ($LASTEXITCODE -ne 0) { throw "Could not decompress game.wasm.br (is Node installed?)" }
+# 3. The iOS bundle: its scripts and game.wasm only (cooked/ is shared)
+Write-Host "[3/5] Copying the single-threaded iOS scripts into docs/ios/..." -ForegroundColor Yellow
+New-Item -ItemType Directory -Path 'docs/ios' | Out-Null
+Get-ChildItem $ios -File -Filter '*.js' | ForEach-Object { Copy-Item -LiteralPath $_.FullName (Join-Path 'docs/ios' $_.Name) }
+Expand-Wasm (Join-Path $ios 'game.wasm.br') (Join-Path (Resolve-Path 'docs/ios') 'game.wasm')
+
+# 4. Our start page and the service worker that adds the isolation headers
+Write-Host "[4/5] Writing the start page and coi-sw.js..." -ForegroundColor Yellow
 Copy-Item 'web_export/index.html' 'docs/index.html' -Force
+Copy-Item 'web_export/coi-sw.js' 'docs/coi-sw.js' -Force
 
-# 4. Disable Jekyll (it would hide files and folders starting with _ or .)
-Write-Host "[4/4] Writing .nojekyll" -ForegroundColor Yellow
+# 5. Disable Jekyll (it would hide files and folders starting with _ or .)
+Write-Host "[5/5] Writing .nojekyll" -ForegroundColor Yellow
 New-Item -ItemType File -Path 'docs/.nojekyll' -Force | Out-Null
 
 $files = Get-ChildItem 'docs' -Recurse -File
