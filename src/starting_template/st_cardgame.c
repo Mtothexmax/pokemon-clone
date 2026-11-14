@@ -89,6 +89,8 @@ hz_internal void cg_say(CardGame *cg, EcsWorld *w, AudioSystem *audio, i32 what,
 hz_internal void cg_init(CardGame *cg, EcsWorld *w, AudioSystem *audio, u32 seed) {
   cg->ui.selected = cg->ui.hover_card = cg->ui.click_card = cg->ui.click_zone = -1;
   cg->ui.deck_pick = cg->ui.click_coll = cg->ui.click_slot = -1;
+  cg->ui.drag = cg->ui.press_card = cg->ui.click_play_to = -1;
+  cg->ui.confetti_t = -1.0f;
   cg->seed = seed | 1u;
   cg_music(cg, w, audio, MUSIC_HOME);
 }
@@ -111,6 +113,12 @@ hz_internal void cg_begin_board(CardGame *cg, const GameSave *s, EcsWorld *w, Au
   b_init(&cg->b, cg->pending_kind, opp, s->deck, ai, false, cg_rand(cg));
   cg->in_battle = true;
   cg->ui.selected = -1;
+  cg->ui.drag = cg->ui.press_card = cg->ui.click_play_to = -1;
+  cg->ui.inspect = INSPECT_NONE;
+  cg->ui.log_open = false;
+  cg->ui.confetti_t = -1.0f;
+  for (i32 i = 0; i < B_MAX_CARDS; i++)
+    cg->ui.has_box[i] = false;
   cg->last_turn = cg->b.turn;
   cg->ai_snap_said = cg->celebrated = false;
   cg_say(cg, w, audio, 0, 3.0f);
@@ -176,6 +184,9 @@ hz_internal b32 cg_update(CardGame *cg, SaveState *save, Life *life, DialogState
                           const InputSystem *in, b32 busy_world, f32 dt) {
   GameSave *s = &save->data;
   cg->track_t += dt;
+  cg->ui.time += dt;
+  if (cg->ui.confetti_t >= 0.0f)
+    cg->ui.confetti_t += dt;
   if (cg->taunt_t > 0.0f)
     cg->taunt_t -= dt;
   // the intro fanfare hands over to the fight music (as the three.js one at 10.8 s)
@@ -209,12 +220,32 @@ hz_internal b32 cg_update(CardGame *cg, SaveState *save, Life *life, DialogState
   }
   if (cg->in_battle) {
     Battle *b = &cg->b;
-    if (b->phase != PHASE_OVER)
-      battle_input(&cg->ui, b, in);
-    else
-      cg->ui.click_card = cg->ui.click_zone = -1;
+    if (b->phase != PHASE_OVER) {
+      battle_input(&cg->ui, b, in, snd);
+    } else {
+      cg->ui.click_card = cg->ui.click_zone = cg->ui.press_card = cg->ui.drag = -1;
+      cg->ui.inspect = INSPECT_NONE;
+    }
     i32 before = b->phase;
     b_update(b, dt);
+    // the sounds of the reveal: a card turns over, a hit, a boost, a card shatters
+    if (b->sfx_reveals) {
+      sound_play(snd, SND_POP, 1.1f, 0.45f);
+      b->sfx_reveals = 0;
+    }
+    if (b->sfx_hits) {
+      sound_play(snd, SND_KICK, 1.15f, 0.7f);
+      b->sfx_hits = 0;
+    }
+    if (b->sfx_buffs) {
+      sound_play(snd, SND_COIN, 1.25f, 0.4f);
+      b->sfx_buffs = 0;
+    }
+    if (b->sfx_kills) {
+      sound_play(snd, SND_SPLASH, 1.6f, 0.6f);
+      sound_play(snd, SND_KICK, 0.7f, 0.8f);
+      b->sfx_kills = 0;
+    }
     if (b->turn > cg->last_turn) {
       if (b->turn < b->max_turns && (cg_rand(cg) % 100u) < 45u)
         cg_say(cg, w, audio, 1, 2.6f);
@@ -230,6 +261,7 @@ hz_internal b32 cg_update(CardGame *cg, SaveState *save, Life *life, DialogState
       cg->celebrated = true;
       if (b->result == RESULT_WIN) {
         cg_music(cg, w, audio, MUSIC_VICTORY);
+        cg->ui.confetti_t = 0.0f;
         sound_play(snd, SND_FANFARE, 1.0f, 0.8f);
         cg_say(cg, w, audio, 4, 4.0f);
       } else if (b->result == RESULT_LOSE) {
@@ -285,7 +317,8 @@ hz_internal b32 cg_dialog_action(CardGame *cg, DialogAction act, SaveState *save
 }
 
 // the UI frame
-hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in, f32 sw, f32 sh, b32 show_button) {
+hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in, f32 sw, f32 sh, f32 dpr, b32 show_button) {
+  cg->ui.dpr = dpr;
   if (cg->flash > 0.0f) {
     ui_element({.id = ui_id("BattleFlash"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 80},
@@ -295,15 +328,23 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
   if (cg->in_battle) {
     battle_draw(&cg->ui, &cg->b, in, s, sw, sh);
     if (cg->taunt_t > 0.0f && cg->taunt) {
+      // the opponent's speech bubble under its name, with a little tail
+      f32 age = 3.0f - cg->taunt_t, pop = m_clampf(age / 0.25f, 0.0f, 1.0f);
       ui_element({.id = ui_id("Taunt"),
-                  .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 55,
-                               .attach_points = {.element = UI_ATTACH_POINT_LEFT_TOP, .parent = UI_ATTACH_POINT_LEFT_TOP},
-                               .offset = {14.0f, 56.0f}},
-                  .layout = {.padding = {.left = 14, .right = 14, .top = 8, .bottom = 8}},
-                  .background_color = {255, 255, 255, 245},
-                  .border = {.color = {27, 42, 52, 255}, .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
-                  .corner_radius = ui_corner_radius(14)}) {
-        cu_text(cg->taunt, 17, (HzUIColor){27, 42, 52, 255});
+                  .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 58, .offset = {14.0f, 48.0f + 6.0f * (1.0f - pop)}},
+                  .layout = {.padding = {.left = 14, .right = 14, .top = 8, .bottom = 8}, .sizing = {.width = ui_sizing_fit(0.0f, m_minf(sw * 0.7f, 340.0f))}},
+                  .background_color = {255, 255, 255, 255},
+                  .border = {.color = {27, 42, 52, 255}, .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
+                  .corner_radius = ui_corner_radius(14),
+                  .shadow = {.color = {0, 0, 0, 90}, .offset_y = 6.0f, .blur = 16.0f},
+                  .transform = cu_tf(0, 0, 0.9f + 0.1f * pop, 0),
+                  .opacity = opt_some(f32, pop)}) {
+        ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 58, .offset = {16.0f, -8.0f}},
+                    .layout = {.sizing = {.width = ui_sizing_fixed(13), .height = ui_sizing_fixed(13)}},
+                    .background_color = {27, 42, 52, 255},
+                    .transform = cu_tf(0, 0, 1, 45)}) {}
+        HzUITextConfig cfg = {.fontSize = 15, .textColor = {27, 42, 52, 255}, .weight = 700, .wrapMode = UI_TEXT_WRAP_WORDS};
+        ui_text(ui_str_c(cg->taunt), cfg);
       }
     }
   } else if (cg->ui.deck_open) {

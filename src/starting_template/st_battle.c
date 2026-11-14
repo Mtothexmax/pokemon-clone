@@ -24,6 +24,9 @@ typedef struct BCard {
   i32 fx_n;      // the last power change
   f32 fx_t;      // seconds since it (the UI shows a +N / -N)
   f32 pulse_t;   // seconds since it was revealed or activated
+  i32 fx_src;    // the card that caused the last power change (the projectile flies from it)
+  f32 die_t;     // seconds since it was destroyed (the UI shatters it)
+  f32 draw_t;    // seconds since it came into the hand (the UI flies it out of the deck)
 } BCard;
 
 typedef enum StepKind { STEP_REVEAL, STEP_ACT } StepKind;
@@ -60,6 +63,7 @@ typedef struct Battle {
   char log[6][120];
   i32 log_n;
   i32 sfx_hits; // power changes since the UI last looked (sounds)
+  i32 sfx_buffs, sfx_kills, sfx_reveals;
 } Battle;
 
 hz_internal u32 b_rand_u(Battle *b) {
@@ -113,13 +117,19 @@ hz_internal void b_buff(Battle *b, i32 target, i32 n, i32 src) {
   b->c[target].mod += n;
   b->c[target].fx_n = n;
   b->c[target].fx_t = 0.0f;
-  b->sfx_hits++;
+  b->c[target].fx_src = src;
+  if (n > 0)
+    b->sfx_buffs++;
+  else
+    b->sfx_hits++;
   B_SAY(b, "%: % %% Power", fmt_cstr(b_name(b, src)), fmt_cstr(b_name(b, target)), fmt_cstr(n > 0 ? "+" : ""), fmt_i32(n));
 }
 
 hz_internal void b_destroy(Battle *b, i32 target, i32 src) {
   b->c[target].alive = false;
-  b->sfx_hits++;
+  b->c[target].die_t = 0.0f;
+  b->c[target].fx_src = src;
+  b->sfx_kills++;
   B_SAY(b, "% destroyed %!", fmt_cstr(b_name(b, src)), fmt_cstr(b_name(b, target)));
 }
 
@@ -131,6 +141,7 @@ hz_internal void b_draw(Battle *b, i32 side, b32 silent) {
     b->deck[side][i - 1] = b->deck[side][i];
   b->deck_n[side]--;
   b->c[ci].hseq = b->hseq++;
+  b->c[ci].draw_t = 0.0f;
   b->hand[side][b->hand_n[side]++] = ci;
   if (!silent && side == B_SIDE_P)
     B_SAY(b, "You drew %.", fmt_cstr(b_name(b, ci)));
@@ -138,7 +149,8 @@ hz_internal void b_draw(Battle *b, i32 side, b32 silent) {
 
 hz_internal i32 b_new_card(Battle *b, i32 id, i32 owner) {
   i32 ci = b->n++;
-  b->c[ci] = (BCard){.id = id, .owner = owner, .zone = -1, .alive = true, .act_order = -1, .fx_t = 99.0f, .pulse_t = 99.0f};
+  b->c[ci] = (BCard){.id = id, .owner = owner, .zone = -1, .alive = true, .act_order = -1, .fx_t = 99.0f, .pulse_t = 99.0f,
+                     .fx_src = -1, .die_t = 99.0f, .draw_t = 99.0f};
   return ci;
 }
 
@@ -147,6 +159,7 @@ hz_internal void b_add_to_hand(Battle *b, i32 side, i32 id) {
     return;
   i32 ci = b_new_card(b, id, side);
   b->c[ci].hseq = b->hseq++;
+  b->c[ci].draw_t = 0.0f;
   b->hand[side][b->hand_n[side]++] = ci;
   B_SAY(b, "% got a %.", fmt_cstr(side == B_SIDE_P ? "You" : b->opponent), fmt_cstr(card_def(id).name));
 }
@@ -640,6 +653,8 @@ hz_internal void b_update(Battle *b, f32 dt) {
   for (i32 i = 0; i < b->n; i++) {
     b->c[i].fx_t += dt;
     b->c[i].pulse_t += dt;
+    b->c[i].die_t += dt;
+    b->c[i].draw_t += dt;
   }
   if (b->phase != PHASE_REVEAL)
     return;
@@ -678,6 +693,7 @@ hz_internal void b_update(Battle *b, f32 dt) {
       c->staged = false;
       c->revealed = true;
       c->pulse_t = 0.0f;
+      b->sfx_reveals++;
     }
     i32 times = card_def(c->id).kind == KIND_REVEAL ? b_reveal_times(b, st.card) : 0;
     if (b->reveal_repeat < times) {

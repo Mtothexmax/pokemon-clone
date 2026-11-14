@@ -469,6 +469,11 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       s->save.data.exp += 200;
       save_mark(&s->save);
     }
+    if (input->buttons[KEY_F8].pressed_this_frame && !cg_busy(&s->cards)) { // dev builds: a practice battle (starter deck if needed)
+      if (!s->save.data.has_deck)
+        give_starter(&s->save.data);
+      cg_start_battle(&s->cards, BATTLE_PRACTICE, w, &s->audio);
+    }
 #endif
     // touch claims its fingers before anything else reads the pointer
     touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0 || s->dlg.open || s->scr.kind != SCREEN_NONE, s->world.reading);
@@ -818,7 +823,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       if (!cards_screen)
         vox_draw(&s->vox, input, cam, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->world.area < 0 && !s->dlg.open);
-      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
+      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
       dialog_draw(&s->dlg, input, s->touch.last_active, ui_w);
       screens_draw(&s->scr, input, &s->save.data);
       debug_draw(&s->dbg);
