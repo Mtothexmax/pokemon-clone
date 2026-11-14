@@ -1,6 +1,6 @@
 type MaterialBlobAsset
 version 23
-generated 3a20bb528cb561ec
+generated c8dd3c44011a4a32
 ---
 shader_source "/shaders/renderer/standard.glsl" ShaderVariantBlobAsset
 depth_test true
@@ -36,7 +36,7 @@ properties 11
 
   name "smoothness"
   type MAT_PROP_FLOAT
-  f 0.680000
+  f 0.14999998
 
   name "emission_color"
   type MAT_PROP_COLOR4

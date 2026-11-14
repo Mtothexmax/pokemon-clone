@@ -274,6 +274,9 @@ typedef struct AppState {
   Life life;       // golden studs, ducks, ball, weather, Pip... (st_life.c)
   Screens scr;     // TV, piano, PCs
   TownRect blocks[LIFE_MAX_BLOCKS];
+  TownGroups groups;   // what is drawn per area (st_town.c)
+  i32 shown_area;      // the area the groups were last shown for
+  f32 boom_radius;     // the camera's obstacle sphere outside (inside the rooms it is off)
   u32 block_count;
   b32 intro_checked;
   b32 dancing;
@@ -349,7 +352,13 @@ HZ_APP_API void app_init(AppMemory *memory) {
 
   // ---- YOUR APP INIT HERE: presentation only (materials, sounds, HUD state); game state goes in game_sim_init ----
   // the town: one merged vertex-coloured mesh plus its static colliders
-  town_build(w, renderer, &s->allocator, s->blocks, &s->block_count, LIFE_MAX_BLOCKS);
+  town_build(w, renderer, &s->allocator, s->blocks, &s->block_count, LIFE_MAX_BLOCKS, &s->groups);
+  // the villagers in the rooms belong to their room's group (figs 4, 5, 6: Mom, Lumi, the Professor)
+  RoomId fig_room[3] = {ROOM_HOME, ROOM_DEX, ROOM_LAB};
+  for (u32 i = 0; i < 3; i++)
+    for (u32 k = 0; k < FIG_PART_COUNT; k++)
+      town_group_add(&s->groups, 1 + fig_room[i], s->figs.figs[4 + i].part[k]);
+  s->shown_area = -99;
   // background music: the town theme, looping on the music bus (the web starts it on the first tap or key)
   s->audio = audio_system_init(&s->allocator, NULL);
   ecs_audio_init(&s->audio, w);
@@ -556,11 +565,33 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         world_doors(&s->world, pwt->position, &controls, dt);
       EcsEntity cam_e = ecs_query_get_singleton_entity(s->sim.camera_query);
       const CameraFollow *follow = cam_e != ECS_ENTITY_INVALID ? ecs_component_get(w, cam_e, CameraFollow) : NULL;
-      if (controls.teleport && follow && !s->life.sitting) {
+      if (follow && s->boom_radius <= 0.0f && follow->boom_radius > 0.0f)
+        s->boom_radius = follow->boom_radius;
+      // inside a room (open at the top, low at the front) the camera does not dodge furniture: it would jump in close
+      f32 boom = s->world.area >= 0 ? 0.0f : s->boom_radius;
+      if (follow && ((controls.teleport && !s->life.sitting) || follow->boom_radius != boom)) {
         CameraFollow f = *follow;
-        f.yaw = 0.0f; // the rooms and the houses face the camera (south); look north again
-        f.snap = true;
+        if (controls.teleport && !s->life.sitting) {
+          f.yaw = 0.0f; // the rooms and the houses face the camera (south); look north again
+          f.snap = true;
+        }
+        f.boom_radius = boom;
         ecs_component_set(w, cam_e, CameraFollow, f);
+      }
+      // draw only the village outside, only this room inside
+      if (s->world.area != s->shown_area) {
+        s->shown_area = s->world.area;
+        for (u32 g = 0; g < TOWN_GROUPS; g++) {
+          b32 on = s->world.area < 0 ? g == 0 : g == (u32)(s->world.area + 1);
+          for (u32 i = 0; i < s->groups.count[g]; i++) {
+            const EcsVisibility *v = ecs_component_get(w, s->groups.ents[g][i], EcsVisibility);
+            if (v && v->visible != on) {
+              EcsVisibility nv = *v;
+              nv.visible = on;
+              ecs_component_set(w, s->groups.ents[g][i], EcsVisibility, nv);
+            }
+          }
+        }
       }
     }
     // the editor pauses the simulation

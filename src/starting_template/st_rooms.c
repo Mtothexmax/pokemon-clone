@@ -42,6 +42,8 @@ hz_internal void room_solid(Town *t, u32 hex, f32 w, f32 h, f32 d, f32 x, f32 y,
 // floor (planks or checker tiles), back and side walls with a wainscot, a low front wall with the door gap
 hz_internal void room_shell(Town *t, RoomDef r, u32 floor_a, u32 floor_b, u32 wall, u32 trim, b32 tiles, b32 door) {
   f32 ox = r.ox, oz = r.oz, W = r.w, D = r.d;
+  // a dark floor around the room (instead of the baseplate)
+  town_box(t, 0x151f27u, W + 60.0f, 0.05f, D + 50.0f, ox, 0.0f, oz + 6.0f, false);
   if (tiles) {
     for (f32 x = -W * 0.5f; x < W * 0.5f; x += 2.0f)
       for (f32 z = -D * 0.5f; z < D * 0.5f; z += 2.0f)
@@ -121,10 +123,9 @@ hz_internal void room_screen(Town *t, f32 x, f32 y, f32 z, f32 w, f32 h, u32 glo
 }
 
 hz_internal void rooms_build(Town *t) {
-  // the dark floor around the rooms (the baseplate would show between them)
-  town_box(t, 0x151f27u, 200.0f, 0.05f, 120.0f, 270.0f, 0.0f, 20.0f, false);
 
   // ======================= HOME =======================
+  town_group_switch(t, 1 + ROOM_HOME);
   {
     RoomDef r = room_def(ROOM_HOME);
     f32 ox = r.ox, oz = r.oz;
@@ -181,6 +182,7 @@ hz_internal void rooms_build(Town *t) {
   }
 
   // ======================= BEDROOM (upstairs at home) =======================
+  town_group_switch(t, 1 + ROOM_BEDROOM);
   {
     RoomDef r = room_def(ROOM_BEDROOM);
     f32 ox = r.ox, oz = r.oz;
@@ -226,6 +228,7 @@ hz_internal void rooms_build(Town *t) {
   }
 
   // ======================= DEX & LUMI =======================
+  town_group_switch(t, 1 + ROOM_DEX);
   {
     RoomDef r = room_def(ROOM_DEX);
     f32 ox = r.ox, oz = r.oz;
@@ -268,6 +271,7 @@ hz_internal void rooms_build(Town *t) {
   }
 
   // ======================= LAB =======================
+  town_group_switch(t, 1 + ROOM_LAB);
   {
     RoomDef r = room_def(ROOM_LAB);
     f32 ox = r.ox, oz = r.oz;

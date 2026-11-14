@@ -42,6 +42,15 @@ typedef struct TownRect {
 } TownRect;
 
 #define TOWN_MAX_RECTS 1024
+// draw groups: 0 the village, 1 + RoomId each room. Only the group you are in is drawn (from inside a room you would see
+// the other rooms, they lie side by side east of the village)
+#define TOWN_GROUPS 5
+#define TOWN_GROUP_MAX 512
+
+typedef struct TownGroups {
+  EcsEntity ents[TOWN_GROUPS][TOWN_GROUP_MAX];
+  u32 count[TOWN_GROUPS];
+} TownGroups;
 typedef struct Town {
   MeshBuilder *b;
   TownRng rng;
@@ -53,7 +62,21 @@ typedef struct Town {
   u32 props;      // placed LEGO plant models
   TownRect *solid; // the colliders only (town_block), handed to the game
   u32 solid_count;
+  MeshBuilder *mbs; // one builder per draw group
+  u32 group;
+  TownGroups *groups;
 } Town;
+
+hz_internal void town_group_add(TownGroups *g, u32 group, EcsEntity e) {
+  if (g && g->count[group] < TOWN_GROUP_MAX)
+    g->ents[group][g->count[group]++] = e;
+}
+
+// what follows is built into draw group `group`
+hz_internal void town_group_switch(Town *t, u32 group) {
+  t->group = group;
+  t->b = &t->mbs[group];
+}
 
 hz_internal v3 town_m(f32 x, f32 y, f32 z) { return (v3){x * TOWN_STUD, y * TOWN_STUD, z * TOWN_STUD}; }
 
@@ -152,13 +175,14 @@ hz_internal TownRect town_road(i32 i) {
 // one instance of a prop model at (x, z) studs, standing on y studs, scaled by s, turned by rot
 hz_internal void town_prop(Town *t, CString path, f32 x, f32 z, f32 y, f32 s, f32 rot, b32 shadow) {
   HzHandleT(ModelBlobAsset) model = asset_load(ModelBlobAsset, t->assets, .path = path);
-  ecs_renderer_spawn(t->world, t->renderer,
+  EcsEntity e = ecs_renderer_spawn(t->world, t->renderer,
                      &(EcsRendererSpawnDesc){.model_asset = blob_asset_ref_from_handle(ModelBlobAsset, model),
                                              .transform = {.position = town_m(x, y, z),
                                                            .rotation = quat_from_euler((v3){0.0f, rot, 0.0f}),
                                                            .scale = (v3){s, s, s}},
                                              .casts_shadow = shadow,
                                              .static_shadow = shadow});
+  town_group_add(t->groups, t->group, e);
   t->props++;
 }
 
@@ -587,12 +611,18 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 #include "st_rooms.c"
 
 // main lane, once: the whole village into one slot; the parts become static renderer entities
-hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, TownRect *out_blocks, u32 *out_count, u32 cap) {
+hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, TownRect *out_blocks, u32 *out_count, u32 cap,
+                            TownGroups *groups) {
   ArenaAllocator *arena = arena_create(MB(128), MB(1));
-  MeshBuilder mb;
-  mesh_builder_begin(&mb, arena, &(MeshBuilderDesc){.slot_count = 1, .vtx_reserve = 1u << 18, .idx_reserve = 1u << 19});
+  Allocator garena = make_arena_allocator(arena);
+  MeshBuilder *mbs = ALLOC_ARRAY(&garena, MeshBuilder, TOWN_GROUPS);
+  for (u32 g = 0; g < TOWN_GROUPS; g++)
+    mesh_builder_begin(&mbs[g], arena, &(MeshBuilderDesc){.slot_count = 1, .vtx_reserve = g ? 1u << 15 : 1u << 18,
+                                                          .idx_reserve = g ? 1u << 16 : 1u << 19});
   Allocator scratch = make_arena_allocator(arena);
-  Town town = {.b = &mb,
+  Town town = {.b = &mbs[0],
+               .mbs = mbs,
+               .groups = groups,
                .rng = {.s = 20261114u},
                .world = w,
                .renderer = r,
@@ -845,6 +875,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
 
   // ---- the rooms, far east of the village (st_rooms.c) ----
   rooms_build(t);
+  town_group_switch(t, 0);
 
   // ---- the wild LEGO plants wherever there is room (the garden inside its fence stays as it is) ----
   town_occupy(t, -25.0f, -13.0f, 7.0f, 17.0f);
@@ -876,19 +907,22 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
       town_block(t, walls[i].x0, walls[i].x1, walls[i].z0, walls[i].z1);
   }
 
-  MeshBuilderResult built = mesh_builder_finish(t->b, &(MeshBuilderFinishDesc){.renderer = r, .world = w, .alloc = alloc});
   HzHandleT(RendererMaterial) mat = renderer_default_material(r);
-  const MeshBuilderSlotOut *slot = &built.slots[TOWN_SLOT];
-  for (u32 i = 0; i < slot->part_count; i++)
-    ecs_renderer_spawn(w, r,
-                       &(EcsRendererSpawnDesc){.submesh = slot->parts[i],
-                                               .material = mat,
-                                               .transform = {.position = V3_ZERO, .rotation = quat_identity(), .scale = V3_ONE},
-                                               .casts_shadow = true,
-                                               .static_shadow = true,
-                                               .name = "Town"});
-  log_info("town: % vertices, % tris, % parts, % colliders, % LEGO plants", fmt_u32(built.vertex_count),
-           fmt_u32(slot->tri_count), fmt_u32(slot->part_count), fmt_u32(built.collider_count), fmt_u32(t->props));
+  for (u32 g = 0; g < TOWN_GROUPS; g++) {
+    MeshBuilderResult built = mesh_builder_finish(&mbs[g], &(MeshBuilderFinishDesc){.renderer = r, .world = w, .alloc = alloc});
+    const MeshBuilderSlotOut *slot = &built.slots[TOWN_SLOT];
+    for (u32 i = 0; i < slot->part_count; i++)
+      town_group_add(groups, g,
+                     ecs_renderer_spawn(w, r,
+                                        &(EcsRendererSpawnDesc){.submesh = slot->parts[i],
+                                                                .material = mat,
+                                                                .transform = {.position = V3_ZERO, .rotation = quat_identity(), .scale = V3_ONE},
+                                                                .casts_shadow = true,
+                                                                .static_shadow = true,
+                                                                .name = g ? "Room" : "Town"}));
+    log_info("town group %: % vertices, % tris, % parts, % colliders", fmt_u32(g), fmt_u32(built.vertex_count),
+             fmt_u32(slot->tri_count), fmt_u32(slot->part_count), fmt_u32(built.collider_count));
+  }
   *out_count = MIN(t->solid_count, cap);
   for (u32 i = 0; i < *out_count; i++)
     out_blocks[i] = t->solid[i];

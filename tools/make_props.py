@@ -74,9 +74,10 @@ def save(out_name, parts):
         m = read(mesh)
         if cutout:
             mat = g.cutout_material(cutout[0], cutout[1], f'{out_name}_{k}')
+            g.j['materials'][mat]['pbrMetallicRoughness']['roughnessFactor'] = 0.85
         else:
             mat = g.material(color or '#ffffff', None, f'{out_name}_{k}')
-            g.j['materials'][mat]['pbrMetallicRoughness']['roughnessFactor'] = 0.32
+            g.j['materials'][mat]['pbrMetallicRoughness']['roughnessFactor'] = 0.85  # matte: glossy plastic read as metal
         prims.append(g.mesh_prim(m, mat))
     g.save(os.path.join(OUT, out_name + '.glb'), prims, out_name)
 
