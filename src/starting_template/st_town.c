@@ -60,6 +60,7 @@ typedef struct Town {
   TownRect *used; // blockers and kept-free areas, for the plants' free-spot search
   u32 used_count;
   u32 props;      // placed LEGO plant models
+  u32 box_n;      // bricks so far (their size jitter)
   TownRect *solid; // the colliders only (town_block), handed to the game
   u32 solid_count;
   MeshBuilder *mbs; // one builder per draw group
@@ -116,7 +117,13 @@ hz_internal void town_stud_rect(Town *t, u32 hex, f32 x0, f32 x1, f32 z0, f32 z1
 // a brick: size w x h x d studs, centred on x/z, its BOTTOM at y (as box() in the three.js town)
 hz_internal void town_box(Town *t, u32 hex, f32 w, f32 h, f32 d, f32 x, f32 y, f32 z, b32 studs) {
   MeshBuilderStyle st = town_style(hex);
-  mesh_builder_box(t->b, &st, m4_trs(town_m(x, y + h * 0.5f, z), quat_identity(), V3_ONE), town_m(w, h, d));
+  // bricks that touch would share faces exactly (a sofa's arm and seat, a trim on a wall) and flicker: every brick is
+  // a few hundredths of a stud smaller or larger than the last, so no two faces ever lie in one plane
+  t->box_n++;
+  f32 e = 0.006f * (f32)((i32)(t->box_n % 7u) - 3);
+  f32 e2 = 0.006f * (f32)((i32)(t->box_n * 3u % 7u) - 3);
+  mesh_builder_box(t->b, &st, m4_trs(town_m(x, y + h * 0.5f + e2 * 0.5f, z), quat_identity(), V3_ONE),
+                   town_m(w + e, h + e2, d - e));
   if (studs)
     town_stud_rect(t, hex, x - w * 0.5f, x + w * 0.5f, z - d * 0.5f, z + d * 0.5f, y + h);
 }
