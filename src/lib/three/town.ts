@@ -3569,9 +3569,17 @@ export class Town {
 			a.gained = this.clock.elapsedTime;
 		} else if (this.clock.elapsedTime - a.gained > 1.5) return null; // (long enough to walk around a house)
 		if (free(a.x, a.z)) return { x: a.x, z: a.z };
-		// around the obstacle: decide on one side the first time, then keep it (never backwards)
+		// around the obstacle: decide on one side the first time (towards a door nearby, if there is one), then keep it
+		const door = this.nearDoor();
+		let order = [1, -1];
+		if (door) {
+			// the side whose turn points more towards the door
+			const tx = door.x - p.x, tz = door.z - p.z;
+			const turn = (sd: number) => (a.x * Math.cos(sd) - a.z * Math.sin(sd)) * tx + (a.x * Math.sin(sd) + a.z * Math.cos(sd)) * tz;
+			if (turn(-1) > turn(1)) order = [-1, 1];
+		}
 		for (const ang of [0.45, 0.8, 1.15, Math.PI / 2]) {
-			for (const sd of a.side ? [a.side] : [1, -1]) {
+			for (const sd of a.side ? [a.side] : order) {
 				const c = Math.cos(ang * sd), s = Math.sin(ang * sd);
 				const x = a.x * c - a.z * s, z = a.x * s + a.z * c;
 				if (free(x, z)) {
@@ -3649,6 +3657,22 @@ export class Town {
 			}
 	}
 
+	/** the closest way out / in near the player: a room's exit, the stairwell, or a house door outside (within 14) */
+	private nearDoor(): { x: number; z: number } | null {
+		const p = this.player.group.position;
+		if (this.area === 'bedroom') return { x: (BED_WELL.x0 + BED_WELL.x1) / 2, z: BED_WELL.z0 + 1 };
+		if (this.area !== 'outside') {
+			const r = roomById(this.area);
+			return { x: r.ox, z: r.oz + r.D / 2 };
+		}
+		let best: { x: number; z: number } | null = null, bd = 14;
+		for (const r of ROOMS) {
+			if (r.upstairs) continue;
+			const d = Math.hypot(r.door.x - p.x, r.door.z + 1 - p.z);
+			if (d < bd) [bd, best] = [d, { x: r.door.x, z: r.door.z + 1 }];
+		}
+		return best;
+	}
 	private checkDoors(mx: number, mz: number, t: number) {
 		if (t < this.doorLock) return;
 		const p = this.player.group.position;
@@ -3771,7 +3795,9 @@ export class Town {
 				}
 			}
 			this.updateParticles(dt, moved > 0.001, run > 1);
-			this.checkDoors(mx, mz, t);
+			// swipe walking: doors count by the direction you swiped, also while sliding sideways along the wall
+			const intent = this.auto ?? { x: mx, z: mz };
+			this.checkDoors(intent.x, intent.z, t);
 		} else {
 			this.player.animate(dt, false);
 			this.updateParticles(dt, false, false);
