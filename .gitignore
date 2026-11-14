@@ -17,3 +17,6 @@ hz
 
 # Kaigen local build records
 .kaigen/
+
+# the local HTTPS test certificate (tools/serve_docs.py --lan)
+tools/.lan-cert/
