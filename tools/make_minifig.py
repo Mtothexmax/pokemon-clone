@@ -27,12 +27,12 @@ PIVOT = {'head': (0, 3.95, 0), 'torso': (0, 0, 0), 'armL': (-0.86, 3.12, -0.1), 
 SKIN = '#f5c72c'
 
 STYLES = {
-    'player': dict(torso='#1b9e8f', legs='#6c6e68', hair='#583927', hairStyle='cap', cap='#fe8a18', decal='zip', decalColor='#f4f4f4'),
-    'dex': dict(torso='#7b2fbe', legs='#1b2a34', hair='#e8e8e8', hairStyle='spiky', decal='stripe', decalColor='#f2cd37'),
-    'pip': dict(torso='#f2cd37', legs='#0055bf', hair='#583927', hairStyle='short', decal='stripe', decalColor='#c91a09'),
-    'quill': dict(torso='#3d6fd1', legs='#e4cd9e', hair='#c8c8c8', hairStyle='bob', coat=True, decalColor='#c91a09', female=True),
-    'lumi': dict(torso='#ff9ecd', legs='#0055bf', hair='#f2cd37', hairStyle='bob', decal='star', decalColor='#f4f4f4', female=True),
-    'mom': dict(torso='#a0bcac', legs='#583927', hair='#82422a', hairStyle='ponytail', decal='apron', decalColor='#f4f4f4', female=True),
+    'player': dict(face='player', torso='#1b9e8f', legs='#6c6e68', hair='#583927', hairStyle='cap', cap='#fe8a18', decal='zip', decalColor='#f4f4f4'),
+    'dex': dict(face='dex', torso='#7b2fbe', legs='#1b2a34', hair='#e8e8e8', hairStyle='spiky', decal='stripe', decalColor='#f2cd37'),
+    'pip': dict(face='pip', torso='#f2cd37', legs='#0055bf', hair='#583927', hairStyle='short', decal='stripe', decalColor='#c91a09'),
+    'quill': dict(face='quill', torso='#3d6fd1', legs='#e4cd9e', hair='#c8c8c8', hairStyle='bob', coat=True, decalColor='#c91a09', female=True),
+    'lumi': dict(face='lumi', torso='#ff9ecd', legs='#0055bf', hair='#f2cd37', hairStyle='bob', decal='star', decalColor='#f4f4f4', female=True),
+    'mom': dict(face='mom', torso='#a0bcac', legs='#583927', hair='#82422a', hairStyle='ponytail', decal='apron', decalColor='#f4f4f4', female=True),
 }
 
 
@@ -245,25 +245,97 @@ def hair_geo(style):
 
 # ---------------- prints ----------------
 def face_png(style):
+    """Every villager their own face (the LEGO prints the user showed: lashes, freckles, a plaster, glasses, a smirk)."""
     S = 4  # supersample
     im = Image.new('RGB', (256 * S, 256 * S), hex_rgb(style.get('skin', SKIN)))
     d = ImageDraw.Draw(im)
     ink = (27, 27, 27)
+    white = (255, 255, 255)
+    face = style.get('face', 'classic')
     E = lambda cx, cy, rx, ry, fill: d.ellipse([(cx - rx) * S, (cy - ry) * S, (cx + rx) * S, (cy + ry) * S], fill=fill)
-    L = lambda pts, w: d.line([(x * S, y * S) for x, y in pts], fill=ink, width=w * S, joint='curve')
-    for x in (98, 158):
-        E(x, 120, 9, 13, ink)
-    for x in (101, 161):
-        E(x, 114, 3.5, 3.5, (255, 255, 255))
-    L([(82, 90), (112, 86)], 6)
-    L([(144, 86), (174, 90)], 6)
-    if style.get('female'):
-        L([(86, 112), (80, 106)], 4)
-        L([(170, 112), (176, 106)], 4)
-        d.pieslice([108 * S, 167 * S, 148 * S, 185 * S], 0, 180, fill=(192, 57, 43))
-        L([(106, 176), (150, 176)], 4)
+    L = lambda pts, w, c=ink: d.line([(x * S, y * S) for x, y in pts], fill=c, width=int(w * S), joint='curve')
+    A = lambda box, a0, a1, w, c=ink: d.arc([v * S for v in box], a0, a1, fill=c, width=int(w * S))
+    P = lambda box, a0, a1, c: d.pieslice([v * S for v in box], a0, a1, fill=c)
+    G = lambda pts, c: d.polygon([(x * S, y * S) for x, y in pts], fill=c)
+
+    def eyes(y=120, rx=9, ry=13, iris=None):
+        for x in (98, 158):
+            if iris:  # a white with a coloured iris (the grown-ups' prints)
+                E(x, y, rx + 4, ry + 3, white)
+                E(x, y + 1, rx - 1, ry - 2, iris)
+                E(x, y + 1, rx - 5, ry - 6, ink)
+            else:
+                E(x, y, rx, ry, ink)
+            E(x + 3, y - 5, 3.5, 3.5, white)
+
+    def lashes(y=120):
+        for x, s in ((98, -1), (158, 1)):
+            for k in range(3):
+                L([(x + s * (6 + k * 3), y - 11 + k * 2), (x + s * (12 + k * 4), y - 17 + k * 3)], 3)
+
+    def freckles(y=150):
+        for cx in (76, 180):
+            for dx, dy in ((-6, -3), (0, 3), (6, -2), (2, -8)):
+                E(cx + dx, y + dy, 2.2, 2.2, (150, 88, 30))
+
+    if face == 'player':  # brave and friendly: strong brows, a big open grin
+        eyes()
+        L([(80, 92), (112, 84)], 7)
+        L([(144, 84), (176, 92)], 7)
+        P([96, 140, 160, 192], 0, 180, ink)
+        G([(102, 167), (154, 167), (150, 175), (106, 175)], white)  # the teeth
+        E(128, 184, 12, 4, (200, 70, 60))                         # the tongue
+    elif face == 'dex':  # the rival: angry brows, a lopsided smirk with a fang
+        eyes(y=122)
+        L([(80, 96), (100, 100), (112, 108)], 7)
+        L([(144, 108), (156, 100), (178, 92)], 7)
+        L([(102, 172), (130, 170), (152, 162), (160, 154)], 6)
+        G([(140, 168), (146, 167), (143, 177)], white)
+        L([(156, 150), (166, 160)], 4)  # the smirk's dimple
+    elif face == 'pip':  # the little one: freckles, a plaster across the nose, a cheeky smile
+        eyes(y=118, rx=10, ry=14)
+        A([82, 84, 114, 104], 200, 330, 5)
+        A([142, 84, 174, 104], 210, 340, 5)
+        freckles(148)
+        G([(108, 140), (148, 140), (148, 152), (108, 152)], (238, 150, 120))  # the plaster
+        for x in (118, 128, 138):
+            E(x, 146, 1.6, 1.6, (200, 110, 90))
+        A([104, 150, 152, 186], 25, 155, 6)
+    elif face == 'quill':  # the professor: round glasses, kind wrinkles, a small smile
+        eyes(y=122, rx=7, ry=9, iris=(70, 120, 190))
+        for x in (98, 158):
+            A([x - 22, 100, x + 22, 144], 0, 360, 6, (60, 60, 64))
+        L([(120, 120), (136, 120)], 5, (60, 60, 64))  # the bridge
+        L([(84, 92), (112, 90)], 5, (110, 110, 110))
+        L([(144, 90), (172, 92)], 5, (110, 110, 110))
+        A([108, 156, 148, 182], 20, 160, 5, (176, 60, 60))
+        for x, s in ((68, 1), (188, -1)):  # laugh lines
+            L([(x, 116), (x - s * 6, 124)], 3, (180, 140, 40))
+            L([(x, 128), (x - s * 6, 134)], 3, (180, 140, 40))
+    elif face == 'lumi':  # sunny: lashes, rosy cheeks, freckles, a big happy smile
+        eyes(y=118, rx=10, ry=14)
+        lashes(118)
+        A([84, 88, 112, 102], 200, 340, 4)
+        A([144, 88, 172, 102], 200, 340, 4)
+        E(74, 150, 12, 7, (240, 150, 120))
+        E(182, 150, 12, 7, (240, 150, 120))
+        freckles(146)
+        P([104, 148, 152, 186], 0, 180, (180, 40, 50))
+        L([(104, 167), (152, 167)], 4, (180, 40, 50))
+    elif face == 'mom':  # warm: lashes, blue eyes, eye shadow, red lips
+        for x in (98, 158):
+            E(x, 112, 16, 9, (150, 175, 210))  # eye shadow
+        eyes(y=120, rx=7, ry=9, iris=(60, 110, 180))
+        lashes(118)
+        L([(84, 96), (112, 92)], 4)
+        L([(144, 92), (172, 96)], 4)
+        P([106, 160, 150, 184], 0, 180, (192, 40, 50))
+        G([(106, 172), (128, 166), (150, 172)], (192, 40, 50))
     else:
-        d.arc([96 * S, 118 * S, 160 * S, 182 * S], 0.18 * 180, 0.82 * 180, fill=ink, width=7 * S)
+        eyes()
+        L([(82, 90), (112, 86)], 6)
+        L([(144, 86), (174, 90)], 6)
+        A([96, 118, 160, 182], 0.18 * 180, 0.82 * 180, 7)
     return im.resize((256, 256), Image.LANCZOS)
 
 
