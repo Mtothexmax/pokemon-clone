@@ -1688,7 +1688,7 @@ hz_internal void deck_actions(CardUi *ui, GameSave *s, const InputSystem *in, i3
 // floating parts can never show through them); on a narrow screen (phones) the collection takes the whole width,
 // the deck wraps into two rows and the picked card opens as a sheet from the bottom. The x always closes it.
 hz_internal void deck_draw(CardUi *ui, GameSave *s, const InputSystem *in, f32 sw, f32 sh, b32 voxel_walks) {
-  HzUIColor ink = {27, 42, 52, 255}, paper = {236, 232, 222, 255};
+  HzUIColor ink = {27, 42, 52, 255}, paper = {206, 199, 185, 255}; // a darker sand: the cards stand out from it
   OsSafeAreaInsets safe = os_get_safe_area();
   b32 narrow = sw < 640.0f;
   f32 pad = 12.0f;
@@ -1719,8 +1719,32 @@ hz_internal void deck_draw(CardUi *ui, GameSave *s, const InputSystem *in, f32 s
             continue;
           CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = gw, .unknown = !have,
                         .lit = ui->deck_pick == c, .uid = 500u + (u32)c};
-          if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
-            ui->click_coll = c;
+          b32 in_deck = false;
+          for (i32 i = 0; i < s->deck_count; i++)
+            in_deck |= s->deck[i] == c;
+          ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(gw)}}}) {
+            if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
+              ui->click_coll = c;
+            if (in_deck) { // in your deck: a green frame and a tick in the corner
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 4, .offset = {-3.0f, -3.0f},
+                                       .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                          .layout = {.sizing = {.width = ui_sizing_fixed(gw + 6.0f), .height = ui_sizing_fixed(gw * 1.4f + 6.0f)}},
+                          .corner_radius = ui_corner_radius(gw * 0.08f),
+                          .border = {.color = cu_rgb(0x27b05a), .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}}}) {}
+              f32 d = m_clampf(gw * 0.3f, 18.0f, 26.0f);
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 5,
+                                       .attach_points = {.element = UI_ATTACH_POINT_CENTER_CENTER, .parent = UI_ATTACH_POINT_RIGHT_BOTTOM},
+                                       .offset = {-d * 0.25f, -d * 0.25f}, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                          .layout = {.sizing = {.width = ui_sizing_fixed(d), .height = ui_sizing_fixed(d)},
+                                     .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                          .background_color = cu_rgb(0x27b05a),
+                          .corner_radius = ui_corner_radius(d * 0.5f),
+                          .border = {.color = cu_rgb(0xffffff), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
+                          .shadow = {.color = cu_black(0.35f), .offset_y = 1.0f, .blur = 3.0f}}) {
+                cu_textb("\xe2\x9c\x93", d * 0.62f, cu_rgb(0xffffff), 800, false, (HzUIColor){0}); // a tick
+              }
+            }
+          }
         }
       }
       ui_element({.layout = {.sizing = {.height = ui_sizing_fixed(narrow && ui->deck_pick >= 0 ? sh * 0.4f : 8.0f)}}}) {} // room to scroll past the sheet
