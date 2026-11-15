@@ -1314,23 +1314,6 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
     }
   }
 
-  // ---- the reveal begins: who reveals first, big in the middle for a moment ----
-  if (b->phase == PHASE_REVEAL && b->first_t < 1.4f) {
-    f32 a = m_minf(1.0f, m_minf(b->first_t / 0.15f, (1.4f - b->first_t) / 0.3f));
-    b32 me_first = b->first == B_SIDE_P;
-    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 49, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
-                             .attach_points = {.element = UI_ATTACH_POINT_CENTER_CENTER, .parent = UI_ATTACH_POINT_CENTER_CENTER}},
-                .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_alignment = {.x = UI_ALIGN_X_CENTER}, .child_gap = 2,
-                           .padding = {.left = 26, .right = 26, .top = 10, .bottom = 12}},
-                .background_color = me_first ? cu_rgba(0x1f6fd1, 0.92f * a) : cu_rgba(0x7b2fbe, 0.92f * a),
-                .border = {.color = cu_rgba(0xffffff, 0.7f * a), .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
-                .corner_radius = ui_corner_radius(16)}) {
-      cu_textb(me_first ? "You reveal first" : CU_FMT(ui, "% reveals first", fmt_cstr(b->kind == BATTLE_WILD ? "The wild Beast" : b->opponent)),
-               phone ? 20 : 26, cu_rgba(0xffffff, a), 900, false, none);
-      cu_textb("(winning more locations \xc2\xb7 a tie: a coin flip)", phone ? 11 : 13, cu_rgba(0xffffff, 0.8f * a), 500, false, none);
-    }
-  }
-
   // ---- the battle log ----
   if (ui->log_open) {
     ui_element({.id = ui_id("LogDrawer"),
