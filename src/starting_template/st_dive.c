@@ -13,6 +13,7 @@
 #define DIVE_TUFTS 40
 #define DIVE_PEARLS 8
 #define DIVE_LIGHTS 6
+#define DIVE_SNOW 64 // marine snow: specks drifting around the diver (they wrap in a box around you)
 
 typedef struct Dive {
   Life *l;
@@ -31,7 +32,7 @@ typedef struct Dive {
   f32 core_t;          // since the Stud Core was taken (the message)
   // the living cave
   EcsEntity kelp[DIVE_KELP], fish[DIVE_FISH], manta[DIVE_MANTAS], bubble[DIVE_BUBBLES], tuft[DIVE_TUFTS], pearl[DIVE_PEARLS], core,
-      surface, lamp, light[DIVE_LIGHTS];
+      surface, lamp, light[DIVE_LIGHTS], snow[DIVE_SNOW];
   v3 kelp_at[DIVE_KELP];
   f32 kelp_s[DIVE_KELP];
   v3 pearl_at[DIVE_PEARLS];
@@ -173,6 +174,9 @@ hz_internal void dive_init(Dive *d, Life *l) {
     d->pearl_at[i] = p;
     d->pearl[i] = life_spawn(l, pearl_m, pearl_mat, cave_world(p), false);
   }
+  HzHandleT(RendererMaterial) snow_mat = life_glow_material(l, (v4){0.8f, 0.9f, 1.0f, 1.0f}, 0.8f);
+  for (i32 i = 0; i < DIVE_SNOW; i++)
+    d->snow[i] = life_spawn(l, bub_m, snow_mat, (v3){CAVE_X, -60.0f, 0.0f}, false);
   d->core = life_spawn(l, life_mesh(l, shape_core), life_glow_material(l, (v4){1.0f, 0.78f, 0.15f, 1.0f}, 1.6f),
                        cave_world((v3){0.0f, -19.6f, 34.0f}), false);
   d->surface = life_spawn(l, life_mesh(l, shape_surface), life_glow_material(l, (v4){0.55f, 0.85f, 1.0f, 1.0f}, 2.5f),
@@ -272,6 +276,8 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
     d->on = false;
     for (i32 i = 0; i < DIVE_FISH; i++)
       dive_hide(d, d->fish[i]);
+    for (i32 i = 0; i < DIVE_SNOW; i++)
+      dive_hide(d, d->snow[i]);
     dive_move_light(l->w, d->lamp, (v3){CAVE_X, -60.0f, 0.0f});
     return true;
   }
@@ -385,6 +391,17 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
     f32 sz = 0.5f + cave_hash(i, 43) * 0.7f;
     life_set(l, d->bubble[i], cave_world((v3){vents[v][0] + wob, base + rise, vents[v][1] + m_cosf(t * 2.5f + (f32)i) * 0.5f}), 0.0f,
              (v3){sz, sz, sz});
+  }
+  for (i32 i = 0; i < DIVE_SNOW; i++) { // marine snow: sinking slowly, wrapped into a 28-stud box around the diver
+    const f32 B = 28.0f;
+    v3 o = {cave_hash(i, 51) * B, cave_hash(i, 52) * B - t * (0.4f + cave_hash(i, 53) * 0.5f), cave_hash(i, 54) * B};
+    v3 rel = {m_fmodf(o.x - d->p.x, B), m_fmodf(o.y - d->p.y, B), m_fmodf(o.z - d->p.z, B)};
+    rel.x += rel.x < 0.0f ? B : 0.0f;
+    rel.y += rel.y < 0.0f ? B : 0.0f;
+    rel.z += rel.z < 0.0f ? B : 0.0f;
+    v3 at = v3_add(d->p, (v3){rel.x - B * 0.5f, rel.y - B * 0.5f, rel.z - B * 0.5f});
+    f32 sz = 0.16f + cave_hash(i, 55) * 0.14f;
+    life_set(l, d->snow[i], cave_world(at), 0.0f, (v3){sz, sz, sz});
   }
   // ---- the pearls and the Stud Core ----
   for (i32 i = 0; i < DIVE_PEARLS; i++) {
