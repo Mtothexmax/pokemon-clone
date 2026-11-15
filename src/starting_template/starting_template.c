@@ -366,6 +366,8 @@ typedef struct AppState {
   DebugPick dbg;
   i32 shown_area;      // the area the groups were last shown for
   f32 cam_lift;        // radians the camera is raised because something hides the player
+  f32 cam_manual_t;    // seconds since the player last turned or zoomed the camera by hand
+  f32 cam_blocked_t;   // seconds the view to the player has been blocked
   u32 block_count;
   b32 intro_checked;
   b32 dancing;
@@ -628,11 +630,15 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     os_lock_mouse(look);
     v2 mouse = look && s->look_locked ? (v2){input->mouse_delta.x, -input->mouse_delta.y} : (v2){0};
     v2 pan = touch_on && !cam_frozen ? (v2){tf.camera_pan_px.x, -tf.camera_pan_px.y} : (v2){0};
-    *ecs_resource_get_mut(w, CameraRigInput) = (CameraRigInput){
+    CameraRigInput cam_in = {
         .look = v2_add(v2_scale(mouse, GAME_LOOK_SENSITIVITY), v2_scale(pan, GAME_TOUCH_LOOK)),
         .zoom = cam_frozen ? 0.0f
                            : -input->scroll_delta.y * GAME_ZOOM_RATE - (touch_on ? tf.camera_pinch_px * GAME_PINCH_ZOOM : 0.0f),
     };
+    *ecs_resource_get_mut(w, CameraRigInput) = cam_in;
+    // a hand on the camera (dragging, the wheel, a pinch, the right mouse held): the obstacle lift keeps out of it
+    b32 manual = look || v2_length(cam_in.look) > 1e-5f || cam_in.zoom != 0.0f;
+    s->cam_manual_t = manual ? 0.0f : s->cam_manual_t + dt;
     s->look_locked = look;
     // ---- the game around the walking: the save, dialogues, screens, things to use, doors, village life ----
     save_update(&s->save, dt);
@@ -886,9 +892,15 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           }
           EcsPhysicsHit hit;
           b32 blocked = ecs_physics_raycast(pw, head, at, &q, &hit);
-          if (blocked)
+          s->cam_blocked_t = blocked ? s->cam_blocked_t + dt : 0.0f;
+          if (s->cam_manual_t < 1.5f) {
+            // the player is moving the camera (or just did): their view is the view. The lift so far becomes part of
+            // it (it never sinks away later and pulls the camera down to the floor), and nothing rises or sinks
+            base += lift;
+            lift = 0.0f;
+          } else if (blocked && s->cam_blocked_t > 0.35f) // a post or a trunk passing through the view is no reason
             lift = m_minf(lift + dt * 0.8f, m_maxf(0.0f, 1.48f - base)); // rises gently (was 1.8 rad/s)
-          else if (lift > 0.0f && !ecs_physics_raycast(pw, head, at_lower, &q, &hit))
+          else if (!blocked && lift > 0.0f && !ecs_physics_raycast(pw, head, at_lower, &q, &hit))
             lift = m_maxf(0.0f, lift - dt * 0.7f);
         }
         if (controls.teleport && !s->life.sitting) {
