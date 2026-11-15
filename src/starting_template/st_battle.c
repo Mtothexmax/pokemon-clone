@@ -51,7 +51,8 @@ typedef struct Battle {
   BattleResult result;
   i32 stakes;
   b32 p_snapped, ai_snapped;
-  i32 first;
+  i32 first;     // who reveals first this turn: decided when the turn starts (whoever wins more zones; a tie: a coin)
+  f32 first_t;   // seconds since the reveal began (the "X reveals first" banner)
   i32 play_counter;
   u32 hseq, seed;
   // the reveal, step by step
@@ -458,6 +459,10 @@ hz_internal void b_next_turn(Battle *b) {
     b_say(b, "Final turn! Stakes doubled.");
   }
   b->phase = PHASE_PLAN;
+  {
+    i32 pw = b_winning_zones(b, B_SIDE_P), aw = b_winning_zones(b, B_SIDE_AI);
+    b->first = pw > aw ? B_SIDE_P : aw > pw ? B_SIDE_AI : (b_rand(b) < 0.5f ? B_SIDE_P : B_SIDE_AI);
+  }
   b_ai_snap(b);
 }
 
@@ -601,8 +606,8 @@ hz_internal void b_end_turn(Battle *b) {
       b_activate(b, i);
   i32 ai_plays[B_HAND_MAX];
   i32 nai = b_ai_plan(b, ai_plays);
-  i32 pw = b_winning_zones(b, B_SIDE_P), aw = b_winning_zones(b, B_SIDE_AI);
-  b->first = pw > aw ? B_SIDE_P : aw > pw ? B_SIDE_AI : (b_rand(b) < 0.5f ? B_SIDE_P : B_SIDE_AI);
+  b->first_t = 0.0f;
+  B_SAY(b, "% reveal% first.", fmt_cstr(b->first == B_SIDE_P ? "You" : b->opponent), fmt_cstr(b->first == B_SIDE_P ? "" : "s"));
   // each side: its plays and Activates in the order they were done; the first side first
   b->n_steps = 0;
   for (i32 pass = 0; pass < 2; pass++) {
@@ -650,6 +655,7 @@ hz_internal void b_finish(Battle *b) {
 
 // every frame: the reveal's next step once its pause is over
 hz_internal void b_update(Battle *b, f32 dt) {
+  b->first_t += dt;
   for (i32 i = 0; i < b->n; i++) {
     b->c[i].fx_t += dt;
     b->c[i].pulse_t += dt;

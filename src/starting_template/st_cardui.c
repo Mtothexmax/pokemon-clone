@@ -677,6 +677,23 @@ hz_internal Clay_BoundingBox cu_box_of(HzUIElementId id) {
 }
 
 // a coloured location tile's text colours: on a picture white with a shadow, else ink on the colour
+// the cards of a side at a zone in the order they were put there (a new card never pushes an older one out of its spot)
+hz_internal i32 cu_zone_order(const Battle *b, i32 z, i32 side, i32 *out) {
+  i32 n = 0;
+  for (i32 i = 0; i < b->n; i++) {
+    const BCard *c = &b->c[i];
+    if (!c->alive || c->zone != z || c->owner != side)
+      continue;
+    i32 k = n++;
+    while (k > 0 && b->c[out[k - 1]].order > c->order) {
+      out[k] = out[k - 1];
+      k--;
+    }
+    out[k] = i;
+  }
+  return n;
+}
+
 hz_internal void cu_zone_texts(CardUi *ui, const Battle *b, i32 z, f32 name_px, f32 text_px, b32 big) {
   ZoneDef zd = zone_def(b->zone[z]);
   b32 rev = b->zone_rev[z];
@@ -865,6 +882,18 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
         cu_textb(cu_numstr(b->turn, false), 19, white, 800, false, none);
         cu_textb(CU_FMT(ui, "/%", fmt_i32(b->max_turns)), 14, white, 500, false, none);
       }
+      // who reveals first this turn (whoever wins more zones; a tie: a coin): your blue, their purple
+      if (b->phase != PHASE_OVER) {
+        b32 me_first = b->first == B_SIDE_P;
+        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 4, .padding = {.left = 8, .right = 9, .top = 3, .bottom = 3},
+                               .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
+                    .background_color = me_first ? cu_rgb(0x1f6fd1) : cu_rgb(0x7b2fbe),
+                    .border = {.color = cu_rgba(0xffffff, 0.5f), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
+                    .corner_radius = ui_corner_radius(14)}) {
+          cu_textb(me_first ? "You" : (b->kind == BATTLE_WILD ? "Wild" : b->opponent), phone ? 12 : 14, white, 800, false, none);
+          cu_textb(phone ? "1st" : me_first ? "reveal 1st" : "reveals 1st", phone ? 10 : 12, cu_rgba(0xffffff, 0.85f), 700, false, none);
+        }
+      }
       ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) {}
       if (cu_btn(ui_id("BtnLog"), "Log", BTN_GHOST, true, in, phone ? 12 : 14, ui_sizing_fit(0, 999), ui_sizing_fit(0, 999), false, ui->time) && !modal)
         ui->click_log = true;
@@ -895,10 +924,10 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
                       .background_color = cu_black(0.14f),
                       .corner_radius = ui_corner_radius(10)}) {
             ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT_WRAP, .child_gap = 5, .sizing = {.width = ui_sizing_fixed(cw * 2.0f + 5.0f)}}}) {
-              for (i32 i = 0; i < b->n; i++) {
+              i32 zl[B_MAX_CARDS], zn = cu_zone_order(b, z, B_SIDE_AI, zl);
+              for (i32 zi = 0; zi < zn; zi++) {
+                i32 i = zl[zi];
                 const BCard *c = &b->c[i];
-                if (!c->alive || c->zone != z || c->owner != B_SIDE_AI)
-                  continue;
                 CardLook k = cu_look(b, i, s, cw);
                 k.hidden = !c->revealed;
                 k.hide_cost = true;
@@ -949,10 +978,10 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
             if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame && !modal)
               ui->click_zone = z;
             ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT_WRAP, .child_gap = 5, .sizing = {.width = ui_sizing_fixed(cw * 2.0f + 5.0f)}}}) {
-              for (i32 i = 0; i < b->n; i++) {
+              i32 zl[B_MAX_CARDS], zn = cu_zone_order(b, z, B_SIDE_P, zl);
+              for (i32 zi = 0; zi < zn; zi++) {
+                i32 i = zl[zi];
                 const BCard *c = &b->c[i];
-                if (!c->alive || c->zone != z || c->owner != B_SIDE_P)
-                  continue;
                 CardLook k = cu_look(b, i, s, cw);
                 b32 plan = b->phase == PHASE_PLAN;
                 k.hidden = !c->revealed && !plan;   // after End Turn your new cards lie face down until revealed
@@ -1271,6 +1300,23 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
                 .background_color = cu_black(0.65f), .corner_radius = ui_corner_radius(99)}) {
       cu_textb(phone ? "Tap a card, then a location to play it." : "Tap a card to see it, then pick a location to play it \xc2\xb7 or drag it there.", 14,
                white, 600, false, none);
+    }
+  }
+
+  // ---- the reveal begins: who reveals first, big in the middle for a moment ----
+  if (b->phase == PHASE_REVEAL && b->first_t < 1.4f) {
+    f32 a = m_minf(1.0f, m_minf(b->first_t / 0.15f, (1.4f - b->first_t) / 0.3f));
+    b32 me_first = b->first == B_SIDE_P;
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 49, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                             .attach_points = {.element = UI_ATTACH_POINT_CENTER_CENTER, .parent = UI_ATTACH_POINT_CENTER_CENTER}},
+                .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_alignment = {.x = UI_ALIGN_X_CENTER}, .child_gap = 2,
+                           .padding = {.left = 26, .right = 26, .top = 10, .bottom = 12}},
+                .background_color = me_first ? cu_rgba(0x1f6fd1, 0.92f * a) : cu_rgba(0x7b2fbe, 0.92f * a),
+                .border = {.color = cu_rgba(0xffffff, 0.7f * a), .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
+                .corner_radius = ui_corner_radius(16)}) {
+      cu_textb(me_first ? "You reveal first" : CU_FMT(ui, "% reveals first", fmt_cstr(b->kind == BATTLE_WILD ? "The wild Beast" : b->opponent)),
+               phone ? 20 : 26, cu_rgba(0xffffff, a), 900, false, none);
+      cu_textb("(winning more locations \xc2\xb7 a tie: a coin flip)", phone ? 11 : 13, cu_rgba(0xffffff, 0.8f * a), 500, false, none);
     }
   }
 
