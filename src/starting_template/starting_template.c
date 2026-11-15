@@ -610,7 +610,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       swipe_stop(&s->swipe);
     }
     // Use: in reach of something, or to go on in a dialog; never at a TV or computer (it has its own buttons)
-    touch_controls_set_button(&s->touch, 0, (s->world.nearby >= 0 || s->dlg.open) && s->scr.kind == SCREEN_NONE, s->world.reading);
+    touch_controls_set_button(&s->touch, 0, (s->world.nearby >= 0 || s->dlg.open) && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE,
+                              s->world.reading);
     TouchControlsFrame tf = touch_controls_update(&s->touch, input, memory->total_time);
     b32 touch_on = tf.active && !s->editor_open;
     // keys, pad and touch to camera-relative controls; R respawns
@@ -1055,7 +1056,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
                    s->scr.voiced && audio_voice_playing(&s->audio, s->scr.voice));
       debug_draw(&s->dbg);
       touch_controls_draw_stick(&s->touch);
-      if (s->scr.kind == SCREEN_NONE) { // at a TV or computer: its own buttons only
+      if (s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE) { // at a TV or computer, in a fight: their own buttons only
         touch_controls_draw_jump_button(&s->touch);
         touch_controls_draw_button(&s->touch, 0);
       }
