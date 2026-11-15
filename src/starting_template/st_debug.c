@@ -10,8 +10,9 @@ typedef struct SignZoom {
   SignBoard board;
 } SignZoom;
 
-// main lane, before the scope: eases the camera to the board and back; returns true while it owns the camera
-hz_internal b32 sign_zoom_update(SignZoom *z, EcsWorld *w, EcsQuery *camera_query, b32 want, i32 readable, f32 dt) {
+// main lane, before the scope: eases the camera to the board (a sign's, a screen's; NULL: none) and back; returns true
+// while it owns the camera
+hz_internal b32 sign_zoom_update(SignZoom *z, EcsWorld *w, EcsQuery *camera_query, const SignBoard *want, f32 dt) {
   EcsEntity cam_e = ecs_query_get_singleton_entity(camera_query);
   if (cam_e == ECS_ENTITY_INVALID)
     return false;
@@ -19,14 +20,13 @@ hz_internal b32 sign_zoom_update(SignZoom *z, EcsWorld *w, EcsQuery *camera_quer
   const CameraFollow *follow = ecs_component_get(w, cam_e, CameraFollow);
   if (!cam || !follow)
     return false;
-  SignBoard b;
-  b32 has = want && sign_board(readable, &b);
+  b32 has = want != NULL;
   if (has && !z->active) { // start from where the rig has the camera now
     z->active = true;
     z->t = 0.0f;
     z->from_pos = cam->pos;
     z->from_rot = cam->rot;
-    z->board = b;
+    z->board = *want;
     CameraFollow f = *follow;
     f.disabled = true;
     ecs_component_set(w, cam_e, CameraFollow, f);
@@ -47,7 +47,7 @@ hz_internal b32 sign_zoom_update(SignZoom *z, EcsWorld *w, EcsQuery *camera_quer
   f32 tan_half = m_tanf(cam->fov * (M_PI / 180.0f) * 0.5f);
   f32 aspect = m_maxf(cam->aspect, 0.5f);
   f32 dist = m_maxf(bd.h * 1.3f * 0.5f / tan_half, bd.w * 1.15f * 0.5f / (tan_half * aspect)) * TOWN_STUD;
-  v3 normal = {m_sinf(bd.yaw), 0.0f, m_cosf(bd.yaw)};
+  v3 normal = {m_sinf(bd.yaw) * m_cosf(bd.tilt), m_sinf(bd.tilt), m_cosf(bd.yaw) * m_cosf(bd.tilt)};
   v3 center = town_m(bd.c.x, bd.c.y, bd.c.z);
   v3 to_pos = v3_add(center, v3_scale(normal, dist));
   quat to_rot = quat_look(v3_sub(to_pos, center), V3_UP);

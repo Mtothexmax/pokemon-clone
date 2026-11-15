@@ -415,6 +415,8 @@ HZ_APP_API void app_init(AppMemory *memory) {
 
   // ---- touch: a stick on the left, a jump button on the right, drag elsewhere to look; shown once a touch arrives ----
   // touch button 0 reads a sign (shown only in reach of one), left of the jump button / above it in portrait
+  g_art = ui_load_font(s->ui, "brickhollow/screens/art.hza"); // the TV's and the computers' vector art (st_screens.c)
+  g_mono = ui_load_family_os_mono(s->ui, NULL);
   s->touch = make_touch_controls(s->ui, true); // swipe walking is the default on phones (the menu has the stick)
   s->touch_layout = 0;
   s->world = (WorldState){.area = -2, .nearby = -1};
@@ -621,7 +623,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         }
         use = false;
       } else if (s->scr.kind != SCREEN_NONE) {
-        screens_update(&s->scr, w, &s->audio, &s->snd, input, dt);
+        screens_update(&s->scr, w, &s->audio, &s->snd, input, &s->save.data, dt);
         use = false;
       }
       // the cards: a battle, the rewards or the deck menu own the screen
@@ -679,10 +681,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           s->vox.me.hp = s->vox.me.max; // a good night: your Voxelmon is fit again
           s->vox.me.tired = false;
           break;
-        case T_TV: screens_open(&s->scr, SCREEN_TV, w, &s->audio, weather); break;
-        case T_PIANO: screens_open(&s->scr, SCREEN_PIANO, w, &s->audio, weather); break;
-        case T_PC: screens_open(&s->scr, SCREEN_PC, w, &s->audio, weather); break;
-        case T_LAB: screens_open(&s->scr, SCREEN_LAB, w, &s->audio, weather); break;
+        case T_TV: screens_open(&s->scr, SCREEN_TV, w, &s->audio, weather, s->world.target.x, s->world.target.z, (u32)(memory->total_time * 1000.0)); break;
+        case T_PIANO: screens_open(&s->scr, SCREEN_PIANO, w, &s->audio, weather, s->world.target.x, s->world.target.z, (u32)(memory->total_time * 1000.0)); break;
+        case T_PC: screens_open(&s->scr, SCREEN_PC, w, &s->audio, weather, s->world.target.x, s->world.target.z, (u32)(memory->total_time * 1000.0)); break;
+        case T_LAB: screens_open(&s->scr, SCREEN_LAB, w, &s->audio, weather, s->world.target.x, s->world.target.z, (u32)(memory->total_time * 1000.0)); break;
         case T_CHEST: life_open_chest(&s->life); break;
         default: break;
         }
@@ -758,8 +760,14 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       // reading a sign with a board: the camera flies to it (moving closes it)
       if (s->world.reading && v2_length(controls.move) > 0.3f)
         s->world.reading = false;
-      b32 zoomed = sign_zoom_update(&s->zoom, w, s->sim.camera_query, s->world.reading && s->world.target.kind == T_READ,
-                                    s->world.target.arg, dt);
+      // ... and so does looking at a screen (the TV, the PCs)
+      SignBoard zb;
+      const SignBoard *zoom_to = NULL;
+      if (s->world.reading && s->world.target.kind == T_READ && sign_board(s->world.target.arg, &zb))
+        zoom_to = &zb;
+      else if (s->scr.kind != SCREEN_NONE && s->scr.has_board)
+        zoom_to = &s->scr.board;
+      b32 zoomed = sign_zoom_update(&s->zoom, w, s->sim.camera_query, zoom_to, dt);
       if (zoomed) {
         controls.move = (v2){0};
         controls.jump = false;
@@ -898,7 +906,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       hud_layout(ui_w);
       b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
-      if (!cards_screen) {
+      if (!cards_screen && s->scr.kind == SCREEN_NONE) { // a screen (TV, PC) has the whole view
         hud_draw(&s->touch);
         b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
         world_draw(&s->world, s->touch.last_active, busy_ui);
@@ -926,7 +934,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
                       GOLDEN_COUNT);
       }
       dialog_draw(&s->dlg, input, s->touch.last_active, ui_w);
-      screens_draw(&s->scr, input, &s->save.data);
+      screens_draw(&s->scr, input, &s->save.data, cam, ui_w, ui_h, s->zoom.active ? s->zoom.t : 0.0f,
+                   s->scr.voiced && audio_voice_playing(&s->audio, s->scr.voice));
       debug_draw(&s->dbg);
       touch_controls_draw_stick(&s->touch);
       touch_controls_draw_jump_button(&s->touch);

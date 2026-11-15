@@ -82,6 +82,29 @@ def save(out_name, parts):
     g.save(os.path.join(OUT, out_name + '.glb'), prims, out_name)
 
 
+def lab_computer():
+    """Prof. Quill's lab computer: the LEGO office computer of the three.js version (models-src/office/Computer.obj,
+    converted there to lab-computer.bin: grey housing, dark key tops) and its glowing screen panel (lab-computer-
+    screen.bin, emissive #40c0ff on #0a1a24). Faces +z like there; the screen sits 0.01 in front (in world units)."""
+    from make_minifig import lin
+    g = PropGlb()
+    body = read('lab-computer')
+    mat = g.material('#ffffff', None, 'lab_computer')
+    g.j['materials'][mat]['pbrMetallicRoughness']['roughnessFactor'] = 0.35
+    p = g.mesh_prim(body, mat)
+    # three.js reads these bytes as sRGB (models.ts): the same colours here, so it looks the same
+    nv = body['nv']
+    cols = [c for i in range(nv) for c in (lin(body['col'][i * 4]), lin(body['col'][i * 4 + 1]), lin(body['col'][i * 4 + 2]), 1.0)]
+    p['attributes']['COLOR_0'] = g.acc(struct.pack(f'<{nv * 4}f', *cols), 5126, nv, 'VEC4', target=34962)
+    scr = read('lab-computer-screen')
+    off = 0.01 / 1.2  # the instance scale is 1.2
+    scr['pos'] = [v + (off if k % 3 in (1, 2) else 0.0) for k, v in enumerate(scr['pos'])]
+    smat = g.material('#0a1a24', None, 'lab_computer_screen')
+    g.j['materials'][smat]['pbrMetallicRoughness']['roughnessFactor'] = 0.15
+    g.j['materials'][smat]['emissiveFactor'] = [lin(0x40) * 0.9, lin(0xc0) * 0.9, lin(0xff) * 0.9]
+    g.save(os.path.join(OUT, 'lab_computer.glb'), [p, g.mesh_prim(scr, smat)], 'lab_computer')
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     save('round_tree', [('round-tree', None, None)])
@@ -100,4 +123,5 @@ if __name__ == '__main__':
             save(f'frog_{v.replace("-", "_")}_{cname}', [(f'frog-{v}-green', DARK_GREEN, None), (f'frog-{v}-flower', chex, None)])
     for v in ('leafy-a', 'leafy-b'):
         save(f'frog_{v.replace("-", "_")}', [(f'frog-{v}-green', DARK_GREEN, None)])
+    lab_computer()
     print('props ->', OUT, len(os.listdir(OUT)), 'files')

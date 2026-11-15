@@ -13,15 +13,19 @@
 # Usage (from the project root):
 #   powershell -ExecutionPolicy Bypass -File .\export.ps1
 #   .\export.ps1 -NoBuild      # reuse the last publish builds in out/
+#   .\export.ps1 -Local        # to out/web-local/ instead (git-ignored): for playing over Wi-Fi with
+#                              tools/serve_docs.py, without touching docs/ (only for GitHub Pages releases)
 param(
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$Local
 )
+$Out = if ($Local) { 'out/web-local' } else { 'docs' }
 
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
 Write-Host "=== Brickhollow export for GitHub Pages ===" -ForegroundColor Cyan
-Write-Host "Output: docs/"
+Write-Host "Output: $Out/"
 Write-Host ""
 
 # 1. Build both web bundles
@@ -53,8 +57,8 @@ function Expand-Wasm($from, $to) {
 
 # 2. Fresh docs/ with the threaded bundle
 Write-Host "[2/5] Copying the threaded bundle into docs/ (raw files, raw copies under the .br names)..." -ForegroundColor Yellow
-if (Test-Path 'docs') { Remove-Item 'docs' -Recurse -Force }
-New-Item -ItemType Directory -Path 'docs' | Out-Null
+if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
+New-Item -ItemType Directory -Path $Out -Force | Out-Null
 # The engine reads some asset TYPES through their brotli sibling (X.br: clips, scene chunks, textures) and expects
 # the server to decode it (Content-Encoding: br). GitHub Pages cannot, so those files go out twice: the raw X, and
 # the same raw bytes under the X.br name. Font pages (cooked/engine/fonts, most of the size) are read raw: no copy.
@@ -64,7 +68,7 @@ Get-ChildItem $src -Recurse -File | Where-Object {
     -not ($_.DirectoryName -eq $src -and $skipTop -contains $_.Name) -and $_.Extension -ne '.br'
 } | ForEach-Object {
     $rel = $_.FullName.Substring($src.Length + 1)
-    $dest = Join-Path 'docs' $rel
+    $dest = Join-Path $Out $rel
     $dir = Split-Path $dest -Parent
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     Copy-Item -LiteralPath $_.FullName $dest
@@ -72,27 +76,28 @@ Get-ChildItem $src -Recurse -File | Where-Object {
         Copy-Item -LiteralPath $_.FullName ($dest + '.br')
     }
 }
-Expand-Wasm (Join-Path $src 'game.wasm.br') (Join-Path (Resolve-Path 'docs') 'game.wasm')
+Expand-Wasm (Join-Path $src 'game.wasm.br') (Join-Path (Resolve-Path $Out) 'game.wasm')
 
 # 3. The iOS bundle: its scripts and game.wasm only (cooked/ is shared)
 Write-Host "[3/5] Copying the single-threaded iOS scripts into docs/ios/..." -ForegroundColor Yellow
-New-Item -ItemType Directory -Path 'docs/ios' | Out-Null
-Get-ChildItem $ios -File -Filter '*.js' | ForEach-Object { Copy-Item -LiteralPath $_.FullName (Join-Path 'docs/ios' $_.Name) }
-Expand-Wasm (Join-Path $ios 'game.wasm.br') (Join-Path (Resolve-Path 'docs/ios') 'game.wasm')
+New-Item -ItemType Directory -Path "$Out/ios" | Out-Null
+Get-ChildItem $ios -File -Filter '*.js' | ForEach-Object { Copy-Item -LiteralPath $_.FullName (Join-Path "$Out/ios" $_.Name) }
+Expand-Wasm (Join-Path $ios 'game.wasm.br') (Join-Path (Resolve-Path "$Out/ios") 'game.wasm')
 
 # 4. Our start page and the service worker that adds the isolation headers
 Write-Host "[4/5] Writing the start page and coi-sw.js..." -ForegroundColor Yellow
-Copy-Item 'web_export/index.html' 'docs/index.html' -Force
-Copy-Item 'web_export/coi-sw.js' 'docs/coi-sw.js' -Force
+Copy-Item 'web_export/index.html' "$Out/index.html" -Force
+Copy-Item 'web_export/coi-sw.js' "$Out/coi-sw.js" -Force
 
 # 5. Disable Jekyll (it would hide files and folders starting with _ or .)
 Write-Host "[5/5] Writing .nojekyll" -ForegroundColor Yellow
-New-Item -ItemType File -Path 'docs/.nojekyll' -Force | Out-Null
+New-Item -ItemType File -Path "$Out/.nojekyll" -Force | Out-Null
 
-$files = Get-ChildItem 'docs' -Recurse -File
+$files = Get-ChildItem $Out -Recurse -File
 $size = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
 $big = $files | Where-Object { $_.Length -gt 95MB }
 Write-Host ""
-Write-Host ("Done: {0} files, {1:N1} MB in docs/" -f $files.Count, $size) -ForegroundColor Green
+Write-Host ("Done: {0} files, {1:N1} MB in {2}/" -f $files.Count, $size, $Out) -ForegroundColor Green
 if ($big) { Write-Host "Warning: files over 95 MB (GitHub rejects > 100 MB): $($big.Name -join ', ')" -ForegroundColor Red }
-Write-Host "Next: git add docs; git commit; git push  (Pages: main branch, /docs folder)"
+if ($Local) { Write-Host "Play it: python tools/serve_docs.py [--lan]  (serves out/web-local/ when it exists)" }
+else { Write-Host "Next: git add docs; git commit; git push  (Pages: main branch, /docs folder)" }

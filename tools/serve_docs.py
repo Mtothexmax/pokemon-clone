@@ -1,4 +1,5 @@
-"""Serves docs/ like GitHub Pages would, for testing the web export locally or on a phone in the same Wi-Fi.
+"""Serves the web export like GitHub Pages would, for testing it locally or on a phone in the same Wi-Fi: the local
+export (export.ps1 -Local -> out/web-local/) when there is one, else docs/ (or docs/ anyway with --docs).
 
 - threaded, with a long listen queue: the game fetches hundreds of files at once (python -m http.server queues only 5
   connections and refuses the rest, which shows up as random "file read error" for props and signs)
@@ -28,7 +29,10 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROOT = os.path.join(PROJECT, 'docs')
+# what it serves: the local export (export.ps1 -Local, git-ignored) when there is one, else the GitHub Pages docs/;
+# --docs serves docs/ anyway
+LOCAL = os.path.join(PROJECT, 'out', 'web-local')
+ROOT = LOCAL if os.path.exists(os.path.join(LOCAL, 'index.html')) and '--docs' not in sys.argv else os.path.join(PROJECT, 'docs')
 CERT_DIR = os.path.join(PROJECT, 'tools', '.lan-cert')
 CA_CRT = os.path.join(CERT_DIR, 'brickhollow-test-ca.crt')
 
@@ -139,7 +143,7 @@ def ensure_cert(ips):
 if __name__ == '__main__':
     args = sys.argv[1:]
     lan = '--lan' in args
-    args = [a for a in args if a != '--lan']
+    args = [a for a in args if a not in ('--lan', '--docs')]
     port = int(args[0]) if args else (8443 if lan else 8780)
     httpd = Server(('', port), functools.partial(Handler, directory=ROOT))
     if lan:

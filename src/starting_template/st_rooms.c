@@ -352,8 +352,8 @@ hz_internal void rooms_build(Town *t) {
       room_furn(t, C_WHITE, 2.6f, 0.4f, 4.0f, ox + 15.2f, 2.6f, z, true);
       for (i32 s = -1; s <= 1; s += 2)
         town_box(t, C_WHITE, 2.4f, 2.2f, 0.3f, ox + 15.2f, 0.4f, z + (f32)s * 1.8f, false);
-      town_box(t, C_GRAY, 1.6f, 1.6f, 1.4f, ox + 15.2f, 3.0f + TOWN_STUD_H, z - 0.2f, false);
-      town_box_rot(t, 0x40c0ffu, (v3){1.3f, 0.9f, 0.1f}, (v3){ox + 15.2f - 0.75f, 3.9f + TOWN_STUD_H, z - 0.2f}, (v3){0.0f, -M_PI * 0.5f, 0.0f});
+      // the LEGO office computer of the three.js version (tools/make_props.py), placed like there: facing +z
+      town_prop(t, PROP("lab_computer"), ox + 15.2f, z - 0.2f, 3.0f, 1.2f, 0.0f, true);
     }
     // the central table with three glowing pedestals
     room_furn(t, C_RED_BROWN, 10.0f, 0.5f, 3.6f, ox, 2.6f, oz - 1.2f, true);

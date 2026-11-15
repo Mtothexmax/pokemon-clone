@@ -7,15 +7,16 @@ typedef struct SignBoard {
   v3 c;
   f32 yaw;
   f32 w, h;
+  f32 tilt; // leaning back (the lab computers' screens): the camera looks down at it
 } SignBoard;
 
 // the boards of readables 0..3 (st_world.c), as town_build places them
 hz_internal b32 sign_board(i32 readable, SignBoard *out) {
   switch (readable) {
-  case 0: *out = (SignBoard){{5.9f, 2.3f, 20.41f}, 0.0f, 3.8f, 2.0f}; return true;
-  case 1: *out = (SignBoard){{5.0f, 2.2f, -24.09f}, 0.0f, 3.4f, 1.8f}; return true;
-  case 2: *out = (SignBoard){{-22.91f, 2.1f, 8.9f}, M_PI * 0.5f, 2.8f, 1.5f}; return true;
-  case 3: *out = (SignBoard){{13.0f, 5.75f, 16.17f}, 0.0f, 5.2f, 1.9f}; return true;
+  case 0: *out = (SignBoard){{5.9f, 2.3f, 20.41f}, 0.0f, 3.8f, 2.0f, 0.0f}; return true;
+  case 1: *out = (SignBoard){{5.0f, 2.2f, -24.09f}, 0.0f, 3.4f, 1.8f, 0.0f}; return true;
+  case 2: *out = (SignBoard){{-22.91f, 2.1f, 8.9f}, M_PI * 0.5f, 2.8f, 1.5f, 0.0f}; return true;
+  case 3: *out = (SignBoard){{13.0f, 5.75f, 16.17f}, 0.0f, 5.2f, 1.9f, 0.0f}; return true;
   default: return false;
   }
 }

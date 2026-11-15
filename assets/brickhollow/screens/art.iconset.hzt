@@ -1,0 +1,9 @@
+type UIIconSetDesc
+version 1
+---
+dir "art"
+codepoint_base 57344
+baseline 0
+advance 0
+prefix "ART"
+parts true
