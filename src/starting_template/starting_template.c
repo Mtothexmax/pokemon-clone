@@ -137,6 +137,46 @@ ecs_system(solid_box_system, EcsIn(SolidBox), EcsIn(WorldTransform), EcsNot(Coll
   }
 }
 
+// ---- the HUD at the top of the screen: where each piece goes, so none covers another (set by hud_layout each frame) ----
+// wide: the goal top left, Deck and the menu top right, the studs under them, the Voxelmon pill under those.
+// narrow (phones upright): the goal top left (wrapped) and the menu top right, then a second row with the studs left and
+// the Deck right, the Voxelmon pill under the Deck; the area title, toasts and the wild one's HP centred below all that.
+typedef struct HudLayout {
+  b32 narrow;
+  f32 quest_w; // the goal's widest (it wraps)
+  f32 row2;    // wide: the studs (right); narrow: the studs (left) and the Deck (right)
+  f32 row3;    // the Voxelmon pill (right)
+  f32 center;  // the area title, toasts, the wild one's HP (centred)
+} HudLayout;
+hz_global HudLayout g_hud;
+
+// from the screen width and where the goal and the Deck button were last frame
+hz_internal void hud_layout(f32 sw) {
+  OsSafeAreaInsets safe = os_get_safe_area();
+  f32 top = safe.top + 14.0f, left = safe.left + 14.0f;
+  g_hud.narrow = sw < 600.0f;
+  f32 right = sw - safe.right - 14.0f - 40.0f - 10.0f; // left of the menu button
+  f32 below = top + 36.0f;                             // under the menu button
+  HzUIElementData q = ui_get_element_data(ui_id("Quest"));
+  if (q.found && q.boundingBox.height > 0.0f)
+    below = m_maxf(below, q.boundingBox.y + q.boundingBox.height);
+  if (!g_hud.narrow) {
+    HzUIElementData d = ui_get_element_data(ui_id("DeckButton"));
+    if (d.found && d.boundingBox.width > 0.0f)
+      right = d.boundingBox.x - 10.0f;
+  }
+  g_hud.quest_w = m_maxf(140.0f, right - left);
+  if (g_hud.narrow) {
+    g_hud.row2 = below + 8.0f;
+    g_hud.row3 = g_hud.row2 + 42.0f;
+    g_hud.center = g_hud.row3 + 52.0f;
+  } else {
+    g_hud.row2 = top + 44.0f;
+    g_hud.row3 = top + 86.0f;
+    g_hud.center = m_maxf(below + 12.0f, top + 4.0f);
+  }
+}
+
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
 #include "st_town.c"
 #include "st_minifig.c"
@@ -856,6 +896,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           ui_h = root.boundingBox.height;
         }
       }
+      hud_layout(ui_w);
       b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
       if (!cards_screen) {
         hud_draw(&s->touch);

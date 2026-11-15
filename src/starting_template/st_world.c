@@ -266,7 +266,7 @@ hz_internal void world_draw(const WorldState *ws, b32 touch, b32 busy) {
     ui_element({.id = ui_id("AreaTitle"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT,
                              .attach_points = {.element = UI_ATTACH_POINT_CENTER_TOP, .parent = UI_ATTACH_POINT_CENTER_TOP},
-                             .offset = {0.0f, safe.top + 18.0f}},
+                             .offset = {0.0f, g_hud.center}}, // below the goal and the buttons
                 .layout = {.padding = {.left = 18, .right = 18, .top = 8, .bottom = 8}},
                 .background_color = {16, 18, 24, (u8)(a * 0.66f)},
                 .corner_radius = ui_corner_radius(8)}) {

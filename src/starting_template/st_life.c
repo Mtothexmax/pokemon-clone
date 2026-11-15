@@ -1107,11 +1107,15 @@ hz_internal void life_draw(Life *l) {
       ui_text(ui_str_c(l->hud[2]), ui_text_config({.fontSize = 34, .textColor = {255, 255, 255, 255}}));
     }
   }
+  // under the Deck and menu buttons (narrow screens: the second row, left)
+  b32 narrow = g_hud.narrow;
   ui_element({.id = ui_id("Studs"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT,
-                           .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
-                           .offset = {-safe.right - 14.0f, safe.top + 14.0f}},
-              .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 14, .padding = {.left = 12, .right = 12, .top = 6, .bottom = 6}},
+                           .attach_points = narrow ? (HzUIFloatingAttachPoints){.element = UI_ATTACH_POINT_LEFT_TOP, .parent = UI_ATTACH_POINT_LEFT_TOP}
+                                                   : (HzUIFloatingAttachPoints){.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
+                           .offset = narrow ? (v2){safe.left + 14.0f, g_hud.row2} : (v2){-safe.right - 14.0f, g_hud.row2}},
+              .layout = {.layout_direction = narrow ? UI_TOP_TO_BOTTOM : UI_LEFT_TO_RIGHT, .child_gap = narrow ? 2 : 14,
+                         .padding = {.left = 12, .right = 12, .top = 6, .bottom = 6}},
               .background_color = {16, 18, 24, 170},
               .corner_radius = ui_corner_radius(8)}) {
     cstr_format(l->hud[0], sizeof(l->hud[0]), "\xe2\x97\x8f % studs   \xe2\x98\x85 %/15", fmt_u32(s->studs), fmt_u32(n));
@@ -1126,7 +1130,7 @@ hz_internal void life_draw(Life *l) {
     ui_element({.id = ui_id("Toast"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT,
                              .attach_points = {.element = UI_ATTACH_POINT_CENTER_TOP, .parent = UI_ATTACH_POINT_CENTER_TOP},
-                             .offset = {0.0f, safe.top + 70.0f}},
+                             .offset = {0.0f, g_hud.center}},
                 .layout = {.padding = {.left = 16, .right = 16, .top = 8, .bottom = 8}},
                 .background_color = {250, 250, 246, (u8)(a * 0.95f)},
                 .border = {.color = {27, 42, 52, a}, .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},

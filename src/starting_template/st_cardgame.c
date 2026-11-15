@@ -351,20 +351,24 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
   } else if (cg->ui.deck_open) {
     deck_draw(&cg->ui, (GameSave *)s, in, sw, s->voxelmon > 0);
   } else if (show_button && s->has_deck) {
-    // the Deck button, top right
+    // the Deck button, top right left of the menu button (narrow screens: the second row, right)
     OsSafeAreaInsets safe = os_get_safe_area();
+    b32 narrow = g_hud.narrow;
     ui_element({.id = ui_id("DeckButton"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT,
                              .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
-                             .offset = {-safe.right - 62.0f, safe.top + 14.0f}}, // left of the menu button
+                             .offset = narrow ? (v2){-safe.right - 14.0f, g_hud.row2} : (v2){-safe.right - 62.0f, safe.top + 14.0f}},
                 .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 8, .padding = {.left = 14, .right = 14, .top = 8, .bottom = 8},
                            .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
                 .background_color = {0, 85, 191, 235},
                 .corner_radius = ui_corner_radius(10)}) {
       if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
         cg->ui.deck_open = true;
-      cstr_format(cg->ui.text[6], sizeof(cg->ui.text[6]), "Deck (C)  % cards \xc2\xb7 % EXP", fmt_u32(owned_count(s)), fmt_u32(s->exp));
-      cu_text(cg->ui.text[6], 15, (HzUIColor){255, 255, 255, 255});
+      if (narrow) // short: the EXP is in the goal and the deck screen
+        cstr_format(cg->ui.text[6], sizeof(cg->ui.text[6]), "Deck \xc2\xb7 % cards", fmt_u32(owned_count(s)));
+      else
+        cstr_format(cg->ui.text[6], sizeof(cg->ui.text[6]), "Deck (C)  % cards \xc2\xb7 % EXP", fmt_u32(owned_count(s)), fmt_u32(s->exp));
+      cu_text(cg->ui.text[6], narrow ? 14 : 15, (HzUIColor){255, 255, 255, 255});
     }
   }
   rewards_draw(&cg->ui, s, in, sw);
@@ -394,6 +398,7 @@ hz_internal void cg_quest_draw(CardGame *cg, const GameSave *s) {
   ui_element({.id = ui_id("Quest"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT, .offset = {safe.left + 14.0f, safe.top + 14.0f}},
               .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 8, .padding = {.left = 12, .right = 14, .top = 7, .bottom = 7},
+                         .sizing = {.width = ui_sizing_fit(0.0f, g_hud.quest_w)},
                          .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
               .background_color = {250, 250, 246, 225},
               .corner_radius = ui_corner_radius(10)}) {
@@ -401,7 +406,7 @@ hz_internal void cg_quest_draw(CardGame *cg, const GameSave *s) {
                 .corner_radius = ui_corner_radius(5)}) {
       cu_text("GOAL", 12, (HzUIColor){27, 42, 52, 255});
     }
-    cu_text(text, 15, (HzUIColor){27, 42, 52, 255});
+    cu_text_wrap(text, g_hud.narrow ? 13 : 15, (HzUIColor){27, 42, 52, 255}); // wraps instead of running under the buttons
   }
 }
 

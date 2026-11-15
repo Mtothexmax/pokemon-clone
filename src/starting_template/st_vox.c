@@ -615,7 +615,7 @@ hz_internal void vox_draw(Vox *v, const InputSystem *in, const Camera *cam, f32 
     // the wild one: name and HP, top centre
     ui_element({.id = ui_id("VoxWild"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT, .attach_points = {.element = UI_ATTACH_POINT_CENTER_TOP, .parent = UI_ATTACH_POINT_CENTER_TOP},
-                             .offset = {0.0f, safe.top + 70.0f}},
+                             .offset = {0.0f, g_hud.center}},
                 .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 5, .padding = {.left = 14, .right = 14, .top = 8, .bottom = 10}},
                 .background_color = {16, 20, 26, 215}, .corner_radius = ui_corner_radius(10)}) {
       cstr_format(v->text[0], 96, "% %   %/%", fmt_cstr(wf->shiny ? "\xe2\x9c\xa8 Shiny" : "Wild"), fmt_cstr(card_def(wf->id < 0 ? 0 : wf->id).name),
@@ -665,7 +665,7 @@ hz_internal void vox_draw(Vox *v, const InputSystem *in, const Camera *cam, f32 
     // between battles: a small pill with its HP (a moon while it rests)
     ui_element({.id = ui_id("VoxPill"),
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT, .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
-                             .offset = {-safe.right - 14.0f, safe.top + 100.0f}},
+                             .offset = {-safe.right - 14.0f, g_hud.row3}},
                 .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 4, .padding = {.left = 12, .right = 12, .top = 6, .bottom = 8}},
                 .background_color = {250, 250, 246, 225}, .corner_radius = ui_corner_radius(10)}) {
       cstr_format(v->text[1], 96, "%%  %/%", fmt_cstr(me->tired ? "\xe2\x98\xbe " : ""), fmt_cstr(card_def(me->id).name), fmt_i32((i32)me->hp),
