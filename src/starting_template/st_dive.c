@@ -28,6 +28,8 @@ typedef struct Dive {
   v3 vel;
   i32 touch;           // the finger that swims (-1 none)
   v2 touch_at, touch_last;
+  b32 pinch_on;        // two fingers down: pinching them together swims backwards, spreading them swims faster
+  f32 pinch_d0;        // their distance when the second one came down (UI px)
   b32 click_surface;
   f32 core_t;          // since the Stud Core was taken (the message)
   // the living cave
@@ -285,10 +287,16 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
   f32 short_side = m_maxf(m_minf(sw, sh), 1.0f);
   b32 fwd_touch = false, fast_touch = false;
   i32 fingers = 0;
+  v2 tp[2] = {0};
+  i32 down = 0; // fingers on the glass (two: a pinch, the swim finger does not steer meanwhile)
+  for (i32 i = 0; i < MAX_TOUCHES; i++)
+    down += in->touches.items[i].is_active ? 1 : 0;
   for (i32 i = 0; i < MAX_TOUCHES; i++) {
     MobileTouch *t = &in->touches.items[i];
     if (!t->is_active && !t->started_this_frame)
       continue;
+    if (fingers < 2)
+      tp[fingers] = (v2){t->current_x, t->current_y};
     fingers++;
     if (d->touch < 0 && t->started_this_frame && !t->claimed && !ui_point_over_ui(ui, (v2){t->start_x, t->start_y})) {
       d->touch = (i32)t->id;
@@ -302,6 +310,10 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
       }
       fwd_touch = true;
       v2 now = {t->current_x, t->current_y};
+      if (down >= 2) {
+        d->touch_at = d->touch_last = now; // pinching: no steering; after it the stick starts from here
+        continue;
+      }
       f32 jx = m_clampf((now.x - d->touch_at.x) / (0.25f * short_side), -1.0f, 1.0f);
       f32 jy = m_clampf((now.y - d->touch_at.y) / (0.25f * short_side), -1.0f, 1.0f);
       d->yaw -= 1.5f * jx * dt;    // a stick: hold it out to keep turning
@@ -318,7 +330,19 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
     if (!alive)
       d->touch = -1;
   }
-  fast_touch = fingers >= 2;
+  // the pinch: together (closer than when the second finger came down) swims backwards, apart swims faster
+  f32 squeeze = 0.0f;
+  if (fingers >= 2) {
+    f32 dist = v2_length(v2_sub(tp[0], tp[1]));
+    if (!d->pinch_on) {
+      d->pinch_on = true;
+      d->pinch_d0 = dist;
+    }
+    squeeze = m_clampf((d->pinch_d0 - dist) / (0.12f * short_side), -1.0f, 1.0f);
+  } else
+    d->pinch_on = false;
+  fast_touch = squeeze < -0.2f;
+  b32 back_touch = squeeze > 0.2f;
   b32 look = in->buttons[MOUSE_RIGHT].is_pressed || (in->buttons[MOUSE_LEFT].is_pressed && !fwd_touch && !ui_point_over_ui(ui, in->mouse_pos));
   if (look && fingers == 0) {
     d->yaw -= in->mouse_delta.x * 0.0035f;
@@ -332,8 +356,12 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
   f32 ax = (in->buttons[KEY_D].is_pressed ? 1.0f : 0.0f) - (in->buttons[KEY_A].is_pressed ? 1.0f : 0.0f);
   f32 az = (in->buttons[KEY_W].is_pressed ? 1.0f : 0.0f) - (in->buttons[KEY_S].is_pressed ? 1.0f : 0.0f);
   f32 ay = (in->buttons[KEY_SPACE].is_pressed ? 1.0f : 0.0f) - (in->buttons[KEY_Q].is_pressed || in->buttons[KEY_LEFT_CONTROL].is_pressed ? 1.0f : 0.0f);
-  if (fwd_touch)
+  if (back_touch)
+    az = -m_clampf(squeeze, 0.4f, 1.0f); // pinched: backwards (stronger the more you pinch)
+  else if (fwd_touch && fingers < 2)
     az = m_maxf(az, 0.7f);
+  else if (fast_touch)
+    az = 1.0f;
   f32 speed = (in->buttons[KEY_LEFT_SHIFT].is_pressed || fast_touch) ? 22.0f : 9.0f;
   v3 want = v3_scale(v3_add(v3_add(v3_scale(f, az), v3_scale(right, ax)), (v3){0.0f, ay, 0.0f}), speed);
   if (v3_length(want) > speed)
@@ -504,7 +532,7 @@ hz_internal void dive_draw(Dive *d, const GameSave *s, const InputSystem *in, b3
                 .background_color = cu_shade(0x041424, 0.6f * a),
                 .corner_radius = ui_corner_radius(14),
                 .opacity = opt_some(f32, a)}) {
-      cu_textb(touch ? "Hold a finger to swim \xc2\xb7 move it to steer \xc2\xb7 two fingers: faster"
+      cu_textb(touch ? "Hold a finger to swim \xc2\xb7 move it to steer \xc2\xb7 pinch: back \xc2\xb7 spread: faster"
                      : "W / S swim \xc2\xb7 hold a mouse button and drag to look \xc2\xb7 Space up \xc2\xb7 Q down \xc2\xb7 Shift faster",
                14, cu_rgb(0xe8f6ff), 600, true, (HzUIColor){0});
     }
