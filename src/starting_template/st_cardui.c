@@ -48,6 +48,10 @@ typedef struct CardUi {
   i32 reward[3], reward_n;
   CString reward_title;
   b32 click_reward_ok;
+  f32 reward_t;        // since the packs were shown (they are dealt in)
+  f32 reward_tear[3];  // since each pack was torn open (PACK_SEALED: not yet; < 0: about to, "Reveal all")
+  i32 click_pack;      // a pack tapped (-1)
+  b32 click_reveal_all;
   char text[10][96];
   char sbuf[40][64]; // this frame's formatted strings (the UI reads them after the frame is built)
   i32 sbuf_n;
@@ -1869,31 +1873,168 @@ hz_internal b32 deck_input(CardUi *ui, GameSave *s, SaveState *save, SoundBank *
   return closed;
 }
 
-// ---------------------------------------------------------------- rewards
+// ---------------------------------------------------------------- rewards: foil packs to tear open
+
+#define PACK_SEALED -100.0f // reward_tear of a pack nobody has opened yet
+#define PACK_REVEAL 0.42f   // the card is out (the strip is off, the halves fly)
+#define PACK_GONE 1.1f      // the foil is gone
+
+hz_internal b32 pack_rare(i32 c) { return card_def(c).cost >= 5 || c == CARD_GOLDBRICK; }
+
+hz_internal HzUIClipPath pack_poly(i32 n, const f32 (*p)[2]) {
+  HzUIClipPath cp = {.count = (u32)n};
+  for (i32 i = 0; i < n && i < UI_CLIP_PATH_MAX_POINTS; i++)
+    cp.points[i] = (HzUIClipPoint){.fraction = {p[i][0], p[i][1]}};
+  return cp;
+}
+
+// the shiny wrapper of one pack (the three.js version's foil): the art is drawn whole in each piece, each piece cut out by
+// its clip path - the strip that rips off first, and the two halves meeting along a jagged tear
+hz_internal void pack_foil_art(f32 w, f32 h, b32 rare, f32 time, i32 piece) {
+  HzUIColor a = rare ? cu_rgb(0xc99a2e) : cu_rgb(0xb9c0cc), b = rare ? cu_rgb(0xfff2b8) : cu_rgb(0xf6f8fb);
+  HzUIColor c = rare ? cu_rgb(0xb8862a) : cu_rgb(0x98a2b3), d = rare ? cu_rgb(0xffe68a) : cu_rgb(0xeef1f6);
+  ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h)},
+                         .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+              .gradient = cu_lin(115.0f, 4, (f32[]){0.0f, 0.3f, 0.5f, 1.0f}, (HzUIColor[]){a, b, c, d}),
+              .corner_radius = ui_corner_radius(w * 0.035f)}) {
+    // the crimped seams top and bottom
+    for (i32 k = 0; k < 2; k++) {
+      UIGradient g = {.kind = UI_GRADIENT_LINEAR, .angle = 90.0f, .stop_count = 4, .repeating = true};
+      g.stops[0] = (HzUIGradientStop){0.0f, cu_black(0.18f)};
+      g.stops[1] = (HzUIGradientStop){0.0f, cu_black(0.18f)};
+      g.stops[2] = (HzUIGradientStop){0.0f, cu_rgba(0xffffff, 0.35f)};
+      g.stops[3] = (HzUIGradientStop){0.0f, cu_rgba(0xffffff, 0.35f)};
+      g.stop_offset_px[1] = 2.0f;
+      g.stop_offset_px[2] = 2.0f;
+      g.stop_offset_px[3] = 4.0f;
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = (i16)(74 + piece), .offset = {0, k ? h * 0.91f : 0.0f}},
+                  .layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h * 0.09f)}},
+                  .gradient = g}) {}
+    }
+    // the logo: a star, BRICK BEASTS, how many cards
+    ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = (u16)(w * 0.02f), .child_alignment = {.x = UI_ALIGN_X_CENTER}},
+                .transform = cu_tf(0, 0, 1, -8.0f)}) {
+      HzUITextConfig star = {.fontSize = w * 0.2f, .textColor = cu_rgb(0xffd23d), .textAlignment = CLAY_TEXT_ALIGN_CENTER};
+      star.shadows[0] = (HzUITextShadow){.color = cu_rgb(0xa87a00), .offset_y = 1.0f};
+      ui_text(ui_str_c(rare ? "\xe2\x9c\xa6" : "\xe2\x98\x85"), star);
+      HzUITextConfig t = {.fontSize = w * 0.13f, .textColor = rare ? cu_rgb(0x8a4b00) : cu_rgb(0xc91a09), .weight = 800,
+                          .textAlignment = CLAY_TEXT_ALIGN_CENTER, .lineHeight = w * 0.14f};
+      t.shadows[0] = (HzUITextShadow){.color = cu_rgb(0xffffff), .offset_y = 1.0f};
+      ui_text(ui_str_c("BRICK\nBEASTS"), t);
+      ui_text(ui_str_c(rare ? "RARE \xc2\xb7 1 CARD" : "1 CARD"),
+              ui_text_config({.fontSize = w * 0.075f, .textColor = cu_rgb(0x1b2a34), .weight = 700}));
+    }
+    // the rainbow sheen sweeping over it
+    f32 sweep = m_fmodf(time / 2.4f, 1.0f);
+    UIGradient holo = cu_lin(115.0f, 4, (f32[]){0.0f, 0.33f, 0.66f, 1.0f},
+                             (HzUIColor[]){cu_rgba(0xff50a0, 0.0f), cu_rgba(0xff50a0, 0.22f), cu_rgba(0x50c8ff, 0.25f), cu_rgba(0x78ff8c, 0.0f)});
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = (i16)(74 + piece), .offset = {(sweep * 2.2f - 1.1f) * w, 0}},
+                .layout = {.sizing = {.width = ui_sizing_fixed(w * 0.9f), .height = ui_sizing_fixed(h)}},
+                .gradient = holo,
+                .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {}
+  }
+}
 
 hz_internal void rewards_draw(CardUi *ui, const GameSave *s, const InputSystem *in, f32 sw) {
   if (!ui->reward_n)
     return;
+  HzUIColor ink = {27, 42, 52, 255};
+  b32 all = true;
+  for (i32 i = 0; i < ui->reward_n; i++)
+    all &= ui->reward_tear[i] >= PACK_REVEAL;
   ui_element({.id = ui_id("Rewards"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 70},
               .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)},
-                         .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                         .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}, .padding = ui_padding_all(12)},
               .background_color = cu_black(0.67f)}) {
     ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 14, .padding = ui_padding_all(22),
                            .child_alignment = {.x = UI_ALIGN_X_CENTER}},
                 .background_color = {250, 250, 246, 255},
-                .corner_radius = ui_corner_radius(14)}) {
-      cu_text_wrap(ui->reward_title, 22, (HzUIColor){27, 42, 52, 255});
-      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 12}}) {
-        f32 w = m_clampf(sw / 6.0f, 90.0f, 150.0f);
+                .corner_radius = ui_corner_radius(14),
+                .shadow = {.color = cu_black(0.4f), .offset_y = 10.0f, .blur = 30.0f}}) {
+      ui_element({.layout = {.sizing = {.width = ui_sizing_fit(0, m_minf(sw - 70.0f, 520.0f))}}}) {
+        cu_textb(ui->reward_title, 20, ink, 800, true, (HzUIColor){0});
+      }
+      f32 w = m_clampf((sw - 100.0f) / 3.2f, 90.0f, 150.0f), h = w * 1.4f;
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 14, .padding = {.top = 8, .bottom = 8}}}) {
         for (i32 i = 0; i < ui->reward_n && i < 3; i++) {
           i32 c = ui->reward[i];
-          CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = w, .uid = 800u + (u32)i};
-          cu_card(ui, k, in, ui_idi("Reward", (u32)i));
+          b32 rare = pack_rare(c);
+          f32 t = ui->reward_tear[i];
+          b32 sealed = t <= PACK_SEALED + 1.0f;
+          // dealt in: drop and turn from above, one after another
+          f32 deal = cu_ease_out(m_clampf((ui->reward_t - 0.08f * (f32)i) / 0.35f, 0.0f, 1.0f));
+          ui_element({.id = ui_idi("RewardPack", (u32)i),
+                      .layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h)}},
+                      .opacity = opt_some(f32, deal),
+                      .transform = cu_tf(0, -(1.0f - deal) * h * 0.4f, 1.0f, (1.0f - deal) * (i == 1 ? 4.0f : -6.0f))}) {
+            if (sealed && ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
+              ui->click_pack = i;
+            // the card: pops out when the foil opens, with a burst of light (rare ones glow)
+            f32 r = t - PACK_REVEAL;
+            f32 pop = 1.0f, rot = 0.0f;
+            if (r >= 0.0f && r < 0.55f) {
+              f32 q = r / 0.55f;
+              pop = q < 0.6f ? m_lerpf(0.85f, 1.1f, cu_ease_out(q / 0.6f)) : m_lerpf(1.1f, 1.0f, (q - 0.6f) / 0.4f);
+              rot = q < 0.6f ? -2.0f * q / 0.6f : -2.0f * (1.0f - (q - 0.6f) / 0.4f);
+            }
+            ui->z = 71;
+            ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h)}},
+                        .shadow = {.color = rare && r >= 0.0f ? cu_rgba(0xffd23d, 0.9f) : (HzUIColor){0}, .blur = 18.0f, .spread = 2.0f},
+                        .corner_radius = ui_corner_radius(w * 0.06f),
+                        .transform = r >= 0.0f ? cu_tf(0, 0, pop, rot) : opt_none(HzUITransform)}) {
+              CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = w, .uid = 800u + (u32)i};
+              cu_card(ui, k, in, ui_idi("Reward", (u32)i));
+            }
+            if (r >= 0.0f && r < 0.9f) { // the sparkle
+              f32 q = r / 0.9f, sz = w * 1.3f * (0.6f + 0.8f * q);
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 73, .offset = {(w - sz) * 0.5f, (h - sz) * 0.5f},
+                                       .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                          .layout = {.sizing = {.width = ui_sizing_fixed(sz), .height = ui_sizing_fixed(sz)}},
+                          .backgrounds = ui_backgrounds((HzUIBackgroundLayer){.gradient = {.kind = UI_GRADIENT_RADIAL, .stop_count = 3, .circle = true,
+                                                                                          .size = UI_RADIAL_FARTHEST_SIDE,
+                                                                                          .stops = {{0.0f, cu_rgba(0xffffff, 0.95f)}, {0.4f, cu_rgba(0xffe678, 0.55f)}, {0.7f, cu_rgba(0xffe678, 0.0f)}}}}),
+                          .corner_radius = ui_corner_radius(sz * 0.5f),
+                          .opacity = opt_some(f32, 1.0f - q)}) {}
+            }
+            // the foil: the strip rips off, then the halves fly apart
+            if (t < PACK_GONE) {
+              f32 fw = w * 1.03f, fh = h * 1.06f, ox = -w * 0.015f, oy = -h * 0.03f;
+              f32 ps = sealed ? 0.0f : m_clampf(t / 0.35f, 0.0f, 1.0f);
+              ps *= ps;
+              f32 ph = sealed ? 0.0f : m_clampf((t - 0.25f) / 0.55f, 0.0f, 1.0f);
+              ph *= ph;
+              b32 hover = sealed && ui_pointer_over(ui_idi("RewardPack", (u32)i));
+              static const f32 left[7][2] = {{0, 0}, {0.52f, 0}, {0.46f, 0.25f}, {0.54f, 0.5f}, {0.46f, 0.75f}, {0.52f, 1}, {0, 1}};
+              static const f32 right[7][2] = {{0.52f, 0}, {1, 0}, {1, 1}, {0.52f, 1}, {0.46f, 0.75f}, {0.54f, 0.5f}, {0.46f, 0.25f}};
+              static const f32 strip[7][2] = {{0, 0}, {1, 0}, {1, 0.11f}, {0.75f, 0.135f}, {0.5f, 0.11f}, {0.25f, 0.135f}, {0, 0.115f}};
+              for (i32 piece = 0; piece < 3; piece++) {
+                f32 tx = 0, ty = 0, rotp = 0, op = 1.0f;
+                if (piece == 0) { tx = -0.75f * fw * ph; rotp = -16.0f * ph; op = 1.0f - ph; }
+                if (piece == 1) { tx = 0.75f * fw * ph; rotp = 16.0f * ph; op = 1.0f - ph; }
+                if (piece == 2) { tx = 0.35f * fw * ps; ty = -0.5f * fh * ps; rotp = -24.0f * ps; op = 1.0f - ps; }
+                ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = (i16)(74 + piece), .offset = {ox, oy},
+                                         .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                            .layout = {.sizing = {.width = ui_sizing_fixed(fw), .height = ui_sizing_fixed(fh)}},
+                            .clip_path = pack_poly(7, piece == 0 ? left : piece == 1 ? right : strip),
+                            .opacity = opt_some(f32, op),
+                            .brightness = hover ? opt_some(f32, 1.12f) : opt_none(f32),
+                            .transform = cu_tf(tx, ty, 1.0f, rotp)}) {
+                  pack_foil_art(fw, fh, rare, ui->time, piece);
+                }
+              }
+            }
+          }
         }
       }
-      if (cu_button(ui_id("RewardOk"), "Great!", (HzUIColor){0, 85, 191, 255}, true, in, 18))
+      ui->z = 0;
+      if (!all) {
+        cu_text("Tap a pack to tear it open!", 14, (HzUIColor){90, 94, 100, 255});
+        if (cu_button(ui_id("RewardAll"), "Reveal all", (HzUIColor){120, 60, 200, 255}, true, in, 17))
+          ui->click_reveal_all = true;
+      } else if (cu_button(ui_id("RewardOk"), "Awesome!", (HzUIColor){0, 85, 191, 255}, true, in, 18)) {
         ui->click_reward_ok = true;
+      }
     }
   }
 }

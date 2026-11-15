@@ -580,6 +580,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         give_starter(&s->save.data);
       cg_start_battle(&s->cards, BATTLE_PRACTICE, w, &s->audio);
     }
+    if (input->buttons[KEY_F7].pressed_this_frame && !cg_busy(&s->cards)) { // dev builds: three packs to open (shown only)
+      i32 ids[3] = {CARD_PEBBIT, CARD_THUNDRAKE, CARD_TITANOAK};
+      cg_show_rewards(&s->cards, "Test packs", ids, 3);
+    }
 #endif
     // touch claims its fingers before anything else reads the pointer (the layout follows the menu's Swipe / D-pad)
     b32 swipe_mode = s->save.data.touch_mode == 0;
@@ -616,15 +620,18 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         .respawn = input->buttons[KEY_R].pressed_this_frame,
     };
     s->touch_jump_held = tf.jump_held;
-    // hold the right mouse button to look around; the warp on the lock frame is not a look
-    b32 look = !s->editor_open && input->buttons[MOUSE_RIGHT].is_pressed;
+    // hold the right mouse button to look around; the warp on the lock frame is not a look. Over a full-screen UI (a
+    // battle, the deck, rewards, a TV or computer, the menu) the camera stays put: dragging cards and scrolling the
+    // collection used to turn and zoom it, and after a battle the town was seen from anywhere
+    b32 cam_frozen = s->editor_open || cg_busy(&s->cards) || s->scr.kind != SCREEN_NONE || s->set.open;
+    b32 look = !cam_frozen && input->buttons[MOUSE_RIGHT].is_pressed;
     os_lock_mouse(look);
     v2 mouse = look && s->look_locked ? (v2){input->mouse_delta.x, -input->mouse_delta.y} : (v2){0};
-    v2 pan = touch_on ? (v2){tf.camera_pan_px.x, -tf.camera_pan_px.y} : (v2){0};
+    v2 pan = touch_on && !cam_frozen ? (v2){tf.camera_pan_px.x, -tf.camera_pan_px.y} : (v2){0};
     *ecs_resource_get_mut(w, CameraRigInput) = (CameraRigInput){
         .look = v2_add(v2_scale(mouse, GAME_LOOK_SENSITIVITY), v2_scale(pan, GAME_TOUCH_LOOK)),
-        .zoom = s->editor_open ? 0.0f
-                               : -input->scroll_delta.y * GAME_ZOOM_RATE - (touch_on ? tf.camera_pinch_px * GAME_PINCH_ZOOM : 0.0f),
+        .zoom = cam_frozen ? 0.0f
+                           : -input->scroll_delta.y * GAME_ZOOM_RATE - (touch_on ? tf.camera_pinch_px * GAME_PINCH_ZOOM : 0.0f),
     };
     s->look_locked = look;
     // ---- the game around the walking: the save, dialogues, screens, things to use, doors, village life ----

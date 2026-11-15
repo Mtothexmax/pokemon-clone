@@ -232,6 +232,11 @@ hz_internal void cg_show_rewards(CardGame *cg, CString title, const i32 *ids, i3
     cg->ui.reward[i] = ids[i];
   cstr_format(cg->ui.text[5], sizeof(cg->ui.text[5]), "%", fmt_cstr(title));
   cg->ui.reward_title = cg->ui.text[5];
+  cg->ui.reward_t = 0.0f; // every card comes in a sealed foil pack, torn open with a tap
+  for (i32 i = 0; i < 3; i++)
+    cg->ui.reward_tear[i] = PACK_SEALED;
+  cg->ui.click_pack = -1;
+  cg->ui.click_reveal_all = false;
 }
 
 // the battle is over and the result was seen: studs, EXP, cards, then what the opponent says (battleDone)
@@ -315,8 +320,38 @@ hz_internal b32 cg_update(CardGame *cg, SaveState *save, Life *life, DialogState
     cg_show_rewards(cg, "All golden studs found! A legendary card appears\xe2\x80\xa6", &id, 1);
   }
   if (cg->ui.reward_n) {
-    if (cg->ui.click_reward_ok || in->buttons[KEY_ENTER].pressed_this_frame || in->buttons[KEY_E].pressed_this_frame ||
-        in->buttons[KEY_SPACE].pressed_this_frame) {
+    // the packs: a tap tears one open (a crinkle; the card pops out at PACK_REVEAL with a jingle), "Reveal all" or a key
+    // opens the rest one after another; once every card is out, the same keys or "Awesome!" close the screen
+    CardUi *u = &cg->ui;
+    u->reward_t += dt;
+    b32 keys = in->buttons[KEY_ENTER].pressed_this_frame || in->buttons[KEY_E].pressed_this_frame || in->buttons[KEY_SPACE].pressed_this_frame;
+    b32 all = true;
+    for (i32 i = 0; i < u->reward_n; i++) {
+      f32 *t = &u->reward_tear[i];
+      if (*t > PACK_SEALED + 1.0f) {
+        f32 before = *t;
+        *t += dt;
+        if (before < 0.0f && *t >= 0.0f && i > 0)
+          sound_play(snd, SND_SPLASH, 1.9f, 0.35f);
+        if (before < PACK_REVEAL && *t >= PACK_REVEAL)
+          sound_play(snd, pack_rare(u->reward[i]) ? SND_FANFARE : SND_COIN, 1.0f + 0.12f * (f32)i, 0.7f);
+      }
+      all &= *t >= PACK_REVEAL;
+    }
+    if (u->click_pack >= 0 && u->click_pack < u->reward_n && u->reward_tear[u->click_pack] <= PACK_SEALED + 1.0f) {
+      u->reward_tear[u->click_pack] = 0.0f;
+      sound_play(snd, SND_SPLASH, 1.9f, 0.45f);
+    } else if (!all && (u->click_reveal_all || keys)) {
+      i32 k = 0;
+      for (i32 i = 0; i < u->reward_n; i++)
+        if (u->reward_tear[i] <= PACK_SEALED + 1.0f)
+          u->reward_tear[i] = -0.26f * (f32)k++;
+      sound_play(snd, SND_SPLASH, 1.9f, 0.45f);
+      keys = false;
+    }
+    u->click_pack = -1;
+    u->click_reveal_all = false;
+    if (all && (u->click_reward_ok || keys)) {
       cg->ui.click_reward_ok = false;
       cg->ui.reward_n = 0;
       sound_play(snd, SND_BLIP, 1.2f, 0.4f);
