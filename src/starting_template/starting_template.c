@@ -1018,7 +1018,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       if (dbg_toggled)
         s->dbg.on = !s->dbg.on;
       // a click names the thing under the mouse; turning debug on names what is in the middle of the screen
-      if (s->dbg.on && (input->buttons[MOUSE_LEFT].pressed_this_frame || dbg_toggled)) {
+      if (s->dbg.on && ((input->buttons[MOUSE_LEFT].pressed_this_frame && !ui_point_over_ui(s->ui, input->mouse_pos)) || dbg_toggled)) {
         Camera *pick_cam = ecs_query_get_singleton(Camera, s->sim.camera_query);
         f32 mx = dbg_toggled ? (f32)memory->canvas_width * 0.5f : input->mouse_pos.x;
         f32 my = dbg_toggled ? (f32)memory->canvas_height * 0.5f : input->mouse_pos.y;
@@ -1203,7 +1203,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       dialog_draw(&s->dlg, input, s->touch.last_active, ui_w);
       screens_draw(&s->scr, input, &s->save.data, cam, ui_w, ui_h, s->zoom.active ? s->zoom.t : 0.0f,
                    s->scr.voiced && audio_voice_playing(&s->audio, s->scr.voice));
-      debug_draw(&s->dbg);
+      {
+        const WorldTransform *mwt = ecs_component_get(w, s->sim.player, WorldTransform);
+        debug_draw(&s->dbg, input, mwt ? v3_scale(mwt->position, 1.0f / TOWN_STUD) : V3_ZERO, dt);
+      }
       touch_controls_draw_stick(&s->touch);
       if (s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !s->dive.on) { // at a TV or computer, in a fight, diving: no
         touch_controls_draw_jump_button(&s->touch);

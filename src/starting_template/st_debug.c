@@ -67,6 +67,10 @@ typedef struct DebugPick {
   b32 on;
   char text[2][160];
   b32 has;
+  v3 at;               // the picked point (studs), for the Copy button
+  f32 copied_t;        // > 0: "Copied!" shows on the button that was pressed
+  i32 copied;          // 0 the pick, 1 you
+  char me_text[96];
 } DebugPick;
 
 // what a ray hit: the nearest moving thing along it, else the tags at the hit point, else the ground
@@ -137,15 +141,42 @@ hz_internal void debug_pick(DebugPick *dp, EcsWorld *w, Camera *cam, f32 mx, f32
   dp->has = best != NULL;
   if (!dp->has)
     return;
+  dp->at = hs;
   cstr_format(dp->text[0], sizeof(dp->text[0]), "%", fmt_cstr(best));
   cstr_format(dp->text[1], sizeof(dp->text[1]), "at x % / y % / z % studs   (% m away)", fmt_f32_p(hs.x, 1), fmt_f32_p(hs.y, 1),
               fmt_f32_p(hs.z, 1), fmt_f32_p(best_t < 1e8f ? best_t : hit_t, 1));
   log_info("debug pick: % at % % %", fmt_cstr(best), fmt_f32_p(hs.x, 1), fmt_f32_p(hs.y, 1), fmt_f32_p(hs.z, 1));
 }
 
-hz_internal void debug_draw(const DebugPick *dp) {
+// a small button in the debug panel: copies "x, y, z" (studs, one decimal) to the clipboard
+hz_internal void debug_copy_btn(DebugPick *dp, const InputSystem *in, HzUIElementId id, i32 which, v3 p, f32 dt) {
+  b32 done = dp->copied_t > 0.0f && dp->copied == which;
+  ui_element({.id = id,
+              .layout = {.padding = {.left = 10, .right = 10, .top = 4, .bottom = 4}},
+              .background_color = done ? (HzUIColor){40, 140, 70, 255} : ui_hovered() ? (HzUIColor){150, 60, 50, 255} : (HzUIColor){110, 35, 30, 255},
+              .border = {.color = {255, 200, 190, 160}, .width = {.left = 1, .right = 1, .top = 1, .bottom = 1}},
+              .corner_radius = ui_corner_radius(6)}) {
+    if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame) {
+      char buf[96];
+      cstr_format(buf, sizeof(buf), "%, %, %", fmt_f32_p(p.x, 1), fmt_f32_p(p.y, 1), fmt_f32_p(p.z, 1));
+      u32 n = 0;
+      while (n < sizeof(buf) && buf[n])
+        n++;
+      os_clipboard_set_text(buf, n);
+      dp->copied = which;
+      dp->copied_t = 1.5f;
+      log_info("debug: copied %", fmt_cstr(buf));
+    }
+    ui_text(ui_str_c(done ? "Copied!" : "Copy"), ui_text_config({.fontSize = 13, .textColor = {255, 255, 255, 255}}));
+  }
+  (void)dt;
+}
+
+// me: the player's position (studs)
+hz_internal void debug_draw(DebugPick *dp, const InputSystem *in, v3 me, f32 dt) {
   if (!dp->on)
     return;
+  dp->copied_t = m_maxf(0.0f, dp->copied_t - dt);
   OsSafeAreaInsets safe = os_get_safe_area();
   ui_element({.id = ui_id("DebugPick"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT,
@@ -158,7 +189,16 @@ hz_internal void debug_draw(const DebugPick *dp) {
             ui_text_config({.fontSize = 13, .textColor = {255, 170, 150, 255}}));
     if (dp->has) {
       ui_text(ui_str_c((CString)dp->text[0]), ui_text_config({.fontSize = 18, .textColor = {255, 255, 255, 255}}));
-      ui_text(ui_str_c((CString)dp->text[1]), ui_text_config({.fontSize = 13, .textColor = {255, 220, 210, 255}}));
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 10, .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
+        ui_text(ui_str_c((CString)dp->text[1]), ui_text_config({.fontSize = 13, .textColor = {255, 220, 210, 255}}));
+        debug_copy_btn(dp, in, ui_id("DbgCopyPick"), 0, dp->at, dt);
+      }
+    }
+    ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 10, .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
+      cstr_format(dp->me_text, sizeof(dp->me_text), "You: x % / y % / z % studs", fmt_f32_p(me.x, 1), fmt_f32_p(me.y, 1), fmt_f32_p(me.z, 1));
+      ui_text(ui_str_c((CString)dp->me_text),
+              ui_text_config({.fontSize = 13, .textColor = {255, 220, 210, 255}}));
+      debug_copy_btn(dp, in, ui_id("DbgCopyMe"), 1, me, dt);
     }
   }
 }
