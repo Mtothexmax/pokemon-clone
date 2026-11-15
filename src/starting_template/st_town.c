@@ -867,10 +867,19 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
           town_spruce(t, x, zz, 8.5f + town_rand(&t->rng) * 2.5f);
       }
     }
+    // the south row: you can walk around and behind it up to the plate's edge (each tree and bush blocks itself)
     for (f32 x = -24.0f; x <= 64.0f; x += step) {
-      town_round_tree(t, x + (town_rand(&t->rng) - 0.5f) * 0.8f, 27.2f, 3.0f + town_rand(&t->rng) * 0.6f);
+      f32 tx = x + (town_rand(&t->rng) - 0.5f) * 0.8f;
+      town_round_tree(t, tx, 27.2f, 3.0f + town_rand(&t->rng) * 0.6f);
+      town_block(t, tx - 0.7f, tx + 0.7f, 26.5f, 27.9f);
       town_bush(t, x + step * 0.5f, 25.0f, 1.6f + town_rand(&t->rng) * 0.5f);
+      town_block(t, x + step * 0.5f - 0.8f, x + step * 0.5f + 0.8f, 24.2f, 25.8f);
     }
+    // the village's south edge: a dense hedge and low round trees (the endless studded floor would look walkable)
+    for (f32 x = -28.0f; x <= 68.0f; x += 1.7f)
+      town_bush(t, x + (town_rand(&t->rng) - 0.5f) * 0.4f, 29.9f + (town_rand(&t->rng) - 0.5f) * 0.5f, 2.2f + town_rand(&t->rng) * 0.6f);
+    for (f32 x = -27.0f; x <= 68.0f; x += 3.0f)
+      town_round_tree(t, x + (town_rand(&t->rng) - 0.5f) * 1.0f, 32.0f + (town_rand(&t->rng) - 0.5f) * 0.8f, 3.4f + town_rand(&t->rng) * 0.8f);
     for (f32 x = -25.0f; x <= 25.0f; x += step) {
       if (m_absf(x) > 6.0f)
         town_spruce(t, x, -27.6f, 8.5f + town_rand(&t->rng) * 2.5f);
@@ -975,9 +984,9 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
   // ---- where you can walk: the village, the gap north and the grass patch (walls along the edges) ----
   {
     TownRect walls[] = {
-        {-26.2f, 66.2f, 23.4f, 24.4f},    // south
-        {-27.2f, -26.2f, -25.6f, 23.4f},  // west
-        {66.2f, 67.2f, -25.6f, 23.4f},    // east
+        {-26.2f, 66.2f, 28.6f, 29.6f},    // south: the plate's edge, behind the row of round trees
+        {-27.2f, -26.2f, -25.6f, 28.6f},  // west
+        {66.2f, 67.2f, -25.6f, 28.6f},    // east
         {-26.2f, -3.6f, -26.6f, -25.6f},  // north, west of the gap
         {3.6f, 66.2f, -26.6f, -25.6f},    // north, east of the gap
         {-4.6f, -3.6f, -28.6f, -25.6f},   // the gap
