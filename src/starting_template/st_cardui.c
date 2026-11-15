@@ -44,6 +44,11 @@ typedef struct CardUi {
   i32 deck_pick;    // the card shown big
   i32 click_coll, click_slot;
   b32 click_add, click_remove, click_upgrade, click_walk, click_close, click_unpick;
+  // the upgrade moment (up_draw): the card, the stage before and after, seconds since it began
+  i32 up_card; // -1 none
+  i32 up_from, up_to;
+  f32 up_t;
+  b32 click_up_ok;
   // rewards
   i32 reward[3], reward_n;
   CString reward_title;
@@ -1860,8 +1865,182 @@ hz_internal void deck_draw(CardUi *ui, GameSave *s, const InputSystem *in, f32 s
   (void)voxel_walks;
 }
 
+// ---------------------------------------------------------------- the upgrade moment
+// Every upgrade shows the card big in a spotlight: light gathers, the card flips and comes back in its new frame with
+// rays and sparkles. A 6-energy card that becomes a Voxelmon shakes, glows and bursts into voxel cubes instead, the
+// screen opens onto the town and the real 3D beast rises spinning out of a glowing ring (vox_showcase, st_vox.c).
+#define UP_FLIP 1.15f  // the card turns edge-on
+#define UP_SWAP 1.3f   // ... and comes back in its new frame
+#define UP_BURST 1.25f // a Voxelmon: the card bursts, the 3D beast appears
+#define UP_DONE 2.0f   // the button appears (a Voxelmon: UP_DONE + 0.7)
+
+hz_internal f32 up_ease_back(f32 x) {
+  x = m_clampf(x, 0.0f, 1.0f) - 1.0f;
+  return 1.0f + 2.7f * x * x * x + 1.7f * x * x;
+}
+
+hz_internal void up_draw(CardUi *ui, const GameSave *s, const InputSystem *in, f32 sw, f32 sh) {
+  if (ui->up_card < 0)
+    return;
+  i32 c = ui->up_card;
+  f32 t = ui->up_t;
+  b32 vox = ui->up_to >= VOXEL_LEVEL;
+  StageDef st = stage_def(ui->up_to);
+  HzUIColor sc = st.frame, white = {255, 255, 255, 255};
+  f32 cw = m_minf(m_minf(sw * 0.42f, sh * 0.4f / 1.4f), 230.0f), ch = cw * 1.4f;
+  f32 cx = sw * 0.5f, cy = sh * (vox ? 0.45f : 0.42f);
+  // the backdrop: a dark spotlight; for a Voxelmon it opens onto the town once the card has burst
+  f32 bg = m_clampf(t / 0.3f, 0.0f, 1.0f);
+  if (vox)
+    bg *= 1.0f - 0.85f * m_clampf((t - UP_BURST) / 0.45f, 0.0f, 1.0f);
+  ui_element({.id = ui_id("UpShade"),
+              .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 30},
+              .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}},
+              .gradient = cu_rad(0.5f, 0.42f, cu_shade(0x2a3546, 0.9f * bg), cu_shade(0x05070b, 0.97f * bg), 1.0f)}) {
+    if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame && t > (vox ? UP_DONE + 0.7f : UP_DONE))
+      ui->click_up_ok = true; // a tap anywhere once it is done
+  }
+  // rays turning behind the card, brighter once it has changed
+  f32 ray_a = m_clampf((t - 0.2f) / 0.5f, 0.0f, 1.0f) * (t > UP_SWAP ? 0.24f : 0.1f) * (vox ? 1.0f - m_clampf((t - UP_BURST) / 0.4f, 0.0f, 0.7f) : 1.0f);
+  for (i32 i = 0; i < 6; i++) {
+    f32 len = m_maxf(sw, sh) * 1.2f;
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 31, .offset = {cx - cw * 0.16f, cy - len * 0.5f},
+                             .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                .layout = {.sizing = {.width = ui_sizing_fixed(cw * 0.32f), .height = ui_sizing_fixed(len)}},
+                .gradient = cu_lin(0.0f, 3, (f32[]){0.0f, 0.5f, 1.0f}, (HzUIColor[]){cu_alpha(sc, 0.0f), cu_alpha(sc, ray_a), cu_alpha(sc, 0.0f)}),
+                .transform = cu_tf(0, 0, 1, (f32)i * 30.0f + t * 18.0f)}) {}
+  }
+  // light gathers: sparks spiral in towards the card
+  if (t > 0.25f && t < UP_SWAP) {
+    for (i32 i = 0; i < 16; i++) {
+      f32 p = m_clampf((t - 0.25f - 0.04f * (f32)(i % 6)) / 0.9f, 0.0f, 1.0f);
+      f32 r = (1.0f - p) * cw * 1.6f + cw * 0.2f, a = (f32)i * 0.3927f + t * 3.0f;
+      f32 d = 6.0f + 6.0f * (1.0f - p);
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 33, .offset = {cx + m_cosf(a) * r - d * 0.5f, cy + m_sinf(a) * r - d * 0.5f},
+                               .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                  .layout = {.sizing = {.width = ui_sizing_fixed(d), .height = ui_sizing_fixed(d)}},
+                  .background_color = i % 3 ? cu_rgba(0xffffff, 0.9f * p) : cu_alpha(sc, p),
+                  .shadow = {.color = cu_alpha(sc, 0.8f * p), .blur = d},
+                  .transform = cu_tf(0, 0, 1, 45.0f)}) {}
+    }
+  }
+  // the card: in, a little wobble while the light gathers, the flip (a Voxelmon shakes harder and bursts)
+  b32 show_card = !vox || t < UP_BURST;
+  if (show_card) {
+    f32 in_k = cu_ease_out(m_clampf(t / 0.35f, 0.0f, 1.0f));
+    f32 sx = 1.0f, rot = 0.0f, scale = 0.6f + 0.4f * in_k, glow = m_clampf((t - 0.3f) / 0.8f, 0.0f, 1.0f);
+    i32 level = ui->up_from;
+    if (!vox) {
+      rot = m_sinf(t * 14.0f) * 2.0f * glow * (t < UP_FLIP ? 1.0f : 0.0f);
+      if (t > UP_FLIP - 0.15f && t < UP_SWAP)
+        sx = m_maxf(0.02f, 1.0f - (t - (UP_FLIP - 0.15f)) / 0.3f);
+      if (t >= UP_SWAP) {
+        level = ui->up_to;
+        f32 q = m_clampf((t - UP_SWAP) / 0.3f, 0.0f, 1.0f);
+        sx = m_maxf(0.02f, q);
+        scale *= 1.0f + 0.12f * m_sinf(m_clampf((t - UP_SWAP) / 0.45f, 0.0f, 1.0f) * M_PI);
+      }
+    } else {
+      f32 shake = glow * glow;
+      rot = m_sinf(t * 47.0f) * 4.0f * shake;
+      scale *= 1.0f + 0.08f * shake;
+      level = t > 0.9f ? VOXEL_LEVEL - 1 : ui->up_from;
+    }
+    ui->z = 35;
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 34, .offset = {cx - cw * 0.5f, cy - ch * 0.5f},
+                             .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                .layout = {.sizing = {.width = ui_sizing_fixed(cw), .height = ui_sizing_fixed(ch)}},
+                .corner_radius = ui_corner_radius(cw * 0.06f),
+                .shadow = {.color = cu_alpha(vox ? cu_rgb(0xb07aff) : sc, 0.9f * glow), .blur = cw * (0.15f + 0.25f * glow), .spread = cw * 0.02f * glow},
+                .transform = opt_some(HzUITransform, ((HzUITransform){.scale = {scale * sx, scale}, .rotation = rot, .origin = {0.5f, 0.5f}})),
+                .opacity = opt_some(f32, in_k)}) {
+      CardLook k = {.id = c, .power = card_def(c).power, .level = level, .w = cw, .uid = 950u, .big = true};
+      cu_card(ui, k, in, ui_id("UpCard"));
+    }
+    ui->z = 0;
+  }
+  // a Voxelmon: the card bursts into voxel cubes
+  if (vox && t >= UP_BURST && t < UP_BURST + 1.1f) {
+    f32 q = (t - UP_BURST) / 1.1f;
+    static const u32 pal[6] = {0xa05aff, 0xffd23d, 0xffffff, 0x3d9bff, 0xff6a5a, 0x5ccb4c};
+    for (i32 i = 0; i < 48; i++) {
+      f32 gx = (f32)(i % 6) / 5.0f - 0.5f, gy = (f32)(i / 6) / 7.0f - 0.5f;
+      f32 h1 = cu_hash((u32)i), h2 = cu_hash((u32)i * 7u + 3u);
+      f32 vx = gx * 2.2f + (h1 - 0.5f) * 1.4f, vy = gy * 2.2f - 0.6f - h2 * 0.8f;
+      f32 px = cx + gx * cw + vx * cw * q * 1.6f, py = cy + gy * ch + vy * cw * q * 1.6f + q * q * cw * 1.4f;
+      f32 d = cw * (0.13f + 0.05f * h2) * (1.0f - 0.4f * q);
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 36, .offset = {px - d * 0.5f, py - d * 0.5f},
+                               .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                  .layout = {.sizing = {.width = ui_sizing_fixed(d), .height = ui_sizing_fixed(d)}},
+                  .gradient = cu_lin2(135.0f, cu_mix(cu_rgb(pal[i % 6]), white, 0.35f), cu_rgb(pal[i % 6])),
+                  .corner_radius = ui_corner_radius(d * 0.12f),
+                  .border = {.color = cu_black(0.25f), .width = {.left = 1, .right = 1, .top = 1, .bottom = 1}},
+                  .opacity = opt_some(f32, 1.0f - q * q),
+                  .transform = cu_tf(0, 0, 1, (h1 - 0.5f) * 720.0f * q)}) {}
+    }
+  }
+  // the flash: when the card changes, or bursts
+  f32 at = vox ? UP_BURST : UP_SWAP;
+  if (t > at - 0.05f && t < at + 0.35f) {
+    f32 fl = t < at ? (t - at + 0.05f) / 0.05f : 1.0f - (t - at) / 0.35f;
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 37},
+                .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}},
+                .background_color = cu_rgba(0xffffff, 0.55f * m_clampf(fl, 0.0f, 1.0f)),
+                .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {}
+  }
+  // the words: the new stage (or the Voxelmon, its skills), then the button
+  f32 tt = vox ? UP_BURST + 0.6f : UP_SWAP + 0.2f;
+  if (t > tt) {
+    f32 pop = up_ease_back(m_clampf((t - tt) / 0.35f, 0.0f, 1.0f));
+    f32 y = vox ? sh * 0.06f : cy + ch * 0.5f + 18.0f;
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 38,
+                             .attach_points = {.element = UI_ATTACH_POINT_CENTER_TOP, .parent = UI_ATTACH_POINT_CENTER_TOP},
+                             .offset = {0, y}, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 6, .child_alignment = {.x = UI_ALIGN_X_CENTER},
+                           .sizing = {.width = ui_sizing_fixed(m_minf(sw - 24.0f, 560.0f))}},
+                .opacity = opt_some(f32, m_minf(1.0f, pop)),
+                .transform = cu_tf(0, 0, 0.6f + 0.4f * pop, 0)}) {
+      HzUITextConfig big = {.fontSize = m_clampf(sw / 13.0f, 26.0f, 44.0f), .textColor = vox ? cu_rgb(0xd9b8ff) : cu_mix(sc, white, 0.25f),
+                            .weight = 800, .textAlignment = CLAY_TEXT_ALIGN_CENTER, .wrapMode = UI_TEXT_WRAP_WORDS};
+      big.shadows[0] = (HzUITextShadow){.color = cu_black(0.6f), .offset_y = 2.0f, .blur = 6.0f};
+      HzUITextConfig note = {.fontSize = 16, .textColor = cu_rgba(0xffffff, 0.92f), .weight = 600, .textAlignment = CLAY_TEXT_ALIGN_CENTER,
+                              .wrapMode = UI_TEXT_WRAP_WORDS};
+      note.shadows[0] = (HzUITextShadow){.color = cu_black(0.7f), .offset_y = 1.0f, .blur = 4.0f};
+      if (vox) {
+        ui_text(ui_str_c(CU_FMT(ui, "% is a real Voxelmon now!", fmt_cstr(card_def(c).name))), big);
+        ui_text(ui_str_c("It walks with you. Show it to Prof. Quill at the village exit!"), note);
+      } else {
+        ui_text(ui_str_c(CU_FMT(ui, "%!", fmt_cstr(st.name))), big);
+        ui_text(ui_str_c(CU_FMT(ui, "% \xc2\xb7 %", fmt_cstr(card_def(c).name), fmt_cstr(st.blurb))), note);
+      }
+    }
+  }
+  f32 done = vox ? UP_DONE + 0.7f : UP_DONE;
+  if (t > done) {
+    f32 pop = up_ease_back(m_clampf((t - done) / 0.3f, 0.0f, 1.0f));
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 39,
+                             .attach_points = {.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM},
+                             .offset = {0, -os_get_safe_area().bottom - sh * 0.07f}},
+                .transform = cu_tf(0, 0, pop, 0)}) {
+      if (cu_button(ui_id("UpOk"), vox ? "Let's go!" : "Nice!", vox ? cu_rgb(0x7a3fd6) : cu_rgb(0x0055bf), true, in, 20))
+        ui->click_up_ok = true;
+    }
+  }
+}
+
 // the clicks of the deck screen; returns true when it was closed
 hz_internal b32 deck_input(CardUi *ui, GameSave *s, SaveState *save, SoundBank *snd, const InputSystem *in) {
+  if (ui->up_card >= 0) { // the upgrade moment owns the screen: once done, a tap, its button or a key goes back to the deck
+    b32 done = ui->up_t > (ui->up_to >= VOXEL_LEVEL ? UP_DONE + 0.7f : UP_DONE);
+    b32 keys = in->buttons[KEY_ENTER].pressed_this_frame || in->buttons[KEY_SPACE].pressed_this_frame || in->buttons[KEY_E].pressed_this_frame ||
+               in->buttons[KEY_ESCAPE].pressed_this_frame || in->buttons[KEY_C].pressed_this_frame;
+    if (done && (ui->click_up_ok || keys))
+      ui->up_card = -1;
+    ui->click_up_ok = false;
+    ui->click_coll = ui->click_slot = -1;
+    ui->click_add = ui->click_remove = ui->click_upgrade = ui->click_walk = ui->click_close = ui->click_unpick = false;
+    return false;
+  }
   b32 closed = false;
   if (ui->click_coll >= 0)
     ui->deck_pick = ui->click_coll;
@@ -1880,8 +2059,11 @@ hz_internal b32 deck_input(CardUi *ui, GameSave *s, SaveState *save, SoundBank *
     s->deck_count = (u8)k;
     save_mark(save);
   }
-  if (c >= 0 && ui->click_upgrade && upgrade(s, c)) {
-    sound_play(snd, s->card_level[c] == VOXEL_LEVEL ? SND_FANFARE : SND_COIN, 1.0f, 0.8f);
+  if (c >= 0 && ui->click_upgrade && upgrade(s, c)) { // the moment plays (up_draw; its sounds in cg_update)
+    ui->up_card = c;
+    ui->up_from = s->card_level[c] - 1;
+    ui->up_to = s->card_level[c];
+    ui->up_t = 0.0f;
     save_mark(save);
   }
   if (c >= 0 && ui->click_walk && s->card_level[c] >= VOXEL_LEVEL) {

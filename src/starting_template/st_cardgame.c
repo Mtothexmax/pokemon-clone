@@ -89,7 +89,7 @@ hz_internal void cg_say(CardGame *cg, EcsWorld *w, AudioSystem *audio, i32 what,
 
 hz_internal void cg_init(CardGame *cg, EcsWorld *w, AudioSystem *audio, u32 seed) {
   cg->ui.selected = cg->ui.hover_card = cg->ui.click_card = cg->ui.click_zone = -1;
-  cg->ui.deck_pick = cg->ui.click_coll = cg->ui.click_slot = -1;
+  cg->ui.deck_pick = cg->ui.click_coll = cg->ui.click_slot = cg->ui.up_card = -1;
   cg->ui.drag = cg->ui.press_card = cg->ui.click_play_to = -1;
   cg->ui.confetti_t = -1.0f;
   cg->seed = seed | 1u;
@@ -291,6 +291,22 @@ hz_internal b32 cg_update(CardGame *cg, SaveState *save, Life *life, DialogState
                           const InputSystem *in, b32 busy_world, f32 dt) {
   GameSave *s = &save->data;
   cg->track_t += dt;
+  if (cg->ui.up_card >= 0) { // the upgrade moment's sounds: the flip (or the burst), then a jingle
+    f32 t0 = cg->ui.up_t;
+    cg->ui.up_t += dt;
+    f32 t1 = cg->ui.up_t;
+    b32 vox = cg->ui.up_to >= VOXEL_LEVEL;
+    if (t0 < 0.3f && t1 >= 0.3f)
+      sound_play(snd, SND_BLIP, 0.6f, 0.4f);
+    if (!vox && t0 < UP_SWAP && t1 >= UP_SWAP) {
+      sound_play(snd, SND_POP, 1.2f, 0.8f);
+      sound_play(snd, SND_COIN, 1.0f, 0.8f);
+    }
+    if (vox && t0 < UP_BURST && t1 >= UP_BURST) {
+      sound_play(snd, SND_KICK, 0.5f, 1.0f);
+      sound_play(snd, SND_FANFARE, 1.0f, 0.9f);
+    }
+  }
   cg->ui.time += dt;
   if (cg->ui.confetti_t >= 0.0f)
     cg->ui.confetti_t += dt;
@@ -488,7 +504,10 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
       }
     }
   } else if (cg->ui.deck_open) {
-    deck_draw(&cg->ui, (GameSave *)s, in, sw, sh, s->voxelmon > 0);
+    // the upgrade moment over the deck; a new Voxelmon opens the view onto the town, where it rises in 3D
+    if (!(cg->ui.up_card >= 0 && cg->ui.up_to >= VOXEL_LEVEL && cg->ui.up_t > UP_BURST + 0.3f))
+      deck_draw(&cg->ui, (GameSave *)s, in, sw, sh, s->voxelmon > 0);
+    up_draw(&cg->ui, s, in, sw, sh);
   } else if (show_button && s->has_deck) {
     // the Deck button, top right left of the menu button (narrow screens: the second row, right)
     OsSafeAreaInsets safe = os_get_safe_area();

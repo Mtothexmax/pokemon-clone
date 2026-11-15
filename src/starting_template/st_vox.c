@@ -87,6 +87,11 @@ typedef struct Vox {
   char text[6][96];
   b32 click_skill[2], click_run;
   u32 seed;
+  b32 force; // dev builds (F6): a wild one now
+  // the upgrade to a Voxelmon: the beast shown rising in front of the camera (vox_showcase; -1 none)
+  i32 show_id;
+  EcsEntity show_ring[2];
+  HzHandleT(RendererMaterial) show_mat;
 } Vox;
 
 hz_internal f32 vox_rand(Vox *v) {
@@ -111,11 +116,15 @@ hz_internal void vox_init(Vox *v, Life *l, u32 seed) {
   v->me_id = -1;
   v->me_area = -2;
   v->me.id = v->wild.id = -1;
+  v->show_id = -1;
   v->cube_mesh = life_mesh(l, shape_vcube);
   v->ring_mesh = life_mesh(l, shape_vring);
   v->bolt_mesh = life_mesh(l, shape_vbolt);
   for (i32 i = 0; i < 4; i++)
     v->mat[i] = life_glow_material(l, (v4){1, 1, 1, 1}, 2.0f);
+  v->show_mat = life_glow_material(l, (v4){0.68f, 0.45f, 1.0f, 1.0f}, 3.0f);
+  for (i32 i = 0; i < 2; i++)
+    v->show_ring[i] = life_spawn(l, v->ring_mesh, v->show_mat, (v3){0.0f, -60.0f, 0.0f}, false);
   for (i32 i = 0; i < VOX_CUBES + 3; i++) {
     HzHandleT(RendererSubMesh) m = i < VOX_CUBES ? v->cube_mesh : i == VOX_CUBES + 2 ? v->bolt_mesh : v->ring_mesh;
     v->proj[i].e = life_spawn(l, m, v->mat[i < VOX_CUBES ? 0 : i - VOX_CUBES + 1], (v3){0.0f, -60.0f, 0.0f}, false);
@@ -335,6 +344,38 @@ hz_internal void vox_end(Vox *v, i32 result) {
     v->me.tired = true;
 }
 
+// the upgrade to a Voxelmon (up_draw, st_cardui.c): once the card has burst, the beast rises out of two glowing rings in
+// front of the player (between it and the camera), spinning and growing, and keeps turning there until the moment is
+// closed (id -1: put away)
+hz_internal void vox_showcase(Vox *v, i32 id, f32 t, const Camera *cam, v3 player) {
+  if (id < 0 || t < UP_BURST || !cam) {
+    if (v->show_id >= 0) {
+      if (v->show_id != v->me.id && v->show_id != v->wild.id)
+        vox_hide(v, v->models[v->show_id]);
+      for (i32 i = 0; i < 2; i++)
+        vox_hide(v, v->show_ring[i]);
+      v->show_id = -1;
+    }
+    return;
+  }
+  v->show_id = id;
+  EcsEntity e = vox_model(v, id);
+  v3 cs = v3_scale(cam->pos, 1.0f / TOWN_STUD); // studs
+  v2 back = v2_normalize((v2){cs.x - player.x, cs.z - player.z}); // from the player towards the camera
+  v3 at = {player.x + back.x * 4.0f, player.y, player.z + back.y * 4.0f};
+  f32 k = m_clampf((t - UP_BURST) / 1.2f, 0.0f, 1.0f), grow = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
+  f32 face = m_atan2f(cs.x - at.x, cs.z - at.z);
+  f32 yaw = face + (t - UP_BURST) * 0.9f + (1.0f - grow) * 6.0f;
+  f32 size = 6.0f * TOWN_STUD * m_maxf(grow, 0.01f);
+  f32 y = at.y + (1.0f - grow) * -1.5f + m_absf(m_sinf(t * 2.0f)) * 0.25f * k;
+  ecs_renderer_set_transform(v->l->w, e, (Transform){.position = town_m(at.x, y, at.z), .rotation = quat_from_euler((v3){0.0f, yaw, 0.0f}),
+                                                     .scale = {size, size, size}});
+  for (i32 i = 0; i < 2; i++) {
+    f32 r = (i == 0 ? 3.4f : 4.6f + 0.3f * m_sinf(t * 3.0f)) * m_minf(1.0f, k * 1.6f);
+    life_set(v->l, v->show_ring[i], (v3){at.x, at.y + 0.1f + (f32)i * 0.05f, at.z}, t * (i ? -1.2f : 1.6f), (v3){r, 1.0f, r});
+  }
+}
+
 // main lane, before the scope. Returns true while a fight holds the player in place
 hz_internal b32 vox_update(Vox *v, SaveState *save, CardGame *cg, EcsWorld *w, AudioSystem *audio, const InputSystem *in, v3 player_m,
                            f32 heading, i32 area, b32 busy, f32 dt) {
@@ -400,7 +441,13 @@ hz_internal b32 vox_update(Vox *v, SaveState *save, CardGame *cg, EcsWorld *w, A
       me->yaw = vox_turn(me->yaw, vox_face_to(me->p, p), dt * 3.0f);
     Fighter shown = *me;
     shown.p.y = ground;
-    vox_pose(v, &shown, 1.0f);
+    if (v->show_id != me->id) // (rising as the new Voxelmon: vox_showcase poses it)
+      vox_pose(v, &shown, 1.0f);
+    if (v->force) {
+      v->force = false;
+      if (!me->tired && !busy)
+        vox_start(v, p, heading, cg, w, audio);
+    }
     // the grass: every 3 studs walked in it a 22% chance
     if (!busy && area < 0 && vox_in_grass(p.x, p.z) && moved < 3.0f) {
       v->meter += moved;
@@ -465,6 +512,7 @@ hz_internal b32 vox_update(Vox *v, SaveState *save, CardGame *cg, EcsWorld *w, A
       vox_hide(v, wf->e);
       Fighter shown = *me;
       shown.p.y = me->home.y + m_absf(m_sinf(t * 10.0f)) * 0.7f;
+      if (v->show_id != me->id) // (rising as the new Voxelmon: vox_showcase poses it)
       vox_pose(v, &shown, 1.0f);
     }
     if (v->result == 1)
@@ -637,20 +685,35 @@ hz_internal void vox_draw(Vox *v, const InputSystem *in, const Camera *cam, f32 
           Skill sk = vox_skill(me->id, k);
           b32 ready = v->cool[k] <= 0.0f && v->phase == VOX_FIGHT;
           v4 c = vox_rgb(sk.color);
+          // the recharge fills the button from the bottom up in the skill's colour (as Pokemon Quest); full = ready
+          HzUIColor skc = {c.x * 200.0f, c.y * 200.0f, c.z * 200.0f, 255};
+          f32 bh = 50.0f, fill = ready ? 1.0f : v->cool[k] > 0.0f ? 1.0f - v->cool[k] / m_maxf(sk.cooldown, 0.01f) : 0.0f;
           ui_element({.id = ui_idi("VoxSkill", (u32)k),
-                      .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .padding = {.left = 14, .right = 14, .top = 7, .bottom = 7},
-                                 .sizing = {.width = ui_sizing_fixed(140)}, .child_alignment = {.x = UI_ALIGN_X_CENTER}},
-                      .background_color = ready ? (HzUIColor){c.x * 200.0f, c.y * 200.0f, c.z * 200.0f, 255} : (HzUIColor){70, 74, 82, 255},
-                      .corner_radius = ui_corner_radius(9)}) {
+                      .layout = {.sizing = {.width = ui_sizing_fixed(140), .height = ui_sizing_fixed(bh)}},
+                      .background_color = (HzUIColor){52, 56, 64, 255},
+                      .corner_radius = ui_corner_radius(9),
+                      .clip = {.horizontal = true, .vertical = true},
+                      .border = {.color = ready ? (HzUIColor){255, 255, 255, 200} : (HzUIColor){0}, .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}, .overlay = true}}) {
             if (ready && ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
               v->click_skill[k] = true;
-            cstr_format(v->text[2 + k], 96, "% %", fmt_i32(k + 1), fmt_cstr(sk.name));
-            cu_text(v->text[2 + k], 15, white);
-            if (!ready && v->cool[k] > 0.0f) {
-              cstr_format(v->text[4 + k], 96, "%s", fmt_f32_p(v->cool[k], 1));
-              cu_text(v->text[4 + k], 12, (HzUIColor){200, 204, 210, 255});
-            } else
-              cu_text(ready ? "ready" : " ", 12, (HzUIColor){255, 255, 255, 200});
+            if (fill > 0.0f)
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 1, .clip_to = UI_CLIP_TO_ATTACHED_PARENT,
+                                       .attach_points = {.element = UI_ATTACH_POINT_LEFT_BOTTOM, .parent = UI_ATTACH_POINT_LEFT_BOTTOM},
+                                       .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                          .layout = {.sizing = {.width = ui_sizing_fixed(140), .height = ui_sizing_fixed(bh * fill)}},
+                          .background_color = ready ? skc : (HzUIColor){skc.r * 0.7f, skc.g * 0.7f, skc.b * 0.7f, 255},
+                          .border = {.color = ready ? (HzUIColor){0} : (HzUIColor){255, 255, 255, 150}, .width = {.top = 2}}}) {}
+            ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 2, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                        .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_fixed(140), .height = ui_sizing_fixed(bh)},
+                                   .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}}}) {
+              cstr_format(v->text[2 + k], 96, "% %", fmt_i32(k + 1), fmt_cstr(sk.name));
+              cu_textb(v->text[2 + k], 15, white, 700, false, (HzUIColor){0, 0, 0, 120});
+              if (!ready && v->cool[k] > 0.0f) {
+                cstr_format(v->text[4 + k], 96, "%s", fmt_f32_p(v->cool[k], 1));
+                cu_textb(v->text[4 + k], 12, (HzUIColor){230, 234, 240, 255}, 600, false, (HzUIColor){0, 0, 0, 120});
+              } else
+                cu_textb(ready ? "ready" : " ", 12, (HzUIColor){255, 255, 255, 220}, 600, false, (HzUIColor){0, 0, 0, 120});
+            }
           }
         }
         ui_element({.id = ui_id("VoxRun"), .layout = {.padding = {.left = 14, .right = 14, .top = 12, .bottom = 12}},

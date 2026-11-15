@@ -589,6 +589,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         give_starter(&s->save.data);
       cg_start_battle(&s->cards, BATTLE_PRACTICE, w, &s->audio);
     }
+    if (input->buttons[KEY_F6].pressed_this_frame) // dev builds: a wild Voxelmon right here (with one walking with you)
+      s->vox.force = true;
     if (input->buttons[KEY_F7].pressed_this_frame && !cg_busy(&s->cards)) { // dev builds: three packs to open (shown only)
       i32 ids[3] = {CARD_PEBBIT, CARD_THUNDRAKE, CARD_TITANOAK};
       cg_show_rewards(&s->cards, "Test packs", ids, 3);
@@ -946,6 +948,15 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // talking: the figure turns to the one it talks to (the character turns smoothly to face_yaw), then walks as before
     if (!s->dlg.open)
       s->face_on = false;
+    // a new Voxelmon from the deck: it rises in 3D in front of the camera (st_vox.c vox_showcase)
+    vox_showcase(&s->vox, s->cards.ui.up_card >= 0 && s->cards.ui.up_to >= VOXEL_LEVEL ? s->cards.ui.up_card : -1, s->cards.ui.up_t,
+                 ecs_query_get_singleton(Camera, s->sim.camera_query),
+                 pwt ? v3_scale(pwt->position, 1.0f / TOWN_STUD) : V3_ZERO);
+    // a fight in the tall grass: the figure turns to it (and keeps watching while it steps back)
+    if (s->vox.phase != VOX_NONE && pwt) {
+      s->face_on = true;
+      s->face_yaw = m_atan2f(s->vox.center.x * TOWN_STUD - pwt->position.x, s->vox.center.z * TOWN_STUD - pwt->position.z);
+    }
     controls.face = s->face_on;
     controls.face_yaw = s->face_yaw;
     if (s->facing_input != s->face_on) {
