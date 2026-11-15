@@ -28,6 +28,7 @@ typedef struct Dive {
   v3 vel;
   i32 touch;           // the finger that swims (-1 none)
   v2 touch_at, touch_last;
+  f32 fov0;            // the camera's fov before the dive (given back when you surface); 0: not taken yet
   b32 pinch_on;        // two fingers down: pinching them together swims backwards, spreading them swims faster
   f32 pinch_d0;        // their distance when the second one came down (UI px)
   b32 click_surface;
@@ -276,6 +277,9 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
   d->fade = d->leaving ? m_minf(1.0f, d->fade + dt / 0.45f) : m_maxf(0.0f, d->fade - dt / 0.6f);
   if (d->leaving && d->fade >= 1.0f) {
     d->on = false;
+    if (cam && d->fov0 > 0.0f)
+      cam->fov = d->fov0;
+    d->fov0 = 0.0f;
     for (i32 i = 0; i < DIVE_FISH; i++)
       dive_hide(d, d->fish[i]);
     for (i32 i = 0; i < DIVE_SNOW; i++)
@@ -382,6 +386,14 @@ hz_internal b32 dive_update(Dive *d, InputSystem *in, UISystem *ui, SaveState *s
   if (cam) {
     cam->pos = town_m(CAVE_X + d->p.x, d->p.y, CAVE_Z + d->p.z);
     cam->rot = quat_look(v3_scale(f, -1.0f), V3_UP);
+    // a wide lens under water: at least 105 degrees across (a phone held upright saw a slit before), 75 up and down,
+    // never more than 120 up and down (a real perspective, no warping afterwards)
+    if (d->fov0 <= 0.0f)
+      d->fov0 = cam->fov;
+    f32 aspect = m_maxf(sw / m_maxf(sh, 1.0f), 0.2f);
+    f32 across = 105.0f * (M_PI / 180.0f);
+    f32 v = 2.0f * m_atanf(m_tanf(across * 0.5f) / aspect) * (180.0f / M_PI);
+    cam->fov = m_clampf(v, 75.0f, 120.0f);
   }
   dive_move_light(l->w, d->lamp, cave_world(v3_add(d->p, v3_scale(f, 3.0f))));
   // ---- the living cave ----
@@ -505,22 +517,33 @@ hz_internal void dive_draw(Dive *d, const GameSave *s, const InputSystem *in, b3
   u32 n = 0;
   for (i32 k = 0; k < DIVE_PEARLS; k++)
     n += (s->dive_found >> k) & 1u;
+  b32 narrow = sw < 600.0f; // a phone upright: a short pill top left, the Surface button keeps the right
   ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 8,
-                           .attach_points = {.element = UI_ATTACH_POINT_CENTER_TOP, .parent = UI_ATTACH_POINT_CENTER_TOP},
-                           .offset = {0.0f, safe.top + 14.0f}},
-              .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 16, .padding = {.left = 14, .right = 14, .top = 7, .bottom = 7},
-                         .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
+                           .attach_points = {.element = narrow ? UI_ATTACH_POINT_LEFT_TOP : UI_ATTACH_POINT_CENTER_TOP,
+                                             .parent = narrow ? UI_ATTACH_POINT_LEFT_TOP : UI_ATTACH_POINT_CENTER_TOP},
+                           .offset = {narrow ? safe.left + 12.0f : 0.0f, safe.top + 14.0f}},
+              .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = (u16)(narrow ? 10 : 16),
+                         .padding = {.left = 12, .right = 12, .top = 7, .bottom = 7}, .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
               .background_color = cu_shade(0x041424, 0.6f),
               .corner_radius = ui_corner_radius(18)}) {
     f32 metres = m_maxf(0.0f, (CAVE_TOP + 4.0f - d->p.y) * TOWN_STUD);
-    cstr_format(d->txt[0], sizeof(d->txt[0]), "Depth % m", fmt_f32_p(metres, 1));
-    cstr_format(d->txt[1], sizeof(d->txt[1]), "\xe2\x97\x86 Pearls %/%", fmt_u32(n), fmt_i32(DIVE_PEARLS));
-    cu_textb(d->txt[0], 15, cu_rgb(0x9fe0ff), 700, false, (HzUIColor){0});
-    cu_textb(d->txt[1], 15, cu_rgb(0xe8f6ff), 700, false, (HzUIColor){0});
-    if (!s->has_part && !s->has_deck)
-      cu_textb("Find the Stud Core (deep down)", 13, cu_rgb(0xffd23d), 700, false, (HzUIColor){0});
-    else
-      cu_textb("Stud Core \xe2\x9c\x93", 13, cu_rgb(0x8dff9a), 700, false, (HzUIColor){0});
+    if (narrow) {
+      cstr_format(d->txt[0], sizeof(d->txt[0]), "% m", fmt_f32_p(metres, 0));
+      cstr_format(d->txt[1], sizeof(d->txt[1]), "\xe2\x97\x86 %/%", fmt_u32(n), fmt_i32(DIVE_PEARLS));
+      cu_textb(d->txt[0], 14, cu_rgb(0x9fe0ff), 700, false, (HzUIColor){0});
+      cu_textb(d->txt[1], 14, cu_rgb(0xe8f6ff), 700, false, (HzUIColor){0});
+      b32 found = s->has_part || s->has_deck;
+      cu_textb(found ? "Core \xe2\x9c\x93" : "Core: deep", 13, found ? cu_rgb(0x8dff9a) : cu_rgb(0xffd23d), 700, false, (HzUIColor){0});
+    } else {
+      cstr_format(d->txt[0], sizeof(d->txt[0]), "Depth % m", fmt_f32_p(metres, 1));
+      cstr_format(d->txt[1], sizeof(d->txt[1]), "\xe2\x97\x86 Pearls %/%", fmt_u32(n), fmt_i32(DIVE_PEARLS));
+      cu_textb(d->txt[0], 15, cu_rgb(0x9fe0ff), 700, false, (HzUIColor){0});
+      cu_textb(d->txt[1], 15, cu_rgb(0xe8f6ff), 700, false, (HzUIColor){0});
+      if (!s->has_part && !s->has_deck)
+        cu_textb("Find the Stud Core (deep down)", 13, cu_rgb(0xffd23d), 700, false, (HzUIColor){0});
+      else
+        cu_textb("Stud Core \xe2\x9c\x93", 13, cu_rgb(0x8dff9a), 700, false, (HzUIColor){0});
+    }
   }
   // the hint, for a while
   if (d->t < 9.0f) {
