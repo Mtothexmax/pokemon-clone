@@ -92,6 +92,13 @@ typedef struct Vox {
   i32 show_id;
   EcsEntity show_ring[2];
   HzHandleT(RendererMaterial) show_mat;
+  // the fight camera (vox_camera): off the player, onto the middle between the two beasts
+  b32 cam_on;
+  f32 cam_t;        // 0 the rig's camera .. 1 the fight's
+  v3 cam_from;      // where the rig had it (metres) and how it looked
+  quat cam_from_rot;
+  v3 cam_pos, cam_look; // the fight view, eased towards its target every frame
+  f32 cam_side;     // which side of the two it watches from (+1 / -1), kept for the fight
 } Vox;
 
 hz_internal f32 vox_rand(Vox *v) {
@@ -374,6 +381,67 @@ hz_internal void vox_showcase(Vox *v, i32 id, f32 t, const Camera *cam, v3 playe
     f32 r = (i == 0 ? 3.4f : 4.6f + 0.3f * m_sinf(t * 3.0f)) * m_minf(1.0f, k * 1.6f);
     life_set(v->l, v->show_ring[i], (v3){at.x, at.y + 0.1f + (f32)i * 0.05f, at.z}, t * (i ? -1.2f : 1.6f), (v3){r, 1.0f, r});
   }
+}
+
+// main lane, before the scope: during a fight in the tall grass the camera leaves the player and watches the middle
+// between the two beasts from the side away from the player (so the figure is not in the way: it is seen behind the
+// fight, watching), far enough for both; it eases there and back to the rig afterwards. Returns true while it owns it
+hz_internal b32 vox_camera(Vox *v, EcsWorld *w, EcsQuery *camera_query, v3 player_m, f32 dt) {
+  EcsEntity cam_e = ecs_query_get_singleton_entity(camera_query);
+  if (cam_e == ECS_ENTITY_INVALID)
+    return false;
+  const Camera *cam = ecs_component_get(w, cam_e, Camera);
+  const CameraFollow *follow = ecs_component_get(w, cam_e, CameraFollow);
+  if (!cam || !follow)
+    return false;
+  b32 want = v->phase != VOX_NONE && v->me.id >= 0 && v->wild.id >= 0;
+  // the view's direction from the arena (the spots both beasts fight from: steady while they dash about), its centre
+  // from where they are now
+  v3 ha = town_m(v->me.home.x, v->me.home.y, v->me.home.z), hb = town_m(v->wild.home.x, v->wild.home.y, v->wild.home.z);
+  v3 a = town_m(v->me.p.x, v->me.p.y, v->me.p.z), b = town_m(v->wild.p.x, v->wild.p.y, v->wild.p.z);
+  v3 mid = v3_scale(v3_add(a, b), 0.5f), hmid = v3_scale(v3_add(ha, hb), 0.5f);
+  v2 axis = {hb.x - ha.x, hb.z - ha.z};
+  f32 hs = m_maxf(v2_length(axis), 1.0f);
+  v2 n = {-axis.y / hs, axis.x / hs}; // across the line between them
+  f32 sep = m_maxf(v2_length((v2){b.x - a.x, b.z - a.z}), hs);
+  if (want && !v->cam_on) { // start from where the rig has the camera; watch from its side
+    v->cam_on = true;
+    v->cam_t = 0.0f;
+    v->cam_from = cam->pos;
+    v->cam_from_rot = cam->rot;
+    v->cam_side = (player_m.x - hmid.x) * n.x + (player_m.z - hmid.z) * n.y >= 0.0f ? -1.0f : 1.0f;
+    v->cam_pos = cam->pos;
+    v->cam_look = mid;
+    CameraFollow f = *follow;
+    f.disabled = true;
+    ecs_component_set(w, cam_e, CameraFollow, f);
+  }
+  if (!v->cam_on)
+    return false;
+  v->cam_t = m_clampf(v->cam_t + (want ? dt : -dt) / 0.9f, 0.0f, 1.0f);
+  if (v->cam_t <= 0.0f) { // back: the rig takes over again
+    v->cam_on = false;
+    CameraFollow f = *follow;
+    f.disabled = false;
+    f.snap = true;
+    ecs_component_set(w, cam_e, CameraFollow, f);
+    return false;
+  }
+  // the view: from the side, a little above, far enough that both beasts (and the space between) fit
+  f32 dist = m_maxf(sep * 0.8f + 1.6f, 5.0f);
+  v3 look = v3_add(mid, (v3){0.0f, 0.6f, 0.0f});
+  v3 pos = v3_add(look, (v3){n.x * v->cam_side * dist, dist * 0.72f, n.y * v->cam_side * dist}); // above the tall grass
+  f32 kf = 1.0f - m_expf(-dt * 3.0f); // eases after the beasts as they move
+  if (want) {
+    v->cam_pos = v3_lerp(v->cam_pos, pos, kf);
+    v->cam_look = v3_lerp(v->cam_look, look, kf);
+  }
+  f32 k = v->cam_t * v->cam_t * (3.0f - 2.0f * v->cam_t);
+  Camera c = *cam;
+  c.pos = v3_lerp(v->cam_from, want ? pos : v->cam_pos, k);
+  c.rot = quat_slerp(v->cam_from_rot, quat_look(v3_sub(c.pos, v->cam_look), V3_UP), k);
+  ecs_component_set(w, cam_e, Camera, c);
+  return true;
 }
 
 // main lane, before the scope. Returns true while a fight holds the player in place

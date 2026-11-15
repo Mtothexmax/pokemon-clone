@@ -850,6 +850,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       else if (s->scr.kind != SCREEN_NONE && s->scr.has_board)
         zoom_to = &s->scr.board;
       b32 zoomed = sign_zoom_update(&s->zoom, w, s->sim.camera_query, zoom_to, dt);
+      vox_camera(&s->vox, w, s->sim.camera_query, pwt->position, dt); // a fight in the tall grass: the camera watches the two beasts
       if (zoomed) {
         controls.move = (v2){0};
         controls.jump = false;
@@ -883,7 +884,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       // and sinks back once the view is free (a ray from the head to the camera, checked a step lower)
       const CameraRigState *rs = ecs_resource_get(w, CameraRigState);
       const EcsPhysicsWorld *pw = ecs_resource_get(w, EcsPhysicsWorld);
-      if (follow && !s->zoom.active) {
+      if (follow && !s->zoom.active && !s->vox.cam_on) {
         CameraFollow f = *follow;
         f32 base = f.pitch - s->cam_lift;
         f32 lift = s->cam_lift;
