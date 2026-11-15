@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="416" height="104" viewBox="0 0 416 104">
+<defs>
+  <radialGradient id="screw" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#ffffff"/><stop offset="0.5" stop-color="#c3c9d1"/><stop offset="1" stop-color="#7d8692"/></radialGradient>
+  <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8692f"/><stop offset="1" stop-color="#7a4520"/></linearGradient>
+  <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf1"/></linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+  <filter id="soft" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.0" flood-opacity="0.35"/></filter>
+</defs>
+<rect width="416" height="104" fill="#1b2a34"/>
+<rect x="6.24" y="6.24" width="403.52" height="91.52" rx="5.2" fill="#f2cd37"/>
+<rect x="9.984000000000002" y="9.984000000000002" width="396.032" height="84.032" rx="3.6400000000000006" fill="none" stroke="#1b2a34" stroke-opacity="0.35" stroke-width="2.0"/>
+<circle cx="3.1" cy="3.1" r="2.6" fill="url(#screw)" stroke="#6b7480" stroke-width="0.5"/><line x1="1.7" y1="4.0" x2="4.6" y2="2.2" stroke="#59616b" stroke-width="0.6" stroke-linecap="round"/>
+<circle cx="412.9" cy="3.1" r="2.6" fill="url(#screw)" stroke="#6b7480" stroke-width="0.5"/><line x1="411.4" y1="4.0" x2="414.3" y2="2.2" stroke="#59616b" stroke-width="0.6" stroke-linecap="round"/>
+<circle cx="3.1" cy="100.9" r="2.6" fill="url(#screw)" stroke="#6b7480" stroke-width="0.5"/><line x1="1.7" y1="101.8" x2="4.6" y2="100.0" stroke="#59616b" stroke-width="0.6" stroke-linecap="round"/>
+<circle cx="412.9" cy="100.9" r="2.6" fill="url(#screw)" stroke="#6b7480" stroke-width="0.5"/><line x1="411.4" y1="101.8" x2="414.3" y2="100.0" stroke="#59616b" stroke-width="0.6" stroke-linecap="round"/>
+<path d="M370.3 22.7 L396.9 52.0 L380.9 52.0 L380.9 78.7 L359.6 78.7 L359.6 52.0 L343.6 52.0 Z" fill="#1b2a34"/>
+<text x="176.0" y="53.9" font-family="'Segoe UI Black', 'Arial Black', sans-serif" font-size="46.7" font-weight="700" fill="#1b2a34" text-anchor="middle" dominant-baseline="central" paint-order="stroke" stroke="none" stroke-width="3.7">MY ROOM</text>
+<rect x="6.24" y="6.24" width="403.52" height="45.8" rx="5.2" fill="url(#gloss)"/>
+</svg>

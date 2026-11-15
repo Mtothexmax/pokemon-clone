@@ -203,8 +203,23 @@ hz_internal TownRect town_road(i32 i) {
 // ---- the LEGO plant models of the three.js version (tools/make_props.py: true LEGO parts, metres) ----
 #define PROP(name) "brickhollow/props/" name ".glb"
 
-// one instance of a prop model at (x, z) studs, standing on y studs, scaled by s, turned by rot
+// the strip in front of each readable sign board, where the camera stands for the close-up (sign_board, st_world.c):
+// nothing grows there, or a plant fills the view of the sign
+hz_internal b32 town_in_sign_view(f32 x, f32 z) {
+  static const f32 boards[4][4] = {{5.9f, 20.41f, 0.0f, 3.8f}, {5.0f, -24.09f, 0.0f, 3.4f}, {-22.91f, 8.9f, M_PI * 0.5f, 2.8f}, {13.0f, 16.17f, 0.0f, 5.2f}};
+  for (i32 i = 0; i < 4; i++) {
+    f32 dx = x - boards[i][0], dz = z - boards[i][1], yaw = boards[i][2];
+    f32 along = dx * m_sinf(yaw) + dz * m_cosf(yaw), side = dx * m_cosf(yaw) - dz * m_sinf(yaw);
+    if (along > -0.5f && along < 9.0f && m_absf(side) < boards[i][3] * 0.5f + 1.2f)
+      return true;
+  }
+  return false;
+}
+
+// one instance of a prop model at (x, z) studs, standing on y studs, scaled by s, turned by rot (plants not in front of a sign)
 hz_internal void town_prop(Town *t, CString path, f32 x, f32 z, f32 y, f32 s, f32 rot, b32 shadow) {
+  if (!cstr_contains(path, "/signs/") && y < 1.0f && t->group == 0 && town_in_sign_view(x, z))
+    return;
   HzHandleT(ModelBlobAsset) model = asset_load(ModelBlobAsset, t->assets, .path = path);
   EcsEntity e = ecs_renderer_spawn(t->world, t->renderer,
                      &(EcsRendererSpawnDesc){.model_asset = blob_asset_ref_from_handle(ModelBlobAsset, model),
@@ -391,6 +406,8 @@ hz_internal void town_wild_plants(Town *t, Allocator *a) {
 
 // a LEGO grass stem: a round 1x1 plate with six flat blades and a centre blade
 hz_internal void town_grass_tuft(Town *t, f32 x, f32 z, f32 s, u32 hex) {
+  if (t->group == 0 && town_in_sign_view(x, z))
+    return;
   town_cyl(t, hex, x, 0.0f, z, 0.4f, 0.4f, 0.3f, 6, false);
   MeshBuilderStyle blade = town_style(hex);
   f32 a0 = town_rand(&t->rng) * 6.283f;
@@ -740,7 +757,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
       for (f32 z = z0 + 1.9f; z < z1 - 1.0f; z += 2.2f) {
         if (town_rand(&t->rng) < 0.15f)
           continue;
-        if (z < 10.5f && (m_absf(x + 23.0f) < 0.8f || m_absf(x + 19.0f) < 1.8f)) // the sign and the way in
+        if (z < 10.5f && x < -14.0f) // the sign's row: its readers stand here and look at it (and the way in)
           continue;
         town_flower(t, x + (town_rand(&t->rng) - 0.5f) * 0.3f, z + (town_rand(&t->rng) - 0.5f) * 0.3f,
                     cols[(u32)(town_rand(&t->rng) * 6.0f) % 6u], 0.0f);

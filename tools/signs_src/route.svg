@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="544" height="288" viewBox="0 0 544 288">
+<defs>
+  <radialGradient id="screw" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#ffffff"/><stop offset="0.5" stop-color="#c3c9d1"/><stop offset="1" stop-color="#7d8692"/></radialGradient>
+  <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8692f"/><stop offset="1" stop-color="#7a4520"/></linearGradient>
+  <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf1"/></linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+  <filter id="soft" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="3.5" stdDeviation="2.9" flood-opacity="0.35"/></filter>
+</defs>
+<rect width="544" height="288" fill="url(#wood)"/><path d="M0.0 16.0 C 163.2 12.5, 326.4 19.5, 544.0 14.3" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 48.0 C 163.2 41.1, 326.4 54.9, 544.0 44.5" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 80.0 C 163.2 69.6, 326.4 90.4, 544.0 74.8" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 112.0 C 163.2 108.5, 326.4 115.5, 544.0 110.3" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 144.0 C 163.2 137.1, 326.4 150.9, 544.0 140.5" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 176.0 C 163.2 165.6, 326.4 186.4, 544.0 170.8" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 208.0 C 163.2 204.5, 326.4 211.5, 544.0 206.3" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 240.0 C 163.2 233.1, 326.4 246.9, 544.0 236.5" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/><path d="M0.0 272.0 C 163.2 261.6, 326.4 282.4, 544.0 266.8" stroke="#2e1a0b" stroke-opacity="0.18" stroke-width="2.3" fill="none"/>
+<rect x="17.28" y="17.28" width="509.44" height="253.44" rx="10.368" fill="#ffd23f" stroke="#4a2a12" stroke-width="3.1104000000000003"/>
+
+<circle cx="8.6" cy="8.6" r="3.8" fill="#3a2210"/>
+<circle cx="535.4" cy="8.6" r="3.8" fill="#3a2210"/>
+<circle cx="8.6" cy="279.4" r="3.8" fill="#3a2210"/>
+<circle cx="535.4" cy="279.4" r="3.8" fill="#3a2210"/>
+<text x="272.0" y="67.1" font-family="'Segoe UI Black', 'Arial Black', sans-serif" font-size="52.5" font-weight="700" fill="#3a2210" text-anchor="middle" dominant-baseline="central" >ROUTE 1</text>
+<path d="M418.9 41.1 L442.5 67.1 L428.4 67.1 L428.4 90.8 L409.4 90.8 L409.4 67.1 L395.3 67.1 Z" fill="#3a2210"/>
+<circle cx="183.7" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="205.8" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="227.9" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="249.9" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="272.0" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="294.1" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="316.1" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="338.2" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<circle cx="360.3" cy="105.0" r="4.7" fill="#3a2210" fill-opacity="0.55"/>
+<text x="272.0" y="151.1" font-family="'Segoe UI', Arial, sans-serif" font-size="26.3" font-weight="700" fill="#3a2210" text-anchor="middle" dominant-baseline="central" >Tall grass ahead!</text>
+<text x="272.0" y="185.3" font-family="'Segoe UI', Arial, sans-serif" font-size="26.3" font-weight="700" fill="#3a2210" text-anchor="middle" dominant-baseline="central" >Wild Brick Beasts love to hide in it.</text>
+<text x="272.0" y="219.4" font-family="'Segoe UI', Arial, sans-serif" font-size="26.3" font-weight="700" fill="#3a2210" text-anchor="middle" dominant-baseline="central" >Keep your deck ready.</text>
+<path d="M29.5 270.7 Q 35.5 260.4 38.5 253.4 Q 37.5 263.8 43.5 270.7 Z" fill="#3e9a32"/>
+<path d="M65.9 270.7 Q 71.9 255.2 74.9 244.8 Q 73.9 260.4 79.9 270.7 Z" fill="#3e9a32"/>
+<path d="M102.3 270.7 Q 108.3 250.0 111.3 236.2 Q 110.3 256.9 116.3 270.7 Z" fill="#3e9a32"/>
+<path d="M138.6 270.7 Q 144.6 260.4 147.6 253.4 Q 146.6 263.8 152.6 270.7 Z" fill="#3e9a32"/>
+<path d="M175.0 270.7 Q 181.0 255.2 184.0 244.8 Q 183.0 260.4 189.0 270.7 Z" fill="#3e9a32"/>
+<path d="M211.4 270.7 Q 217.4 250.0 220.4 236.2 Q 219.4 256.9 225.4 270.7 Z" fill="#3e9a32"/>
+<path d="M247.8 270.7 Q 253.8 260.4 256.8 253.4 Q 255.8 263.8 261.8 270.7 Z" fill="#3e9a32"/>
+<path d="M284.2 270.7 Q 290.2 255.2 293.2 244.8 Q 292.2 260.4 298.2 270.7 Z" fill="#3e9a32"/>
+<path d="M320.6 270.7 Q 326.6 250.0 329.6 236.2 Q 328.6 256.9 334.6 270.7 Z" fill="#3e9a32"/>
+<path d="M357.0 270.7 Q 363.0 260.4 366.0 253.4 Q 365.0 263.8 371.0 270.7 Z" fill="#3e9a32"/>
+<path d="M393.4 270.7 Q 399.4 255.2 402.4 244.8 Q 401.4 260.4 407.4 270.7 Z" fill="#3e9a32"/>
+<path d="M429.7 270.7 Q 435.7 250.0 438.7 236.2 Q 437.7 256.9 443.7 270.7 Z" fill="#3e9a32"/>
+<path d="M466.1 270.7 Q 472.1 260.4 475.1 253.4 Q 474.1 263.8 480.1 270.7 Z" fill="#3e9a32"/>
+<path d="M502.5 270.7 Q 508.5 255.2 511.5 244.8 Q 510.5 260.4 516.5 270.7 Z" fill="#3e9a32"/>
+</svg>
