@@ -225,10 +225,10 @@ typedef struct DialogState {
 } DialogState;
 
 hz_internal void dialog_voice(DialogState *ds, EcsWorld *w, AudioSystem *audio) {
-  audio_voice_stop(audio, ds->voice, 0.08f);
+  clip_stop(&ds->voice, 0.08f);
   CString v = ds->d.lines[ds->index].voice;
   if (v)
-    ds->voice = ecs_audio_play(w, v, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE});
+    clip_play(w, v, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE}, &ds->voice);
 }
 
 hz_internal void dialog_open(DialogState *ds, Dialog d, EcsWorld *w, AudioSystem *audio) {
@@ -245,7 +245,7 @@ hz_internal void dialog_close(DialogState *ds, AudioSystem *audio) {
   ds->open = false;
   if (ds->chosen == ACT_NONE)
     ds->chosen = ds->d.on_end;
-  audio_voice_stop(audio, ds->voice, 0.15f);
+  clip_stop(&ds->voice, 0.15f);
 }
 
 hz_internal b32 dialog_has_choices(const DialogState *ds) { return ds->d.choice[0] != NULL; }

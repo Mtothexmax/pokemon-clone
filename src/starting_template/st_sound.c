@@ -145,3 +145,97 @@ hz_internal void sound_init(SoundBank *b, AudioSystem *audio, Allocator *alloc) 
 hz_internal void sound_play(SoundBank *b, SoundId id, f32 pitch, f32 volume) {
   audio_play(b->audio, b->clip[id], &(AudioPlayDesc){.volume = volume, .pitch = pitch, .bus = AUDIO_BUS_SFX});
 }
+
+// ---- the cooked clips (music, voices): played straight on the mixer, and only once loaded ----
+// A voice started on a clip that is still loading never makes a sound (it counts as playing, silently): that is why
+// the music and the voices were mute (ecs_audio_play starts them at once). So clip_play waits for the clip and starts
+// the voice when it is there, writing the handle to `out`. Every clip stays referenced once asked for (the music is
+// ~12 MB of QOA, the voices are small), so a clip loads once.
+#define CLIP_CACHE 256
+#define CLIP_PENDING 16
+typedef struct ClipWait {
+  HzHandleT(AudioSource) src;
+  AudioPlayDesc desc;
+  HzHandleT(AudioVoice) *out; // where the voice goes (NULL: fire and forget)
+} ClipWait;
+typedef struct ClipCache {
+  AudioSystem *audio;
+  CString path[CLIP_CACHE];
+  HzHandleT(AudioSource) src[CLIP_CACHE];
+  u32 n;
+  ClipWait wait[CLIP_PENDING];
+  u32 waiting;
+} ClipCache;
+hz_global ClipCache g_clips;
+
+hz_internal HzHandleT(AudioSource) clip_source(EcsWorld *w, CString path) {
+  for (u32 i = 0; i < g_clips.n; i++)
+    if (g_clips.path[i] == path || cstr_equal(g_clips.path[i], path))
+      return g_clips.src[i];
+  HzHandleT(AudioSource) src = audio_source_from_asset(g_clips.audio, ecs_resource_get_mut(w, AssetSystem), path);
+  if (g_clips.n < CLIP_CACHE) { // kept: this reference is never released
+    g_clips.path[g_clips.n] = path;
+    g_clips.src[g_clips.n++] = src;
+  }
+  return src;
+}
+
+hz_internal b32 clip_ready(HzHandleT(AudioSource) src) { return audio_source_resident_bytes(g_clips.audio, src) > 0; }
+
+hz_internal b32 clip_handle_set(HzHandleT(AudioVoice) h) {
+  HzHandleT(AudioVoice) zero = {0};
+  return memcmp(&h, &zero, sizeof(h)) != 0;
+}
+
+// a voice that is waiting for its clip (not playing yet, but it will)
+hz_internal b32 clip_pending(const HzHandleT(AudioVoice) *out) {
+  for (u32 i = 0; i < g_clips.waiting; i++)
+    if (g_clips.wait[i].out == out)
+      return true;
+  return false;
+}
+
+// stops the voice in `out`, or the one still waiting to go there
+hz_internal void clip_stop(HzHandleT(AudioVoice) *out, f32 fade_s) {
+  for (u32 i = 0; i < g_clips.waiting;)
+    if (g_clips.wait[i].out == out)
+      g_clips.wait[i] = g_clips.wait[--g_clips.waiting];
+    else
+      i++;
+  if (g_clips.audio && clip_handle_set(*out))
+    audio_voice_stop(g_clips.audio, *out, fade_s);
+  *out = (HzHandleT(AudioVoice)){0};
+}
+
+// as ecs_audio_play (same desc), but audible: now when the clip is loaded, else as soon as it is (clip_update)
+hz_internal void clip_play(EcsWorld *w, CString path, const EcsAudioPlayDesc *d, HzHandleT(AudioVoice) *out) {
+  if (out)
+    clip_stop(out, 0.05f);
+  if (!g_clips.audio || !path)
+    return;
+  HzHandleT(AudioSource) src = clip_source(w, path);
+  AudioPlayDesc desc = {.volume = d->volume > 0.0f ? d->volume : 1.0f, .pitch = d->pitch > 0.0f ? d->pitch : 1.0f, .loop = d->loop,
+                        .bus = d->bus};
+  if (clip_ready(src)) {
+    HzHandleT(AudioVoice) v = audio_play(g_clips.audio, src, &desc);
+    if (out)
+      *out = v;
+  } else if (g_clips.waiting < CLIP_PENDING) {
+    g_clips.wait[g_clips.waiting++] = (ClipWait){src, desc, out};
+  }
+}
+
+// main lane, every frame: starts the voices whose clips have arrived
+hz_internal void clip_update(void) {
+  for (u32 i = 0; i < g_clips.waiting;) {
+    ClipWait cw = g_clips.wait[i];
+    if (clip_ready(cw.src)) {
+      g_clips.wait[i] = g_clips.wait[--g_clips.waiting];
+      HzHandleT(AudioVoice) v = audio_play(g_clips.audio, cw.src, &cw.desc);
+      if (cw.out)
+        *cw.out = v;
+    } else {
+      i++;
+    }
+  }
+}

@@ -572,7 +572,7 @@ hz_internal void life_fish(Life *l, v3 p, f32 dt, b32 outside) {
     if (l->fish_next <= 0.0f && outside && d < 14.0f) {
       l->fish_jump = 0.0f;
       l->fish_next = life_range(l, 6.0f, 14.0f);
-      ecs_audio_play(l->w, "brickhollow/music/fish-splash.hzt", &(EcsAudioPlayDesc){.volume = 0.6f, .bus = AUDIO_BUS_SFX});
+      clip_play(l->w, "brickhollow/music/fish-splash.hzt", &(EcsAudioPlayDesc){.volume = 0.6f, .bus = AUDIO_BUS_SFX}, NULL);
     }
   }
   quat q = quat_mul(quat_from_euler((v3){0.0f, yaw, 0.0f}), quat_from_euler((v3){0.0f, 0.0f, pitch}));

@@ -178,6 +178,12 @@ hz_internal void hud_layout(f32 sw) {
 }
 
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
+typedef struct LoadWatch {
+  i32 pct;   // the last reported percentage
+  f32 quiet; // seconds with nothing loading or compiling
+  b32 done;
+} LoadWatch;
+
 #include "st_town.c"
 #include "st_minifig.c"
 #include "st_sound.c"
@@ -362,6 +368,7 @@ typedef struct AppState {
   CardGame cards;      // battles, rewards, the deck menu (st_cardgame.c)
   Vox vox;             // your Voxelmon and the fights in the tall grass (st_vox.c)
   Settings set;        // the menu: voices, music, graphics (st_settings.c)
+  LoadWatch load;      // the first load's progress, for the web start page (load_watch)
   Swipe swipe;         // swipe walking on phones (st_swipe.c)
   i32 touch_layout;    // the touch layout built: 0 swipe (no stick), 1 d-pad
   b32 gate_shown;      // the gate prof stands where the save says
@@ -446,11 +453,12 @@ HZ_APP_API void app_init(AppMemory *memory) {
   // background music: the town theme, looping on the music bus (the web starts it on the first tap or key)
   s->audio = audio_system_init(&s->allocator, NULL);
   ecs_audio_init(&s->audio, w);
+  g_clips.audio = &s->audio; // music and voices (st_sound.c clip_play)
   sound_init(&s->snd, &s->audio, &s->allocator);
   save_begin(&s->save);
   life_init(&s->life, w, renderer, &s->snd, &s->save, &s->audio, &s->allocator, s->blocks, s->block_count, pip);
   cg_init(&s->cards, w, &s->audio, (u32)(os_time_unix_ms() & 0xffffffffu));
-  s->set.applied = -1;
+  s->set.applied = -1; // (buses 0: the mixer starts with both on)
   s->set.click_gfx = s->set.click_touch = -1;
   vox_init(&s->vox, &s->life, (u32)(os_time_unix_ms() >> 3));
 
@@ -505,6 +513,35 @@ hz_internal void hud_draw(const TouchControls *touch) {
   }
 }
 
+// The first load, for the web start page (index.html turns these log lines into its progress bar and opens the game
+// only on "[load] done"): the cooked files arrive (~7.5 MB, measured: 85% of the bar), then the GPU compiles the
+// shaders (the rest). Done once nothing has loaded or compiled for half a second; without that the town showed the sky
+// first, then single objects, then everything.
+#define LOAD_BYTES_EXPECTED 7500000.0
+hz_internal void load_watch(LoadWatch *lw, EcsWorld *w, f64 now, f32 dt) {
+  if (lw->done)
+    return;
+  AssetSystem *assets = ecs_resource_get_mut(w, AssetSystem);
+  RendererState *rs = ecs_resource_get_mut(w, RendererState);
+  AssetStreamStats st = asset_stream_stats(assets);
+  b32 files = asset_system_idle(assets) && st.in_flight == 0;
+  b32 gpu = !rs || (!renderer_pipelines_compiling(rs) && renderer_texture_prewarm_pending(rs) == 0);
+  lw->quiet = files && gpu && now > 0.3 ? lw->quiet + dt : 0.0f;
+  f32 p = 0.85f * (f32)m_minf(1.0, (f64)st.bytes_loaded / LOAD_BYTES_EXPECTED);
+  if (files)
+    p = m_maxf(p, 0.85f);
+  if (files && gpu)
+    p = m_maxf(p, 0.97f);
+  i32 pct = (i32)(p * 100.0f);
+  if (lw->quiet > 0.5f) {
+    lw->done = true;
+    log_info("[load] done after % ms (% bytes)", fmt_u32((u32)(now * 1000.0)), fmt_u64(st.bytes_loaded));
+  } else if (pct > lw->pct) {
+    lw->pct = pct;
+    log_info("[load] %", fmt_i32(pct));
+  }
+}
+
 HZ_APP_API void app_update_and_render(AppMemory *memory) {
   AppState *s = memory->state;
   EcsWorld *w = s->sim.world;
@@ -514,6 +551,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     s->playable = true;
     log_info("playable after % ms", fmt_u32((u32)(memory->total_time * 1000.0)));
   }
+  if (is_main_thread())
+    load_watch(&s->load, w, memory->total_time, memory->dt);
+  if (is_main_thread())
+    clip_update(); // music and voices whose clips have just loaded
   ui_font_update(s->ui);
   f32 dt = m_minf(memory->dt, GAME_MAX_DT);
 

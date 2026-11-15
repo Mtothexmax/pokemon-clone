@@ -33,12 +33,12 @@ hz_internal void cg_music(CardGame *cg, EcsWorld *w, AudioSystem *audio, MusicTr
                     "brickhollow/music/victory.hzt", "brickhollow/music/defeat.hzt"};
   // as quiet as in the three.js version (VOL 0.15): the voices (0.95) must stay clear above the music
   f32 vol[] = {0.0f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f};
-  audio_voice_stop(audio, cg->music, 0.4f);
+  clip_stop(&cg->music, 0.4f);
   cg->track = t;
   cg->track_t = 0.0f;
   if (t != MUSIC_NONE)
-    cg->music = ecs_audio_play(w, path[t], &(EcsAudioPlayDesc){.volume = vol[t], .loop = t == MUSIC_HOME || t == MUSIC_FIGHT,
-                                                               .bus = AUDIO_BUS_MUSIC});
+    clip_play(w, path[t], &(EcsAudioPlayDesc){.volume = vol[t], .loop = t == MUSIC_HOME || t == MUSIC_FIGHT, .bus = AUDIO_BUS_MUSIC},
+              &cg->music);
 }
 
 // ---- what the opponent says (BattleView.svelte LINES; Dex and Lumi are voiced) ----
@@ -82,9 +82,9 @@ hz_internal void cg_say(CardGame *cg, EcsWorld *w, AudioSystem *audio, i32 what,
   Taunt t = cg_line(cg->b.kind, what, cg_rand(cg));
   cg->taunt = t.text;
   cg->taunt_t = secs;
-  audio_voice_stop(audio, cg->taunt_voice, 0.05f);
+  clip_stop(&cg->taunt_voice, 0.05f);
   if (t.voice)
-    cg->taunt_voice = ecs_audio_play(w, t.voice, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE});
+    clip_play(w, t.voice, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE}, &cg->taunt_voice);
 }
 
 hz_internal void cg_init(CardGame *cg, EcsWorld *w, AudioSystem *audio, u32 seed) {
@@ -138,7 +138,7 @@ hz_internal void cg_battle_done(CardGame *cg, SaveState *save, Life *life, Dialo
   GameSave *s = &save->data;
   Battle *b = &cg->b;
   cg->in_battle = false;
-  audio_voice_stop(audio, cg->taunt_voice, 0.1f);
+  clip_stop(&cg->taunt_voice, 0.1f);
   cg->taunt_t = 0.0f;
   cg_music(cg, w, audio, MUSIC_HOME);
   BattleResult r = b->result;

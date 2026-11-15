@@ -284,12 +284,12 @@ hz_internal void term_update(Screens *sc, const GameSave *g, SoundBank *snd, f32
 // ---------------------------------------------------------------- open, close, update
 
 hz_internal void screens_tv_line(Screens *sc, EcsWorld *w, AudioSystem *audio) {
-  audio_voice_stop(audio, sc->voice, 0.1f);
+  clip_stop(&sc->voice, 0.1f);
   TvLine ln = tv_line(sc->channel, sc->weather, sc->line);
   sc->voice = (HzHandleT(AudioVoice)){0};
   sc->voiced = ln.voice != NULL;
   if (ln.voice)
-    sc->voice = ecs_audio_play(w, ln.voice, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE});
+    clip_play(w, ln.voice, &(EcsAudioPlayDesc){.volume = 0.95f, .bus = AUDIO_BUS_VOICE}, &sc->voice);
   sc->line_t = 0.0f;
 }
 
@@ -310,7 +310,7 @@ hz_internal void screens_open(Screens *sc, ScreenKind kind, EcsWorld *w, AudioSy
 }
 
 hz_internal void screens_close(Screens *sc, AudioSystem *audio) {
-  audio_voice_stop(audio, sc->voice, 0.15f);
+  clip_stop(&sc->voice, 0.15f);
   sc->kind = SCREEN_NONE;
 }
 
@@ -345,7 +345,7 @@ hz_internal void screens_update(Screens *sc, EcsWorld *w, AudioSystem *audio, So
     sc->line_t += dt;
     // next line: the voice is over (plus a breath), or a while for a line without one
     TvLine ln = tv_line(sc->channel, sc->weather, sc->line);
-    b32 over = sc->voiced ? (sc->line_t > 1.2f && !audio_voice_playing(audio, sc->voice))
+    b32 over = sc->voiced ? (sc->line_t > 1.2f && !clip_pending(&sc->voice) && !audio_voice_playing(audio, sc->voice))
                           : sc->line_t > 1.2f + (f32)cstr_len(ln.text) * 0.055f;
     if (over || sc->line_t > 14.0f) {
       sc->line = (sc->line + 1) % tv_line_count(sc->channel, sc->weather);

@@ -37,6 +37,7 @@ typedef struct Settings {
   // Auto never starts above the level the engine picks for the hardware
   b32 hw_known, mobile;
   i32 hw_step;
+  i32 buses; // the voice / music switches applied to the mixer (-1 none yet)
 } Settings;
 
 hz_internal i32 settings_step(const Settings *st, const GameSave *g) {
@@ -95,8 +96,14 @@ hz_internal void settings_update(Settings *st, SaveState *save, RendererState *r
   }
   st->click_button = st->click_voices = st->click_music = st->click_shade = false;
   st->click_gfx = st->click_touch = -1;
-  audio_bus_set_volume(audio, AUDIO_BUS_VOICE, g->voices_off ? 0.0f : 1.0f);
-  audio_bus_set_volume(audio, AUDIO_BUS_MUSIC, g->music_off ? 0.0f : 1.0f);
+  // the buses only when the switches change: set every frame, the engine restarts the bus fade each time and the
+  // voices and the music never got off zero (silent)
+  i32 buses = (g->voices_off ? 1 : 0) | (g->music_off ? 2 : 0);
+  if (buses != st->buses) {
+    st->buses = buses;
+    audio_bus_set_volume(audio, AUDIO_BUS_VOICE, g->voices_off ? 0.0f : 1.0f);
+    audio_bus_set_volume(audio, AUDIO_BUS_MUSIC, g->music_off ? 0.0f : 1.0f);
+  }
 
   // ---- Auto: measure 2 s windows; below 38 fps one step down (not right after a change, a load or a stall) ----
   st->settle += dt;
