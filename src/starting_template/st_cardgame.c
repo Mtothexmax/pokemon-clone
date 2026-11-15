@@ -539,13 +539,13 @@ hz_internal void cg_quest_draw(CardGame *cg, const GameSave *s) {
               .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 8, .padding = {.left = 12, .right = 14, .top = 7, .bottom = 7},
                          .sizing = {.width = ui_sizing_fit(0.0f, g_hud.quest_w)},
                          .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
-              .background_color = {250, 250, 246, 225},
+              .background_color = ui_night_mix((HzUIColor){250, 250, 246, 225}, (HzUIColor){24, 32, 42, 225}), // dark at night
               .corner_radius = ui_corner_radius(10)}) {
     ui_element({.layout = {.padding = {.left = 7, .right = 7, .top = 1, .bottom = 1}}, .background_color = {242, 205, 55, 255},
                 .corner_radius = ui_corner_radius(5)}) {
       cu_text("GOAL", 12, (HzUIColor){27, 42, 52, 255});
     }
-    cu_text_wrap(text, g_hud.narrow ? 13 : 15, (HzUIColor){27, 42, 52, 255}); // wraps instead of running under the buttons
+    cu_text_wrap(text, g_hud.narrow ? 13 : 15, ui_night_mix((HzUIColor){27, 42, 52, 255}, (HzUIColor){232, 238, 244, 255})); // wraps
   }
 }
 

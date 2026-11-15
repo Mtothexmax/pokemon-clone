@@ -151,6 +151,13 @@ typedef struct HudLayout {
 } HudLayout;
 hz_global HudLayout g_hud;
 
+// the in-game night for the UI: 0 day .. 1 night, eased (the dialog box and the goal turn dark at night)
+hz_global f32 g_ui_night;
+hz_internal HzUIColor ui_night_mix(HzUIColor day, HzUIColor night) {
+  f32 t = g_ui_night;
+  return (HzUIColor){day.r + (night.r - day.r) * t, day.g + (night.g - day.g) * t, day.b + (night.b - day.b) * t, day.a + (night.a - day.a) * t};
+}
+
 // from the screen width and where the goal and the Deck button were last frame
 hz_internal void hud_layout(f32 sw) {
   OsSafeAreaInsets safe = os_get_safe_area();
@@ -998,6 +1005,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         }
       }
       hud_layout(ui_w);
+      g_ui_night = m_smoothstepf(0.35f, 0.65f, s->life.night); // dusk to dark over the game's evening
       b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
       if (!cards_screen && s->scr.kind == SCREEN_NONE) { // a screen (TV, PC) has the whole view
         hud_draw(&s->touch);

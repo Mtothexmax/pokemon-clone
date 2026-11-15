@@ -294,7 +294,9 @@ hz_internal void dialog_draw(DialogState *ds, const InputSystem *in, b32 touch, 
   OsSafeAreaInsets safe = os_get_safe_area();
   b32 last = ds->index + 1 >= ds->d.count;
   b32 click = in->buttons[MOUSE_LEFT].pressed_this_frame;
+  // day: a white card with dark ink; night (the game's clock): a dark card with light text (ui_night_mix)
   HzUIColor ink = {27, 42, 52, 255};
+  HzUIColor text = ui_night_mix(ink, (HzUIColor){236, 241, 246, 255});
   ui_element({.id = ui_id("DialogBox"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT,
                            .attach_points = {.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM},
@@ -302,8 +304,8 @@ hz_internal void dialog_draw(DialogState *ds, const InputSystem *in, b32 touch, 
               .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 8,
                          .sizing = {.width = ui_sizing_fixed(m_minf(760.0f, screen_w - 32.0f))},
                          .padding = {.left = 20, .right = 20, .top = 14, .bottom = 14}},
-              .background_color = {250, 250, 246, 245},
-              .border = {.color = ink, .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
+              .background_color = ui_night_mix((HzUIColor){250, 250, 246, 245}, (HzUIColor){24, 32, 42, 242}),
+              .border = {.color = ui_night_mix(ink, (HzUIColor){70, 86, 104, 255}), .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
               .corner_radius = ui_corner_radius(12)}) {
     if (ui_hovered() && click && !(last && dialog_has_choices(ds)))
       ds->clicked = true;
@@ -313,7 +315,7 @@ hz_internal void dialog_draw(DialogState *ds, const InputSystem *in, b32 touch, 
       ui_text(ui_str_c(ds->d.speaker), ui_text_config({.fontSize = 16, .textColor = ink, .wrapMode = UI_TEXT_WRAP_NONE}));
     }
     ui_text(ui_str_c(ds->d.lines[ds->index].text),
-            ui_text_config({.fontSize = 20, .textColor = ink, .wrapMode = UI_TEXT_WRAP_WORDS}));
+            ui_text_config({.fontSize = 20, .textColor = text, .wrapMode = UI_TEXT_WRAP_WORDS}));
     if (last && dialog_has_choices(ds)) {
       ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 12}}) {
         for (i32 i = 0; i < 2; i++) {
@@ -322,7 +324,7 @@ hz_internal void dialog_draw(DialogState *ds, const InputSystem *in, b32 touch, 
           b32 sel = ds->choice_hover == i;
           ui_element({.id = ui_idi("DialogChoice", (u32)i),
                       .layout = {.padding = {.left = 16, .right = 16, .top = 8, .bottom = 8}},
-                      .background_color = sel ? (HzUIColor){0, 85, 191, 255} : (HzUIColor){224, 230, 236, 255},
+                      .background_color = sel ? (HzUIColor){0, 85, 191, 255} : ui_night_mix((HzUIColor){224, 230, 236, 255}, (HzUIColor){44, 56, 70, 255}),
                       .corner_radius = ui_corner_radius(8)}) {
             if (ui_hovered()) {
               ds->choice_hover = i;
@@ -330,14 +332,15 @@ hz_internal void dialog_draw(DialogState *ds, const InputSystem *in, b32 touch, 
                 ds->clicked_choice = i;
             }
             ui_text(ui_str_c(ds->d.choice[i]),
-                    ui_text_config({.fontSize = 18, .textColor = sel ? (HzUIColor){255, 255, 255, 255} : ink,
+                    ui_text_config({.fontSize = 18, .textColor = sel ? (HzUIColor){255, 255, 255, 255} : text,
                                     .wrapMode = UI_TEXT_WRAP_NONE}));
           }
         }
       }
     } else {
       ui_text(ui_str_c(touch ? "tap to continue" : "E / Space / click to continue"),
-              ui_text_config({.fontSize = 13, .textColor = {120, 128, 136, 255}, .wrapMode = UI_TEXT_WRAP_NONE}));
+              ui_text_config({.fontSize = 13, .textColor = ui_night_mix((HzUIColor){120, 128, 136, 255}, (HzUIColor){140, 154, 170, 255}),
+                              .wrapMode = UI_TEXT_WRAP_NONE}));
     }
   }
 }
