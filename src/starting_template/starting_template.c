@@ -403,6 +403,9 @@ typedef struct AppState {
   Vox vox;             // your Voxelmon and the fights in the tall grass (st_vox.c)
   Dive dive;           // the diving suit, the Deck-o-Matic and the pond cave (st_dive.c)
   b32 dive_cam;        // the dive owns the camera (its follow is off)
+  f32 sink_t;          // > 0: you jumped into the pond with the suit and sink in (then the dive)
+  f32 pond_cd;         // seconds before the pond can take you again (after you came up, after a hop out)
+  b32 was_diving;
   Settings set;        // the menu: voices, music, graphics (st_settings.c)
   LoadWatch load;      // the first load's progress, for the web start page (load_watch)
   Swipe swipe;         // swipe walking on phones (st_swipe.c)
@@ -762,6 +765,47 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           controls.teleport_yaw = 0.0f;
           dialog_open(&s->dlg, dialog_for(DLG_GATE, &s->save.data, s->save.data.voxelmon > 0, s->dlg_buf, sizeof(s->dlg_buf)), w, &s->audio);
           s->talk_fig = 4; // Prof. Quill at the gap
+        }
+      }
+      // ---- the pond: jump onto the water. With the suit you sink in and the dive begins; without it you hop out ----
+      {
+        v3 ps = v3_scale(pwt->position, 1.0f / TOWN_STUD);
+        s->pond_cd = m_maxf(0.0f, s->pond_cd - dt);
+        if (s->was_diving && !s->dive.on) { // back up: out on the north bank
+          controls.teleport = true;
+          controls.teleport_pos = town_m(-8.0f, 0.3f, 13.6f);
+          controls.teleport_yaw = 0.0f;
+          s->pond_cd = 1.5f;
+        }
+        s->was_diving = s->dive.on;
+        if (s->sink_t > 0.0f) { // sinking: down through the water, then the cave
+          s->sink_t += dt;
+          f32 k = m_minf(1.0f, s->sink_t / 0.9f);
+          controls.teleport = true;
+          controls.teleport_pos = town_m(m_clampf(ps.x, -11.0f, -5.0f), 1.2f - k * 5.0f, m_clampf(ps.z, 16.0f, 21.0f));
+          controls.teleport_yaw = controls.heading;
+          controls.move = (v2){0};
+          controls.jump = false;
+          if (k >= 1.0f) {
+            s->sink_t = 0.0f;
+            dive_start(&s->dive);
+          }
+        } else if (!busy && !s->dive.on && s->pond_cd <= 0.0f && s->world.area < 0 && life_in_pond(ps.x, ps.z, -0.4f) && ps.y > 0.4f) {
+          sound_play(&s->snd, SND_SPLASH, 0.9f, 0.9f);
+          if (g_can_dive) {
+            s->sink_t = 1e-4f;
+            life_toast(&s->life, "Splash! The suit takes you down...");
+          } else { // too deep without the suit: back on the bank you came from
+            f32 cx = m_clampf(ps.x, -12.0f, -4.0f), cz = m_clampf(ps.z, 15.0f, 22.0f);
+            f32 dx0 = cx + 12.0f, dx1 = -4.0f - cx, dz0 = cz - 15.0f, dz1 = 22.0f - cz;
+            f32 m = m_minf(m_minf(dx0, dx1), m_minf(dz0, dz1));
+            v3 out = m == dx0 ? (v3){-13.6f, 0.3f, cz} : m == dx1 ? (v3){-2.4f, 0.3f, cz} : m == dz0 ? (v3){cx, 0.3f, 13.6f} : (v3){cx, 0.3f, 23.4f};
+            controls.teleport = true;
+            controls.teleport_pos = town_m(out.x, out.y, out.z);
+            controls.teleport_yaw = controls.heading;
+            s->pond_cd = 1.0f;
+            life_toast(&s->life, s->save.data.quest_part ? "Brr! Too deep to swim. You need Prof. Quill's diving suit." : "Brr! The pond is deep and cold.");
+          }
         }
       }
       v3 pip_studs = s->life.pip_p;
@@ -1141,7 +1185,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       if (!cards_screen && !s->dive.on)
         vox_draw(&s->vox, input, cam, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->world.area < 0 && !s->dlg.open);
-      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, (f32)memory->canvas_width / m_maxf(ui_w, 1.0f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
+      cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, (f32)memory->canvas_width / m_maxf(ui_w, 1.0f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !s->dive.on);
       {
         u32 gold_n = 0;
         for (u32 k = 0; k < GOLDEN_COUNT; k++)

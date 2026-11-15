@@ -829,11 +829,13 @@ hz_internal void life_lamps(Life *l) {
 // ---------------------------------------------------------------- Pip
 
 hz_internal v2 pip_waypoint(i32 i) {
-  switch (i & 3) {
+  switch (i % 6) { // around the pond, never through it (the west bank between the water and the garden fence)
   case 0: return (v2){-8.0f, 13.2f};
   case 1: return (v2){-3.0f, 13.8f};
   case 2: return (v2){-2.8f, 23.0f};
-  default: return (v2){-11.0f, 23.2f};
+  case 3: return (v2){-11.0f, 23.2f};
+  case 4: return (v2){-12.9f, 22.9f};
+  default: return (v2){-12.9f, 14.0f};
   }
 }
 
@@ -1026,7 +1028,7 @@ hz_internal void life_pip(Life *l, v3 p, f32 dt, b32 outside, b32 sprinting) {
       break;
     }
     if (pip_move(l, pip_waypoint(l->pip_wp), 3.2f * STUD_PER_THREE, dt) < 0.1f) {
-      l->pip_wp = (l->pip_wp + 1) & 3;
+      l->pip_wp = (l->pip_wp + 1) % 6;
       if (life_rand(l) < 0.5f)
         l->pip_pause = life_range(l, 1.5f, 3.5f);
     }

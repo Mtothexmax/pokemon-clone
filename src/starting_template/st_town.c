@@ -772,7 +772,9 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
   // ---- the pond: a brown border with studs, a dark bed, water, lily pads, a fish and the duck family ----
   {
     f32 x0 = -12.0f, x1 = -4.0f, z0 = 15.0f, z1 = 22.0f;
-    town_block(t, x0 - 0.4f, x1 + 0.4f, z0 - 0.4f, z1 + 0.4f);
+    // a low rim (0.5 m: the walk steps 0.35): you jump in. With the diving suit you sink into the cave, without it
+    // you climb back out (starting_template.c); the ducks, the ball and Pip keep out of it as before
+    town_block_h(t, x0 - 0.4f, x1 + 0.4f, z0 - 0.4f, z1 + 0.4f, 0.5f);
     town_box(t, C_RED_BROWN, x1 - x0 + 1.0f, 0.4f, 0.6f, (x0 + x1) * 0.5f, 0.0f, z0 - 0.2f, true);
     town_box(t, C_RED_BROWN, x1 - x0 + 1.0f, 0.4f, 0.6f, (x0 + x1) * 0.5f, 0.0f, z1 + 0.2f, true);
     town_box(t, C_RED_BROWN, 0.6f, 0.4f, z1 - z0, x0 - 0.2f, 0.0f, (z0 + z1) * 0.5f, true);

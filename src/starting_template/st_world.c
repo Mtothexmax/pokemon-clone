@@ -132,7 +132,7 @@ hz_internal Target world_target(i32 i) {
   case 13: return (Target){T_TALK, g_gate_prof_x, -22.6f, "Talk to", "Prof. Quill", DLG_GATE};
   case 14: return (Target){T_TALK, 341.6f, -6.4f, "Look at", "the Deck-o-Matic", DLG_MACHINE};
   case 15: return g_suit_here ? (Target){T_SUIT, 315.6f, -7.2f, "Take", "the old diving suit", 0} : (Target){T_READ, 0, 0, "", "", 0};
-  case 16: return g_can_dive ? (Target){T_DIVE, -13.0f, 18.5f, "Dive into", "the pond", 0} : (Target){T_READ, 0, 0, "", "", 0};
+  case 16: return (Target){T_READ, 0, 0, "", "", 0}; // the pond: jump in (starting_template.c)
   default: return (Target){T_READ, 0, 0, "", "", 0};
   }
 }
