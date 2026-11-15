@@ -915,12 +915,15 @@ hz_internal void life_pip(Life *l, v3 p, f32 dt, b32 outside, b32 sprinting) {
     if (dp < 3.2f) {
       l->pip_mode = PIP_WAVE;
       l->save->data.seek_wins++;
+      l->save->data.seek_played++;
       l->save->data.studs += 5;
       save_mark(l->save);
       sound_play(l->snd, SND_FANFARE, 1.0f, 0.7f);
       life_toast(l, "You found Pip! +5 studs");
     } else if (l->seek_left <= -3.0f) {
       l->pip_mode = PIP_WAVE;
+      l->save->data.seek_played++;
+      save_mark(l->save);
       life_toast(l, "Time is up! Pip was hiding really well.");
     } else if (l->hint_t <= 0.0f) {
       l->hint_t = 8.0f;

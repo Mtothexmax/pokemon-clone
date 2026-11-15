@@ -849,7 +849,7 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
   }
 
   // ---- the background: the place's picture (wild forest, Dex's cave, Lumi's lab), a little darker ----
-  i32 bg_kind = b->kind == BATTLE_WILD ? 0 : b->kind == BATTLE_RIVAL ? 1 : 2;
+  i32 bg_kind = b->kind == BATTLE_WILD || b->kind == BATTLE_PIP ? 0 : b->kind == BATTLE_RIVAL ? 1 : 2; // Pip: outdoors too
   GpuTexture bgt = cu_back_tex(ui, bg_kind);
   ui_element({.id = ui_id("BattleBg"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 30},

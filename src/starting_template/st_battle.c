@@ -8,7 +8,7 @@
 #define B_SIDE_P 0
 #define B_SIDE_AI 1
 
-typedef enum BattleKind { BATTLE_WILD, BATTLE_RIVAL, BATTLE_PRACTICE } BattleKind;
+typedef enum BattleKind { BATTLE_WILD, BATTLE_RIVAL, BATTLE_PRACTICE, BATTLE_PIP } BattleKind;
 typedef enum BattlePhase { PHASE_PLAN, PHASE_REVEAL, PHASE_OVER } BattlePhase;
 typedef enum BattleResult { RESULT_WIN, RESULT_LOSE, RESULT_DRAW, RESULT_RETREAT, RESULT_NONE } BattleResult;
 

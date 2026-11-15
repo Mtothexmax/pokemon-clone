@@ -120,6 +120,7 @@ hz_internal ZoneDef zone_def(i32 z) {
 #define DECK_RIVAL 1
 #define DECK_RIVAL_2 2
 #define DECK_PRACTICE 3
+#define DECK_PIP 4 // Pip: stronger than Dex's rematch deck (and every card +1 Power, cg_begin_board)
 
 hz_internal i32 deck_card(i32 deck, i32 i) {
   i32 starter[DECK_SIZE] = {CARD_QUICKHOP, CARD_FLICKER, CARD_DRIZZLET, CARD_ZAPLING, CARD_VOLTAIL, CARD_CINDERPUP,
@@ -130,7 +131,10 @@ hz_internal i32 deck_card(i32 deck, i32 i) {
                            CARD_THUNDRAKE, CARD_PHANTOMULE, CARD_GLACIOMOTH, CARD_LUMIFOX, CARD_STORMAW, CARD_ABYSSQUID};
   i32 practice[DECK_SIZE] = {CARD_PEBBIT, CARD_SPROUTLE, CARD_QUICKHOP, CARD_MOSSCUB, CARD_GUSTLING, CARD_ROCKODILE,
                              CARD_BUILDBEAVER, CARD_BRAMBLEWOLF, CARD_CORALYTH, CARD_CLOCKCRAB, CARD_CRAGOLIATH, CARD_TITANOAK};
+  i32 pip[DECK_SIZE] = {CARD_QUICKHOP, CARD_ZAPLING, CARD_VOLTAIL, CARD_CINDERPUP, CARD_GLOOMOTH, CARD_TIDALOTL,
+                        CARD_THUNDRAKE, CARD_PHANTOMULE, CARD_GLACIOMOTH, CARD_MAGMAW, CARD_STORMAW, CARD_ABYSSQUID};
   switch (deck) {
+  case DECK_PIP: return pip[i];
   case DECK_RIVAL: return rival[i];
   case DECK_RIVAL_2: return rival2[i];
   case DECK_PRACTICE: return practice[i];

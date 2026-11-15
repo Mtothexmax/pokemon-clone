@@ -40,6 +40,9 @@ typedef struct GameSave {
   u8 has_part;   // you found the Stud Core deep in the pond cave
   u8 _quest_pad;
   u32 dive_found; // the pearls found in the cave (a bit each)
+  // ---- Pip's card battles (appended) ----
+  u32 seek_played; // hide and seek played to the end (found or not): Pip takes card battles from then on
+  u32 pip_wins;    // card battles won against Pip
 } GameSave;
 
 typedef struct SaveState {

@@ -62,12 +62,18 @@ hz_internal Taunt cg_line(BattleKind k, i32 what, u32 r) {
       {{"Snap! Let\xe2\x80\x99s make it exciting!", VOICE("760dc0c6")}},
       {{"Good try! You\xe2\x80\x99re getting better.", VOICE("1f93971b")}},
       {{"Wow, you learn fast!", VOICE("45311098")}}};
+  static const Taunt pip[5][4] = {{{"Ready, set, GO! My deck is the best!", NULL}, {"I practised with my big brother's cards!", NULL}},
+                                  {{"Hehe, too slow!", NULL}, {"Watch my fishy ones!", NULL}, {"Is it my turn yet?", NULL},
+                                   {"Ooh, sneaky!", NULL}},
+                                  {{"SNAP! I'm super fast AND super brave!", NULL}},
+                                  {{"I win, I win! Hehe!", NULL}},
+                                  {{"No fair! Again! Again!", NULL}}};
   static const Taunt wild[5][4] = {{{"*rustle rustle*", NULL}, {"Grrrr!", NULL}},
                                    {{"*snarl*", NULL}, {"*brick noises*", NULL}, {"Rrraah!", NULL}},
                                    {{"*SNAP!* (it bares its teeth)", NULL}},
                                    {{"*victory howl*", NULL}},
                                    {{"*runs back into the grass*", NULL}}};
-  const Taunt(*set)[4] = k == BATTLE_RIVAL ? rival : k == BATTLE_PRACTICE ? practice : wild;
+  const Taunt(*set)[4] = k == BATTLE_RIVAL ? rival : k == BATTLE_PRACTICE ? practice : k == BATTLE_PIP ? pip : wild;
   i32 n = 0;
   while (n < 4 && set[what][n].text)
     n++;
@@ -147,7 +153,7 @@ hz_internal void cg_transition_draw(const CardGame *cg, const GameSave *s, f32 s
   // YOU vs the opponent: two panels slide in, the VS slams down, everything leaves with the bricks
   f32 pv = cu_ease_out(m_clampf((e - 0.75f) / 0.22f, 0.0f, 1.0f)), out = m_clampf((e - 1.62f) / 0.25f, 0.0f, 1.0f);
   if (pv > 0.0f && out < 1.0f) {
-    CString opp = cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? "DEX \xe2\x98\x85" : "DEX") : "LUMI";
+    CString opp = cg->pending_kind == BATTLE_PIP ? "PIP" : cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? "DEX \xe2\x98\x85" : "DEX") : "LUMI";
     f32 bh = m_clampf(sh * 0.2f, 90.0f, 170.0f), fs = bh * 0.38f, y = sh * 0.5f - bh * 0.5f;
     for (i32 side = 0; side < 2; side++) {
       f32 dir = side == 0 ? -1.0f : 1.0f;
@@ -209,11 +215,15 @@ hz_internal void cg_start_battle(CardGame *cg, BattleKind kind, EcsWorld *w, Aud
 
 hz_internal void cg_begin_board(CardGame *cg, const GameSave *s, EcsWorld *w, AudioSystem *audio) {
   i32 ai[DECK_SIZE];
-  i32 deck = cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? DECK_RIVAL_2 : DECK_RIVAL) : DECK_PRACTICE;
+  i32 deck = cg->pending_kind == BATTLE_PIP ? DECK_PIP : cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? DECK_RIVAL_2 : DECK_RIVAL) : DECK_PRACTICE;
   for (i32 i = 0; i < DECK_SIZE; i++)
     ai[i] = deck_card(deck, i);
-  CString opp = cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? "Dex \xe2\x98\x85 Rematch" : "Dex") : "Lumi";
+  CString opp = cg->pending_kind == BATTLE_PIP ? "Pip" : cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? "Dex \xe2\x98\x85 Rematch" : "Dex") : "Lumi";
   b_init(&cg->b, cg->pending_kind, opp, s->deck, ai, false, cg_rand(cg));
+  if (cg->pending_kind == BATTLE_PIP) // Pip's cards are all a little stronger: +1 Power each
+    for (i32 i = 0; i < cg->b.n; i++)
+      if (cg->b.c[i].owner == B_SIDE_AI)
+        cg->b.c[i].mod += 1;
   cg->in_battle = true;
   cg->ui.selected = -1;
   cg->ui.drag = cg->ui.press_card = cg->ui.click_play_to = -1;
@@ -259,11 +269,11 @@ hz_internal void cg_battle_done(CardGame *cg, SaveState *save, Life *life, Dialo
   } else if (r == RESULT_RETREAT)
     delta = -MAX(1, b->stakes / 2);
   s->studs = (u32)MAX(0, (i32)s->studs + delta);
-  u32 exp = battle_exp((i32)r, b->kind == BATTLE_RIVAL);
+  u32 exp = battle_exp((i32)r, b->kind == BATTLE_RIVAL || b->kind == BATTLE_PIP);
   s->exp += exp;
   i32 ids[2], n = 0;
   if (r == RESULT_WIN) {
-    i32 k = b->kind == BATTLE_RIVAL && s->rival_wins == 0 ? 2 : 1;
+    i32 k = (b->kind == BATTLE_RIVAL && s->rival_wins == 0) || (b->kind == BATTLE_PIP && s->pip_wins == 0) ? 2 : 1;
     for (i32 i = 0; i < k; i++) {
       i32 c = reward_card(s, &cg->seed, false);
       if (c >= 0)
@@ -271,10 +281,14 @@ hz_internal void cg_battle_done(CardGame *cg, SaveState *save, Life *life, Dialo
     }
     if (b->kind == BATTLE_RIVAL)
       s->rival_wins++;
+    if (b->kind == BATTLE_PIP)
+      s->pip_wins++;
   }
   save_mark(save);
   cg->has_after = true;
-  cg->after = b->kind == BATTLE_RIVAL ? (r == RESULT_WIN ? DLG_DEX_WON : DLG_DEX_LOST) : (r == RESULT_WIN ? DLG_LUMI_WON : DLG_LUMI_LOST);
+  cg->after = b->kind == BATTLE_PIP      ? (r == RESULT_WIN ? DLG_PIP_WON : DLG_PIP_LOST)
+              : b->kind == BATTLE_RIVAL ? (r == RESULT_WIN ? DLG_DEX_WON : DLG_DEX_LOST)
+                                        : (r == RESULT_WIN ? DLG_LUMI_WON : DLG_LUMI_LOST);
   cstr_format(cg->toast, sizeof(cg->toast), "+% EXP \xc2\xb7 upgrade your cards in the Deck menu (C)", fmt_u32(exp));
   life_toast(life, cg->toast);
   if (n) {
@@ -470,6 +484,12 @@ hz_internal b32 cg_dialog_action(CardGame *cg, DialogAction act, SaveState *save
   }
   case ACT_BATTLE_RIVAL: cg_start_battle(cg, BATTLE_RIVAL, w, audio); return true;
   case ACT_BATTLE_PRACTICE: cg_start_battle(cg, BATTLE_PRACTICE, w, audio); return true;
+  case ACT_BATTLE_PIP: // hide and seek first (st_life.c counts the rounds)
+    if (s->seek_played || s->seek_wins)
+      cg_start_battle(cg, BATTLE_PIP, w, audio);
+    else
+      dialog_open(dlg, dialog_for(DLG_PIP_NOT_YET, s, false, cg->dlg_buf, sizeof(cg->dlg_buf)), w, audio);
+    return true;
   case ACT_DEX_SCARED:
     dialog_open(dlg, dialog_for(DLG_DEX_SCARED, s, false, cg->dlg_buf, sizeof(cg->dlg_buf)), w, audio);
     return true;

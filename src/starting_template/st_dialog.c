@@ -16,6 +16,7 @@ typedef enum DialogAction {
   ACT_DEX_SCARED,      // Dex: "Not now"
   ACT_OPEN_GATE,       // Prof. Quill at the gap: you have a Voxelmon
   ACT_QUEST_PART,      // Prof. Quill: the Deck-o-Matic misses its Stud Core (find the suit, dive for it)
+  ACT_BATTLE_PIP,      // Pip: a card battle (only after a round of hide and seek)
 } DialogAction;
 
 typedef struct DialogLine {
@@ -27,8 +28,8 @@ typedef struct Dialog {
   CString speaker;
   DialogLine lines[DIALOG_MAX_LINES];
   u32 count;
-  CString choice[2];
-  DialogAction action[2];
+  CString choice[3];
+  DialogAction action[3];
   DialogAction on_end; // when the dialog closes without a choice
 } Dialog;
 
@@ -51,6 +52,9 @@ typedef enum DialogId {
   DLG_MACHINE, // the Deck-o-Matic in the lab
   DLG_KNIGHT,  // Stonecrest: Sir Bricksworth at the castle
   DLG_BAKER,   // Stonecrest: Marla by the bakery
+  DLG_PIP_NOT_YET, // Pip: a card battle? hide and seek first
+  DLG_PIP_WON,     // after a battle against Pip: you won
+  DLG_PIP_LOST,
   DLG_COUNT
 } DialogId;
 
@@ -225,6 +229,33 @@ hz_internal Dialog dialog_for(DialogId id, const GameSave *s, b32 has_voxelmon, 
                  .lines = {L("Ha! Told you my deck was cooler.", VOICE("8c7da71a")), L("Come back when you have some better cards!", VOICE("d12633cc"))},
                  .count = 2};
     break;
+  case DLG_PIP:
+    if (s->has_deck) { // a card battle too (st_cardgame.c)
+      d.lines[3] = (DialogLine)L("Hey, I'm bored! Hide and seek? Tag? Or... a card battle? My deck is secretly the best!", NULL);
+      d.choice[0] = "Hide and seek";
+      d.choice[1] = "Tag";
+      d.choice[2] = "Card battle!";
+      d.action[0] = ACT_HIDE_SEEK;
+      d.action[1] = ACT_TAG;
+      d.action[2] = ACT_BATTLE_PIP;
+    }
+    break;
+  case DLG_PIP_NOT_YET:
+    d = (Dialog){.speaker = "Pip",
+                 .lines = {L("A card battle? Nooo, that's boring. Hide and seek first!", NULL),
+                           L("Play one round with me, then I'll show you my deck. It's even better than my brother's!", NULL)},
+                 .count = 2, .choice = {"Hide and seek", "Later"}, .action = {ACT_HIDE_SEEK, ACT_NONE}};
+    break;
+  case DLG_PIP_WON:
+    d = (Dialog){.speaker = "Pip",
+                 .lines = {L("Whaaat? You beat my super deck?!", NULL), L("Okay, okay... you're good. But I'm still faster than you!", NULL)},
+                 .count = 2};
+    break;
+  case DLG_PIP_LOST:
+    d = (Dialog){.speaker = "Pip",
+                 .lines = {L("Hehe! Told you, my deck is the best!", NULL), L("Come back when you've got stronger cards. I'll be by the pond!", NULL)},
+                 .count = 2};
+    break;
   case DLG_LUMI_WON:
     d = (Dialog){.speaker = "Lumi", .lines = {L("Wow, you learn fast! Here, keep that card.", VOICE("f8de2d54"))}, .count = 1};
     break;
@@ -301,12 +332,12 @@ hz_internal void dialog_update(DialogState *ds, EcsWorld *w, AudioSystem *audio,
   if (!ds->open)
     return;
   b32 last = ds->index + 1 >= ds->d.count;
-  i32 nchoice = ds->d.choice[1] ? 2 : ds->d.choice[0] ? 1 : 0;
+  i32 nchoice = ds->d.choice[2] ? 3 : ds->d.choice[1] ? 2 : ds->d.choice[0] ? 1 : 0;
   if (last && nchoice) {
     if (in->buttons[KEY_LEFT].pressed_this_frame || in->buttons[KEY_A].pressed_this_frame || in->buttons[KEY_UP].pressed_this_frame)
-      ds->choice_hover = 0;
+      ds->choice_hover = MAX(0, ds->choice_hover - 1);
     if (in->buttons[KEY_RIGHT].pressed_this_frame || in->buttons[KEY_D].pressed_this_frame || in->buttons[KEY_DOWN].pressed_this_frame)
-      ds->choice_hover = nchoice - 1;
+      ds->choice_hover = MIN(nchoice - 1, ds->choice_hover + 1);
     i32 pick = ds->clicked_choice >= 0 ? ds->clicked_choice : advance ? ds->choice_hover : -1;
     ds->clicked_choice = -1;
     ds->clicked = false;
@@ -363,8 +394,8 @@ hz_internal void dialog_draw(DialogState *ds, const InputSystem *in, b32 touch, 
     ui_text(ui_str_c(ds->d.lines[ds->index].text),
             ui_text_config({.fontSize = 20, .textColor = text, .wrapMode = UI_TEXT_WRAP_WORDS}));
     if (last && dialog_has_choices(ds)) {
-      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 12}}) {
-        for (i32 i = 0; i < 2; i++) {
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT_WRAP, .child_gap = 12, .sizing = {.width = ui_sizing_grow(0)}}}) {
+        for (i32 i = 0; i < 3; i++) {
           if (!ds->d.choice[i])
             continue;
           b32 sel = ds->choice_hover == i;
