@@ -703,9 +703,14 @@ hz_internal void b_update(Battle *b, f32 dt) {
     }
     i32 times = card_def(c->id).kind == KIND_REVEAL ? b_reveal_times(b, st.card) : 0;
     if (b->reveal_repeat < times) {
+      if (b->reveal_repeat > 0) { // doubled (Spotlight Stage, Echowl): again, after the first one has played out
+        c->pulse_t = 0.27f;       // a bump of the card, no second turn-over
+        B_SAY(b, "% triggers again!", fmt_cstr(b_name(b, st.card)));
+      }
       b_on_reveal(b, st.card);
       b->reveal_repeat++;
-      b->wait = b->reveal_repeat < times ? 0.3f : 0.65f;
+      // the next one waits for this one's ball, impact and shake (about 1 s, st_cardui.c); after the last, as usual
+      b->wait = b->reveal_repeat < times ? 1.1f : 0.65f;
       if (b->reveal_repeat >= times) {
         b->reveal_repeat = 0;
         b->step_i++;
