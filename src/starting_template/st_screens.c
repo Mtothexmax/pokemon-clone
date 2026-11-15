@@ -139,12 +139,12 @@ hz_internal i32 piano_semi(i32 k) {
 hz_internal b32 screen_board(ScreenKind kind, f32 x, f32 z, SignBoard *out) {
   switch (kind) {
   case SCREEN_TV: // st_rooms.c room_screen: the home TV, the one in Dex & Lumi's house
-    *out = x < 240.0f ? (SignBoard){{205.0f, 4.35f, -7.11f}, 0.0f, 3.8f, 2.1f, 0.0f} : (SignBoard){{269.0f, 5.2f, -7.61f}, 0.0f, 3.0f, 1.8f, 0.0f};
+    *out = x < 240.0f ? (SignBoard){{205.0f, 4.35f, -7.11f}, 0.0f, 3.8f, 2.1f, 0.0f, 0.0f} : (SignBoard){{269.0f, 5.2f, -7.61f}, 0.0f, 3.0f, 1.8f, 0.0f, 0.0f};
     return true;
-  case SCREEN_PC: *out = (SignBoard){{201.4f, 4.8f, 33.69f}, 0.0f, 2.6f, 1.6f, 0.0f}; return true;
+  case SCREEN_PC: *out = (SignBoard){{201.4f, 4.8f, 33.69f}, 0.0f, 2.6f, 1.6f, 0.0f, 0.0f}; return true;
   case SCREEN_LAB: { // the office computers on the lab desks (st_rooms.c, as the three.js labComputers)
     f32 dz = z < 0.5f ? -2.0f : 3.5f;
-    *out = (SignBoard){{345.2f, 4.33f, dz - 0.17f}, 0.0f, 2.2f, 1.64f, M_PI * 0.25f};
+    *out = (SignBoard){{345.2f, 4.33f, dz - 0.17f}, 0.0f, 2.2f, 1.64f, M_PI * 0.25f, 0.0f};
     return true;
   }
   default: return false;

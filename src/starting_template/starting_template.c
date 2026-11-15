@@ -911,7 +911,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           f32 yaw = v2_length(to_me) > 0.01f ? m_atan2f(to_me.x, to_me.y) : 0.0f;
           v3 c = v3_scale(fw->position, 1.0f / TOWN_STUD);
           c.y += 3.3f; // the chin (studs): the face sits in the upper half, the dialog box covers the lower
-          zb = (SignBoard){c, yaw, 4.6f, 5.6f, 0.0f};
+          zb = (SignBoard){c, yaw, 4.6f, 5.6f, 0.0f, 0.0f};
           // from your eyes: never farther than where you stand (you walked up to them, so nothing is between), closer
           // only when you stand far (Pip talks from 6 studs)
           zb.max_dist = m_maxf(1.3f, v2_length(to_me) - 0.15f);
