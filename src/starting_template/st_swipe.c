@@ -20,10 +20,10 @@ typedef struct Swipe {
 
 #define SWIPE_MIN_PX 22.0f // finger travel that makes a swipe (less is a tap)
 
-// a screen swipe (x right, y down) to a world direction for the camera's yaw, snapped to one of 8 ways on screen
-// (up, down, left, right and the diagonals)
+// a screen swipe (x right, y down) to a world direction for the camera's yaw, snapped to one of 4 ways on screen
+// (up, down, left, right)
 hz_internal v2 swipe_world_dir(v2 d, f32 yaw) {
-  f32 step = 0.78539816f; // 45 degrees
+  f32 step = 1.57079633f; // 90 degrees
   f32 ang = m_floorf(m_atan2f(d.y, d.x) / step + 0.5f) * step;
   d = (v2){m_cosf(ang), m_sinf(ang)};
   v2 fw = {-m_sinf(yaw), -m_cosf(yaw)}, rt = {m_cosf(yaw), -m_sinf(yaw)};
