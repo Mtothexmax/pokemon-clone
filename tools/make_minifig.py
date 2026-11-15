@@ -189,7 +189,15 @@ def hair_geo(style):
     g = Geo()
     band = Geo()  # under a cap: the hair at the back, in the hair colour
     hs = style['hairStyle']
-    group = dict(scale=(1.04, 1.2, 1.04), pos=(0, 0.32, 0))
+    # the hair sits DROP lower than in the three.js version (it floated above the head, plain in the talk close-up):
+    # the domes and caps go down with it, the stud (up to 0.95, radius 0.37) stays well inside every dome. Hair hanging
+    # at the back and sides keeps its lower edge (keep()), it only gets shorter at the top
+    DROP = 0.18
+    group = dict(scale=(1.04, 1.2, 1.04), pos=(0, 0.32 - DROP, 0))
+    k_ = DROP / 1.2
+
+    def keep(h, y):  # a hanging cylinder (height h at child y): the same bottom, the top DROP lower
+        return h - k_, y + k_ / 2
 
     def put(pts, tris, double=False, into=None, outward=True, **child):
         pts = xf(pts, **child)
@@ -215,8 +223,9 @@ def hair_geo(style):
                 # outer i, inner i, outer i+1 ...: (a, a+2, a+1) faces up
                 tris += [(a, a + 2, a + 1), (a + 1, a + 2, a + 3)] if up else [(a, a + 1, a + 2), (a + 1, a + 3, a + 2)]
             put(pts, tris, outward=False, pos=(0, 0.42, 0))
-        p, t = cylinder(0.7, 0.66, 0.5, 16, math.pi * 0.6, math.pi * 0.8)
-        put(p, t, double=True, into=band, pos=(0, 0.1, 0))
+        h, y = keep(0.5, 0.1)
+        p, t = cylinder(0.7, 0.66, h, 16, math.pi * 0.6, math.pi * 0.8)
+        put(p, t, double=True, into=band, pos=(0, y, 0))
         return [(g, style['cap']), (band, style['hair'])]
     if hs == 'spiky':
         p, t = sphere_cap(0.74, 20, 6, math.pi / 2)
@@ -225,24 +234,27 @@ def hair_geo(style):
             a = i / 9 * math.pi * 2
             p, t = cylinder(0.0, 0.22, 0.7, 6, caps=True)
             put(p, t, pos=(math.sin(a) * 0.5, 0.75, math.cos(a) * 0.45 - 0.1), rot=(math.cos(a) * 0.9, 0, -math.sin(a) * 0.9))
-        p, t = cylinder(0.72, 0.68, 0.7, 18, math.pi * 0.55, math.pi * 0.9)
-        put(p, t, double=True)
+        h, y = keep(0.7, 0.0)
+        p, t = cylinder(0.72, 0.68, h, 18, math.pi * 0.55, math.pi * 0.9)
+        put(p, t, double=True, pos=(0, y, 0))
     elif hs in ('bob', 'ponytail'):
         p, t = sphere_cap(0.75, 24, 6, math.pi / 2)
         put(p, t, pos=(0, 0.3, 0))
         bob = hs == 'bob'
-        p, t = cylinder(0.76, 0.78, 1.0 if bob else 0.6, 20, math.pi * 0.35, math.pi * 1.3)
-        put(p, t, double=True, pos=(0, -0.15 if bob else 0.05, 0))
+        h, y = keep(1.0 if bob else 0.6, -0.15 if bob else 0.05)
+        p, t = cylinder(0.76, 0.78, h, 20, math.pi * 0.35, math.pi * 1.3)
+        put(p, t, double=True, pos=(0, y, 0))
         if not bob:
             p, t = cylinder(0.25, 0.25, 1.2, 10, caps=True)
-            put(p, t, pos=(0, -0.2, -0.85), rot=(0.35, 0, 0))
+            put(p, t, pos=(0, -0.2 + k_, -0.85), rot=(0.35, 0, 0))
     elif hs == 'short':
         p, t = sphere_cap(0.73, 24, 6, math.pi / 2)
         put(p, t, pos=(0, 0.32, 0))
         p, t = box(1.0, 0.25, 0.3)
         put(p, t, pos=(0.1, 0.5, 0.55), rot=(0, 0, -0.2))
-        p, t = cylinder(0.71, 0.7, 0.55, 18, math.pi * 0.55, math.pi * 0.9)
-        put(p, t, double=True, pos=(0, 0.1, 0))
+        h, y = keep(0.55, 0.1)
+        p, t = cylinder(0.71, 0.7, h, 18, math.pi * 0.55, math.pi * 0.9)
+        put(p, t, double=True, pos=(0, y, 0))
     return [(g, style['hair'])]
 
 

@@ -43,6 +43,8 @@ typedef struct CardUi {
   b32 deck_open;
   i32 deck_pick;    // the card shown big
   i32 click_coll, click_slot;
+  i32 last_coll;     // the collection card clicked last and when (ui->time): a double click puts it in the deck
+  f32 last_coll_t;
   b32 click_add, click_remove, click_upgrade, click_walk, click_close, click_unpick;
   // the upgrade moment (up_draw): the card, the stage before and after, seconds since it began
   i32 up_card; // -1 none
@@ -2087,8 +2089,20 @@ hz_internal b32 deck_input(CardUi *ui, GameSave *s, SaveState *save, SoundBank *
     return false;
   }
   b32 closed = false;
-  if (ui->click_coll >= 0)
+  if (ui->click_coll >= 0) {
     ui->deck_pick = ui->click_coll;
+    if (ui->click_coll == ui->last_coll && ui->time - ui->last_coll_t < 0.45f) { // a double click: into the deck, if there is room
+      b32 in_deck = false;
+      for (i32 i = 0; i < s->deck_count; i++)
+        in_deck |= s->deck[i] == ui->click_coll;
+      if (!in_deck)
+        ui->click_add = true;
+      ui->last_coll = -1;
+    } else {
+      ui->last_coll = ui->click_coll;
+      ui->last_coll_t = ui->time;
+    }
+  }
   if (ui->click_slot >= 0)
     ui->deck_pick = s->deck[ui->click_slot];
   i32 c = ui->deck_pick;

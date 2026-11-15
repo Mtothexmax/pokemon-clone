@@ -90,7 +90,7 @@ hz_internal void cg_say(CardGame *cg, EcsWorld *w, AudioSystem *audio, i32 what,
 
 hz_internal void cg_init(CardGame *cg, EcsWorld *w, AudioSystem *audio, u32 seed) {
   cg->ui.selected = cg->ui.hover_card = cg->ui.click_card = cg->ui.click_zone = -1;
-  cg->ui.deck_pick = cg->ui.click_coll = cg->ui.click_slot = cg->ui.up_card = -1;
+  cg->ui.deck_pick = cg->ui.click_coll = cg->ui.last_coll = cg->ui.click_slot = cg->ui.up_card = -1;
   cg->ui.drag = cg->ui.press_card = cg->ui.click_play_to = -1;
   cg->ui.confetti_t = -1.0f;
   cg->seed = seed | 1u;
