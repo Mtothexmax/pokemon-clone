@@ -43,7 +43,7 @@ typedef struct CardUi {
   b32 deck_open;
   i32 deck_pick;    // the card shown big
   i32 click_coll, click_slot;
-  b32 click_add, click_remove, click_upgrade, click_walk, click_close;
+  b32 click_add, click_remove, click_upgrade, click_walk, click_close, click_unpick;
   // rewards
   i32 reward[3], reward_n;
   CString reward_title;
@@ -1624,110 +1624,212 @@ hz_internal void battle_input(CardUi *ui, Battle *b, const InputSystem *in, Soun
 
 // ---------------------------------------------------------------- the deck and the collection
 
-hz_internal void deck_draw(CardUi *ui, GameSave *s, const InputSystem *in, f32 sw, b32 voxel_walks) {
-  HzUIColor ink = {27, 42, 52, 255}, white = {255, 255, 255, 255};
-  f32 gw = m_clampf(sw / 12.0f, 52.0f, 84.0f);
+// a full-width button whose label wraps (and an optional smaller second line), so long labels always fit
+hz_internal b32 deck_button(HzUIElementId id, CString label, CString sub, HzUIColor bg, b32 enabled, const InputSystem *in, f32 font) {
+  b32 clicked = false;
+  ui_element({.id = id,
+              .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 1, .padding = {.left = 10, .right = 10, .top = 8, .bottom = 8},
+                         .sizing = {.width = ui_sizing_grow(0)}, .child_alignment = {.x = UI_ALIGN_X_CENTER}},
+              .background_color = enabled ? bg : (HzUIColor){150, 154, 160, 255},
+              .corner_radius = ui_corner_radius(9),
+              .brightness = enabled && ui_hovered() ? opt_some(f32, 1.12f) : opt_none(f32)}) {
+    if (enabled && ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
+      clicked = true;
+    ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) {
+      cu_textb(label, font, (HzUIColor){255, 255, 255, enabled ? 255 : 210}, 700, true, (HzUIColor){0});
+    }
+    if (sub)
+      ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) {
+        cu_textb(sub, font * 0.8f, (HzUIColor){255, 255, 255, enabled ? 220 : 190}, 500, true, (HzUIColor){0});
+      }
+  }
+  return clicked;
+}
+
+// the picked card: its text, stage and what you can do with it (the side panel, or the sheet on phones)
+hz_internal void deck_actions(CardUi *ui, GameSave *s, const InputSystem *in, i32 c) {
+  HzUIColor dim = {90, 94, 100, 255};
+  CardDef d = card_def(c);
+  i32 lv = s->card_level[c];
+  ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) { cu_text_wrap(d.text, 14, (HzUIColor){27, 42, 52, 255}); }
+  cstr_format(ui->text[3], 96, "Stage: % \xe2\x80\x94 %", fmt_cstr(stage_def(lv).name), fmt_cstr(stage_def(lv).blurb));
+  ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) { cu_text_wrap(ui->text[3], 13, dim); }
+  u32 cost = upgrade_cost(s, c);
+  if (cost) {
+    cstr_format(ui->text[4], 96, "Upgrade to %", fmt_cstr(stage_def(lv + 1).name));
+    cstr_format(ui->text[5], 96, s->exp >= cost ? "% EXP" : "% EXP (you have %)", fmt_u32(cost), fmt_u32(s->exp));
+    if (deck_button(ui_id("BtnUpgrade"), ui->text[4], ui->text[5], (HzUIColor){120, 60, 200, 255}, s->exp >= cost, in, 14))
+      ui->click_upgrade = true;
+  } else if (!can_become_voxel(c)) {
+    ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) { cu_text_wrap("Final stage. Only 6-energy cards become a Voxelmon.", 12, dim); }
+  }
+  if (lv >= VOXEL_LEVEL) {
+    b32 walking = s->voxelmon == c + 1;
+    if (deck_button(ui_id("BtnWalk"), walking ? "Walks with you" : "Walk with me", NULL, (HzUIColor){60, 160, 80, 255}, !walking, in, 14))
+      ui->click_walk = true;
+  }
+  b32 in_deck = false;
+  for (i32 i = 0; i < s->deck_count; i++)
+    in_deck |= s->deck[i] == c;
+  if (in_deck) {
+    if (deck_button(ui_id("BtnRemove"), "Remove from deck", NULL, (HzUIColor){180, 70, 50, 255}, true, in, 14))
+      ui->click_remove = true;
+  } else if (deck_button(ui_id("BtnAdd"), "Add to deck", s->deck_count < DECK_SIZE ? NULL : "The deck is full", (HzUIColor){0, 85, 191, 255},
+                         s->deck_count < DECK_SIZE, in, 14)) {
+    ui->click_add = true;
+  }
+}
+
+// The deck screen: the header and the deck strip are panels of their own over the scrolling collection (the cards'
+// floating parts can never show through them); on a narrow screen (phones) the collection takes the whole width,
+// the deck wraps into two rows and the picked card opens as a sheet from the bottom. The x always closes it.
+hz_internal void deck_draw(CardUi *ui, GameSave *s, const InputSystem *in, f32 sw, f32 sh, b32 voxel_walks) {
+  HzUIColor ink = {27, 42, 52, 255}, paper = {236, 232, 222, 255};
+  OsSafeAreaInsets safe = os_get_safe_area();
+  b32 narrow = sw < 640.0f;
+  f32 pad = 12.0f;
+  f32 side_w = narrow ? 0.0f : m_minf(280.0f, sw * 0.32f);
+  f32 coll_w = sw - pad * 2.0f - safe.left - safe.right - (narrow ? 0.0f : side_w + 12.0f);
+  i32 per_row = narrow ? 4 : (i32)m_maxf(4.0f, m_floorf((coll_w + 8.0f) / 92.0f));
+  f32 gw = m_clampf((coll_w - 8.0f * (f32)(per_row - 1)) / (f32)per_row - 1.0f, 52.0f, 84.0f);
+  i32 cols = narrow ? 6 : 12;
+  f32 strip_inner = sw - pad * 2.0f - safe.left - safe.right - 16.0f;
+  f32 sw_card = m_minf(narrow ? 80.0f : 64.0f, (strip_inner - 6.0f * (f32)(cols - 1)) / (f32)cols);
+  HzUIElementData hd = ui_get_element_data(ui_id("DeckHeader")), sd = ui_get_element_data(ui_id("DeckStrip"));
+  f32 head_h = hd.found ? hd.boundingBox.height : 70.0f, strip_h = sd.found ? sd.boundingBox.height : 120.0f;
+  ui->z = 1;
   ui_element({.id = ui_id("DeckScreen"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT},
-              .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)},
-                         .padding = ui_padding_all(12), .child_gap = 10},
-              .background_color = {236, 232, 222, 250}}) {
-    ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 16, .child_alignment = {.y = UI_ALIGN_Y_CENTER},
-                           .sizing = {.width = ui_sizing_grow(0)}}}) {
-      cu_text("Your cards", 24, ink);
-      cstr_format(ui->text[0], 96, "% / % collected", fmt_u32(owned_count(s)), fmt_i32(CARD_POOL));
-      cu_text(ui->text[0], 16, ink);
-      cstr_format(ui->text[1], 96, "Deck % / %", fmt_i32(s->deck_count), fmt_i32(DECK_SIZE));
-      cu_text(ui->text[1], 16, s->deck_count == DECK_SIZE ? (HzUIColor){30, 130, 60, 255} : (HzUIColor){200, 60, 40, 255});
-      cstr_format(ui->text[2], 96, "% EXP", fmt_u32(s->exp));
-      cu_text(ui->text[2], 18, (HzUIColor){120, 60, 200, 255});
-      ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) {}
-      if (cu_button(ui_id("DeckClose"), "Close (C)", (HzUIColor){60, 64, 72, 255}, true, in, 15))
-        ui->click_close = true;
-    }
-    ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 12, .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}}}) {
-      // the collection: every card, the ones you do not have as dark "???"
-      ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 6, .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}},
-                  .clip = {.vertical = true, .child_offset = ui_scroll_offset()}}) {
-        cu_text("Collection (click a card)", 14, ink);
-        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT_WRAP, .child_gap = 8, .sizing = {.width = ui_sizing_grow(0)}}}) {
-          for (i32 c = 0; c < CARD_COUNT - 1; c++) {
-            b32 have = owns(s, c);
-            if (c == CARD_GOLDBRICK && !have)
-              continue;
-            b32 in_deck = false;
-            for (i32 i = 0; i < s->deck_count; i++)
-              in_deck |= s->deck[i] == c;
-            CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = gw, .unknown = !have,
-                          .lit = ui->deck_pick == c, .uid = 500u + (u32)c};
-            if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
-              ui->click_coll = c;
-            (void)in_deck;
-          }
+              .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)},
+                         .padding = {.left = (u16)(pad + safe.left), .right = (u16)(pad + safe.right), .top = (u16)(head_h + 8.0f), .bottom = (u16)(strip_h + 8.0f)},
+                         .child_gap = 12},
+              .background_color = paper}) {
+    // the collection: every card, the ones you do not have as dark "???"
+    ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 6, .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}},
+                .clip = {.vertical = true, .child_offset = ui_scroll_offset()}}) {
+      cu_text(narrow ? "Collection (tap a card)" : "Collection (click a card)", 14, ink);
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT_WRAP, .child_gap = 8, .sizing = {.width = ui_sizing_grow(0)}}}) {
+        for (i32 c = 0; c < CARD_COUNT - 1; c++) {
+          b32 have = owns(s, c);
+          if (c == CARD_GOLDBRICK && !have)
+            continue;
+          CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = gw, .unknown = !have,
+                        .lit = ui->deck_pick == c, .uid = 500u + (u32)c};
+          if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
+            ui->click_coll = c;
         }
       }
-      // the picked card big, with its stage and what you can do
+      ui_element({.layout = {.sizing = {.height = ui_sizing_fixed(narrow && ui->deck_pick >= 0 ? sh * 0.4f : 8.0f)}}}) {} // room to scroll past the sheet
+    }
+    if (!narrow) { // the picked card big, with what you can do
       ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 8, .padding = ui_padding_all(12),
-                             .sizing = {.width = ui_sizing_fixed(m_minf(260.0f, sw * 0.32f))}, .child_alignment = {.x = UI_ALIGN_X_CENTER}},
+                             .sizing = {.width = ui_sizing_fixed(side_w)}, .child_alignment = {.x = UI_ALIGN_X_CENTER}},
                   .background_color = {255, 255, 255, 255},
-                  .corner_radius = ui_corner_radius(12)}) {
+                  .corner_radius = ui_corner_radius(12),
+                  .clip = {.vertical = true}}) {
         i32 c = ui->deck_pick;
         if (c >= 0) {
-          CardDef d = card_def(c);
-          i32 lv = s->card_level[c];
-          CardLook k = {.id = c, .power = d.power, .level = lv, .w = m_minf(170.0f, sw * 0.2f), .uid = 900u};
+          CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = m_minf(170.0f, side_w * 0.62f), .uid = 900u};
           cu_card(ui, k, in, ui_id("DeckBig"));
-          cu_text_wrap(d.text, 14, ink);
-          cstr_format(ui->text[3], 96, "Stage: % (%)", fmt_cstr(stage_def(lv).name), fmt_cstr(stage_def(lv).blurb));
-          cu_text_wrap(ui->text[3], 13, (HzUIColor){90, 94, 100, 255});
-          u32 cost = upgrade_cost(s, c);
-          if (cost) {
-            cstr_format(ui->text[4], 96, "Upgrade to % (% EXP)", fmt_cstr(stage_def(lv + 1).name), fmt_u32(cost));
-            if (cu_button(ui_id("BtnUpgrade"), ui->text[4], (HzUIColor){120, 60, 200, 255}, s->exp >= cost, in, 14))
-              ui->click_upgrade = true;
-          } else if (!can_become_voxel(c)) {
-            cu_text_wrap("Final stage. Only 6-energy cards become a Voxelmon.", 12, (HzUIColor){90, 94, 100, 255});
-          }
-          if (lv >= VOXEL_LEVEL) {
-            b32 walking = s->voxelmon == c + 1;
-            if (cu_button(ui_id("BtnWalk"), walking ? "Walks with you" : "Walk with me", (HzUIColor){60, 160, 80, 255}, !walking, in, 14))
-              ui->click_walk = true;
-          }
-          b32 in_deck = false;
-          for (i32 i = 0; i < s->deck_count; i++)
-            in_deck |= s->deck[i] == c;
-          if (in_deck) {
-            if (cu_button(ui_id("BtnRemove"), "Remove from deck", (HzUIColor){180, 70, 50, 255}, true, in, 14))
-              ui->click_remove = true;
-          } else if (cu_button(ui_id("BtnAdd"), "Add to deck", (HzUIColor){0, 85, 191, 255}, s->deck_count < DECK_SIZE, in, 14)) {
-            ui->click_add = true;
-          }
+          deck_actions(ui, s, in, c);
         } else {
-          cu_text_wrap("Pick a card on the left to see it big, upgrade it with EXP or change your deck.", 14, ink);
-        }
-        (void)voxel_walks;
-      }
-    }
-    // the deck: 12 slots
-    ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 6, .sizing = {.width = ui_sizing_grow(0)},
-                           .child_alignment = {.x = UI_ALIGN_X_CENTER}},
-                .background_color = {40, 44, 52, 255},
-                .corner_radius = ui_corner_radius(10)}) {
-      for (i32 i = 0; i < DECK_SIZE; i++) {
-        if (i < s->deck_count) {
-          i32 c = s->deck[i];
-          CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = gw * 0.82f, .uid = 700u + (u32)i};
-          if (cu_card(ui, k, in, ui_idi("Slot", (u32)i)))
-            ui->click_slot = i;
-        } else {
-          ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(gw * 0.82f), .height = ui_sizing_fixed(gw * 0.82f * 1.4f)}},
-                      .background_color = {70, 74, 82, 255},
-                      .corner_radius = ui_corner_radius(6)}) {}
+          ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) {
+            cu_text_wrap("Pick a card on the left to see it big, upgrade it with EXP or change your deck.", 14, ink);
+          }
         }
       }
     }
   }
-  (void)white;
+  // the header: title, counts, and the way out
+  ui_element({.id = ui_id("DeckHeader"),
+              .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 12},
+              .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 12, .sizing = {.width = ui_sizing_fixed(sw)},
+                         .padding = {.left = (u16)(pad + safe.left), .right = (u16)(pad + safe.right), .top = (u16)(10.0f + safe.top), .bottom = 10},
+                         .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
+              .background_color = paper,
+              .shadow = {.color = cu_black(0.18f), .offset_y = 2.0f, .blur = 8.0f}}) {
+    ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 2, .sizing = {.width = ui_sizing_grow(0)}}}) {
+      cu_textb("Your cards", narrow ? 20 : 24, ink, 800, false, (HzUIColor){0});
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT_WRAP, .child_gap = 12, .sizing = {.width = ui_sizing_grow(0)}}}) {
+        cstr_format(ui->text[0], 96, "% / % collected", fmt_u32(owned_count(s)), fmt_i32(CARD_POOL));
+        cu_text(ui->text[0], 14, ink);
+        cstr_format(ui->text[1], 96, "Deck % / %", fmt_i32(s->deck_count), fmt_i32(DECK_SIZE));
+        cu_text(ui->text[1], 14, s->deck_count == DECK_SIZE ? (HzUIColor){30, 130, 60, 255} : (HzUIColor){200, 60, 40, 255});
+        cstr_format(ui->text[2], 96, "% EXP", fmt_u32(s->exp));
+        cu_text(ui->text[2], 14, (HzUIColor){120, 60, 200, 255});
+      }
+    }
+    ui_element({.id = ui_id("DeckClose"),
+                .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 6, .padding = {.left = 12, .right = 14, .top = 8, .bottom = 8},
+                           .sizing = {.height = ui_sizing_fixed(42)}, .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                .background_color = (HzUIColor){60, 64, 72, 255},
+                .corner_radius = ui_corner_radius(21),
+                .brightness = ui_hovered() ? opt_some(f32, 1.2f) : opt_none(f32)}) {
+      if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
+        ui->click_close = true;
+      cu_textb("\xc3\x97", 24, (HzUIColor){255, 255, 255, 255}, 700, false, (HzUIColor){0});
+      cu_textb(narrow ? "Close" : "Close (C)", 15, (HzUIColor){255, 255, 255, 255}, 700, false, (HzUIColor){0});
+    }
+  }
+  // the deck: 12 slots (two rows of six on phones)
+  ui->z = 13;
+  ui_element({.id = ui_id("DeckStrip"),
+              .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 12,
+                           .attach_points = {.element = UI_ATTACH_POINT_LEFT_BOTTOM, .parent = UI_ATTACH_POINT_LEFT_BOTTOM}},
+              .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 6, .sizing = {.width = ui_sizing_fixed(sw)},
+                         .padding = {.left = (u16)(pad + safe.left + 8.0f), .right = (u16)(pad + safe.right + 8.0f), .top = 8, .bottom = (u16)(10.0f + safe.bottom)},
+                         .child_alignment = {.x = UI_ALIGN_X_CENTER}},
+              .background_color = {40, 44, 52, 255},
+              .shadow = {.color = cu_black(0.3f), .offset_y = -2.0f, .blur = 10.0f}}) {
+    for (i32 row = 0; row * cols < DECK_SIZE; row++)
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 6}}) {
+        for (i32 i = row * cols; i < (row + 1) * cols && i < DECK_SIZE; i++) {
+          if (i < s->deck_count) {
+            i32 c = s->deck[i];
+            CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = sw_card, .uid = 700u + (u32)i,
+                          .lit = ui->deck_pick == c};
+            if (cu_card(ui, k, in, ui_idi("Slot", (u32)i)))
+              ui->click_slot = i;
+          } else {
+            ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(sw_card), .height = ui_sizing_fixed(sw_card * 1.4f)}},
+                        .background_color = {70, 74, 82, 255},
+                        .corner_radius = ui_corner_radius(6)}) {}
+          }
+        }
+      }
+  }
+  // phones: the picked card as a sheet over the deck strip
+  if (narrow && ui->deck_pick >= 0) {
+    i32 c = ui->deck_pick;
+    ui->z = 21;
+    ui_element({.id = ui_id("DeckSheet"),
+                .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 20,
+                             .attach_points = {.element = UI_ATTACH_POINT_LEFT_BOTTOM, .parent = UI_ATTACH_POINT_LEFT_BOTTOM}},
+                .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 12, .sizing = {.width = ui_sizing_fixed(sw)},
+                           .padding = {.left = (u16)(14.0f + safe.left), .right = (u16)(14.0f + safe.right), .top = 16, .bottom = (u16)(16.0f + safe.bottom)}},
+                .background_color = {255, 255, 255, 255},
+                .corner_radius = {.top_left = 18, .top_right = 18},
+                .shadow = {.color = cu_black(0.35f), .offset_y = -4.0f, .blur = 20.0f}}) {
+      CardLook k = {.id = c, .power = card_def(c).power, .level = s->card_level[c], .w = m_minf(120.0f, sw * 0.3f), .uid = 900u};
+      cu_card(ui, k, in, ui_id("DeckBig"));
+      ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 8, .sizing = {.width = ui_sizing_grow(0)}}}) {
+        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .sizing = {.width = ui_sizing_grow(0)}, .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
+          ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) { cu_textb(card_def(c).name, 18, ink, 800, false, (HzUIColor){0}); }
+          ui_element({.id = ui_id("DeckSheetClose"),
+                      .layout = {.sizing = {.width = ui_sizing_fixed(34), .height = ui_sizing_fixed(34)}, .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                      .background_color = {226, 230, 234, 255},
+                      .corner_radius = ui_corner_radius(17)}) {
+            if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
+              ui->click_unpick = true;
+            cu_textb("\xc3\x97", 20, ink, 700, false, (HzUIColor){0});
+          }
+        }
+        deck_actions(ui, s, in, c);
+      }
+    }
+  }
+  ui->z = 0;
+  (void)voxel_walks;
 }
 
 // the clicks of the deck screen; returns true when it was closed
@@ -1758,10 +1860,12 @@ hz_internal b32 deck_input(CardUi *ui, GameSave *s, SaveState *save, SoundBank *
     s->voxelmon = c + 1;
     save_mark(save);
   }
+  if (ui->click_unpick)
+    ui->deck_pick = -1; // the sheet's x (phones)
   if (ui->click_close || in->buttons[KEY_C].pressed_this_frame || in->buttons[KEY_ESCAPE].pressed_this_frame)
     closed = true;
   ui->click_coll = ui->click_slot = -1;
-  ui->click_add = ui->click_remove = ui->click_upgrade = ui->click_walk = ui->click_close = false;
+  ui->click_add = ui->click_remove = ui->click_upgrade = ui->click_walk = ui->click_close = ui->click_unpick = false;
   return closed;
 }
 

@@ -349,7 +349,7 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
       }
     }
   } else if (cg->ui.deck_open) {
-    deck_draw(&cg->ui, (GameSave *)s, in, sw, s->voxelmon > 0);
+    deck_draw(&cg->ui, (GameSave *)s, in, sw, sh, s->voxelmon > 0);
   } else if (show_button && s->has_deck) {
     // the Deck button, top right left of the menu button (narrow screens: the second row, right)
     OsSafeAreaInsets safe = os_get_safe_area();
