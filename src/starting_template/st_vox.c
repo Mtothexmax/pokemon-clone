@@ -706,6 +706,17 @@ hz_internal void vox_bar(HzUIElementId id, f32 frac, f32 w, HzUIColor fill) {
 
 hz_internal HzUIColor vox_hp_color(f32 f) { return f > 0.5f ? (HzUIColor){60, 190, 80, 255} : f > 0.2f ? (HzUIColor){240, 190, 40, 255} : (HzUIColor){220, 60, 40, 255}; }
 
+// each skill's icon (tools/make_screen_art.py sk_*)
+hz_internal CString vox_skill_icon(Skill sk) {
+  static const struct { CString name, icon; } map[] = {
+      {"Root Slam", ART_SK_ROOT}, {"Leaf Storm", ART_SK_LEAF}, {"Storm Call", ART_SK_STORM}, {"Thunder Bite", ART_SK_BOLT},
+      {"Tidal Whirl", ART_SK_WAVE}, {"Ink Shot", ART_SK_DROP}, {"Brick Blast", ART_SK_BLAST}, {"Tackle", ART_SK_DASH}};
+  for (u32 i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+    if (cstr_equal(map[i].name, sk.name))
+      return map[i].icon;
+  return sk.kind == SK_DASH ? ART_SK_DASH : ART_SK_BLAST;
+}
+
 hz_internal void vox_draw(Vox *v, const InputSystem *in, const Camera *cam, f32 sw, f32 shgt, f32 dpr, b32 show_pill) {
   HzUIColor white = {255, 255, 255, 255}, ink = {27, 42, 52, 255};
   OsSafeAreaInsets safe = os_get_safe_area();
@@ -748,47 +759,71 @@ hz_internal void vox_draw(Vox *v, const InputSystem *in, const Camera *cam, f32 
       cstr_format(v->text[1], 96, "%   %/%", fmt_cstr(card_def(me->id).name), fmt_i32((i32)me->hp), fmt_i32((i32)me->max));
       cu_text(v->text[1], 16, white);
       vox_bar(ui_id("VoxMeBar"), me->hp / m_maxf(me->max, 1.0f), 300.0f, vox_hp_color(me->hp / m_maxf(me->max, 1.0f)));
-      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 10}}) {
-        for (i32 k = 0; k < 2; k++) {
-          Skill sk = vox_skill(me->id, k);
-          b32 ready = v->cool[k] <= 0.0f && v->phase == VOX_FIGHT;
-          v4 c = vox_rgb(sk.color);
-          // the recharge fills the button from the bottom up in the skill's colour (as Pokemon Quest); full = ready
-          HzUIColor skc = {c.x * 200.0f, c.y * 200.0f, c.z * 200.0f, 255};
-          f32 bh = 50.0f, fill = ready ? 1.0f : v->cool[k] > 0.0f ? 1.0f - v->cool[k] / m_maxf(sk.cooldown, 0.01f) : 0.0f;
-          ui_element({.id = ui_idi("VoxSkill", (u32)k),
-                      .layout = {.sizing = {.width = ui_sizing_fixed(140), .height = ui_sizing_fixed(bh)}},
-                      .background_color = (HzUIColor){52, 56, 64, 255},
-                      .corner_radius = ui_corner_radius(9),
-                      .clip = {.horizontal = true, .vertical = true},
-                      .border = {.color = ready ? (HzUIColor){255, 255, 255, 200} : (HzUIColor){0}, .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}, .overlay = true}}) {
-            if (ready && ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
-              v->click_skill[k] = true;
-            if (fill > 0.0f)
-              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 1, .clip_to = UI_CLIP_TO_ATTACHED_PARENT,
-                                       .attach_points = {.element = UI_ATTACH_POINT_LEFT_BOTTOM, .parent = UI_ATTACH_POINT_LEFT_BOTTOM},
-                                       .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
-                          .layout = {.sizing = {.width = ui_sizing_fixed(140), .height = ui_sizing_fixed(bh * fill)}},
-                          .background_color = ready ? skc : (HzUIColor){skc.r * 0.7f, skc.g * 0.7f, skc.b * 0.7f, 255},
-                          .border = {.color = ready ? (HzUIColor){0} : (HzUIColor){255, 255, 255, 150}, .width = {.top = 2}}}) {}
-            ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 2, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
-                        .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_fixed(140), .height = ui_sizing_fixed(bh)},
-                                   .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}}}) {
-              cstr_format(v->text[2 + k], 96, "% %", fmt_i32(k + 1), fmt_cstr(sk.name));
-              cu_textb(v->text[2 + k], 15, white, 700, false, (HzUIColor){0, 0, 0, 120});
-              if (!ready && v->cool[k] > 0.0f) {
-                cstr_format(v->text[4 + k], 96, "%s", fmt_f32_p(v->cool[k], 1));
-                cu_textb(v->text[4 + k], 12, (HzUIColor){230, 234, 240, 255}, 600, false, (HzUIColor){0, 0, 0, 120});
-              } else
-                cu_textb(ready ? "ready" : " ", 12, (HzUIColor){255, 255, 255, 220}, 600, false, (HzUIColor){0, 0, 0, 120});
+      // the skills (as Pokemon Quest): square icon tiles, the name small below; while one recharges it fills from the
+      // bottom up in its colour (full = ready), the seconds left on it; the key number in the corner
+      ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 14, .child_alignment = {.y = UI_ALIGN_Y_TOP}}}) {
+        const f32 tile = 62.0f;
+        for (i32 k = 0; k < 3; k++) {
+          b32 run_tile = k == 2;
+          Skill sk = run_tile ? (Skill){0} : vox_skill(me->id, k);
+          b32 ready = run_tile || (v->cool[k] <= 0.0f && v->phase == VOX_FIGHT);
+          v4 c = vox_rgb(run_tile ? 0xa0503cu : sk.color);
+          HzUIColor skc = {c.x * 210.0f, c.y * 210.0f, c.z * 210.0f, 255};
+          f32 fill = ready ? 1.0f : v->cool[k] > 0.0f ? 1.0f - v->cool[k] / m_maxf(sk.cooldown, 0.01f) : 0.0f;
+          ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 4, .child_alignment = {.x = UI_ALIGN_X_CENTER},
+                                 .sizing = {.width = ui_sizing_fixed(tile + 14.0f)}}}) {
+            ui_element({.id = run_tile ? ui_id("VoxRun") : ui_idi("VoxSkill", (u32)k),
+                        .layout = {.sizing = {.width = ui_sizing_fixed(tile), .height = ui_sizing_fixed(tile)},
+                                   .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                        .background_color = (HzUIColor){44, 48, 56, 255},
+                        .corner_radius = ui_corner_radius(16),
+                        .clip = {.horizontal = true, .vertical = true},
+                        .border = {.color = ready ? (HzUIColor){255, 255, 255, 220} : (HzUIColor){90, 96, 106, 255},
+                                   .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}, .overlay = true},
+                        .shadow = {.color = ready && !run_tile ? (HzUIColor){skc.r, skc.g, skc.b, 160} : (HzUIColor){0, 0, 0, 90}, .offset_y = 2.0f, .blur = 8.0f},
+                        .brightness = ready && ui_hovered() ? opt_some(f32, 1.15f) : opt_none(f32)}) {
+              if (ready && ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame) {
+                if (run_tile)
+                  v->click_run = true;
+                else
+                  v->click_skill[k] = true;
+              }
+              if (fill > 0.0f)
+                ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 1, .clip_to = UI_CLIP_TO_ATTACHED_PARENT,
+                                         .attach_points = {.element = UI_ATTACH_POINT_LEFT_BOTTOM, .parent = UI_ATTACH_POINT_LEFT_BOTTOM},
+                                         .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                            .layout = {.sizing = {.width = ui_sizing_fixed(tile), .height = ui_sizing_fixed(tile * fill)}},
+                            .corner_radius = {.top_left = fill > 0.9f ? 16.0f : 0.0f, .top_right = fill > 0.9f ? 16.0f : 0.0f, .bottom_left = 16.0f, .bottom_right = 16.0f},
+                            .gradient = ready ? cu_lin2(180.0f, cu_mix(skc, white, 0.25f), skc)
+                                              : cu_lin2(180.0f, (HzUIColor){skc.r * 0.75f, skc.g * 0.75f, skc.b * 0.75f, 255}, (HzUIColor){skc.r * 0.55f, skc.g * 0.55f, skc.b * 0.55f, 255}),
+                            .border = {.color = ready ? (HzUIColor){0} : (HzUIColor){255, 255, 255, 170}, .width = {.top = 2}}}) {}
+              // the icon (and while it recharges, the seconds over it)
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 2, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                          .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_fixed(tile), .height = ui_sizing_fixed(tile)},
+                                     .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}}}) {
+                f32 is = tile * 0.56f;
+                HzUITextConfig ic = {.fontId = (u16)g_art.idx, .fontSize = is, .lineHeight = is, .textColor = ready ? white : (HzUIColor){255, 255, 255, 150}};
+                ic.shadows[0] = (HzUITextShadow){.color = {0, 0, 0, 140}, .offset_y = 1.5f, .blur = 3.0f};
+                ui_text(ui_str_c(run_tile ? ART_IC_BACK : vox_skill_icon(sk)), ic);
+              }
+              if (!ready && v->cool[k] > 0.0f)
+                ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 3, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                                         .attach_points = {.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM},
+                                         .offset = {0, -3.0f}}}) {
+                  cstr_format(v->text[4 + k], 96, "%s", fmt_f32_p(v->cool[k], 1));
+                  cu_textb(v->text[4 + k], 11, white, 800, false, (HzUIColor){0, 0, 0, 200});
+                }
+              if (!run_tile) // the key
+                ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 3, .offset = {5.0f, 3.0f},
+                                         .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}}) {
+                  cu_textb(k == 0 ? "1" : "2", 11, (HzUIColor){255, 255, 255, 190}, 800, false, (HzUIColor){0, 0, 0, 160});
+                }
             }
+            HzUITextConfig lc = {.fontSize = 11, .textColor = (HzUIColor){230, 234, 240, 255}, .weight = 700, .textAlignment = CLAY_TEXT_ALIGN_CENTER,
+                                 .wrapMode = UI_TEXT_WRAP_WORDS};
+            lc.shadows[0] = (HzUITextShadow){.color = {0, 0, 0, 180}, .offset_y = 1.0f, .blur = 2.0f};
+            ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) { ui_text(ui_str_c(run_tile ? "Run" : sk.name), lc); }
           }
-        }
-        ui_element({.id = ui_id("VoxRun"), .layout = {.padding = {.left = 14, .right = 14, .top = 12, .bottom = 12}},
-                    .background_color = {120, 60, 50, 255}, .corner_radius = ui_corner_radius(9)}) {
-          if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
-            v->click_run = true;
-          cu_text("Run", 15, white);
         }
       }
     }

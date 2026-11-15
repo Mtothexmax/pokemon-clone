@@ -185,6 +185,10 @@ hz_internal void hud_layout(f32 sw) {
   }
 }
 
+// the vector art (TV, computers, skill icons): assets/brickhollow/screens/art/*.svg cooked to glyphs (tools/make_screen_art.py)
+#include "../../assets/brickhollow/screens/art.icons.gen.h"
+hz_global HzHandleT(UIFontData) g_art;
+
 // ---- YOUR COMPONENTS AND SYSTEMS HERE: split into files when this gets long (#include "st_enemies.c" above app_init) ----
 typedef struct LoadWatch {
   i32 pct;   // the last reported percentage

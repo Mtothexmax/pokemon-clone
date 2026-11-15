@@ -98,6 +98,15 @@ def icons():
     icon('ic_coin', '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3H15"/>', 2.0)
     icon('ic_lock', '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 2.2)
     icon('ic_brick', '<rect x="2" y="9" width="20" height="11" rx="2"/><path d="M6 9V6h4v3M14 9V6h4v3"/>', 2.2)
+    # the Voxelmon skills (st_vox.c vox_skill_icon)
+    icon('sk_root', '<path d="M12 3v9"/><path d="M12 12c-3 1.5-5.5 4-6.5 8"/><path d="M12 12c3 1.5 5.5 4 6.5 8"/><path d="M12 12v9"/><path d="M9 6l3-3 3 3"/>', 2.2)
+    icon('sk_leaf', '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>', 2.1)
+    icon('sk_storm', '<path d="M6 16.3A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 .5 9"/><path d="M13 12l-3 5h4l-3 5"/>', 2.1)
+    icon('sk_bolt', '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>', 2.1)
+    icon('sk_wave', ''.join(f'<path d="M2 {y}c.6.5 1.2 1 2.5 1C7 {y + 1} 7 {y - 1} 9.5 {y - 1}c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>' for y in (6, 12, 18)), 2.1)
+    icon('sk_drop', '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>', 2.1)
+    icon('sk_blast', '<rect x="5" y="12" width="14" height="9" rx="2"/><path d="M8.5 12V9.5h3V12M12.5 12V9.5h3V12"/><path d="M3 5l2 2M21 5l-2 2M12 2v3"/>', 2.1)
+    icon('sk_dash', '<path d="M5 17l5-5-5-5"/><path d="M12 17l5-5-5-5"/>', 2.6)
 
 
 if __name__ == '__main__':

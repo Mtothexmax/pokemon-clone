@@ -5,8 +5,7 @@
 // research terminal that types by itself. The piano stays a keyboard over the room. E or Esc closes.
 // Included by starting_template.c above app_init.
 
-#include "../../assets/brickhollow/screens/art.icons.gen.h"
-hz_global HzHandleT(UIFontData) g_art;      // the screens' vector art: assets/brickhollow/screens/art/*.svg, cooked to glyphs
+// (g_art, the art set's glyphs, is declared in starting_template.c: the skill icons of st_vox.c use it too)
 hz_global HzHandleT(UIFontFamily) g_mono;   // the terminal's monospaced face (the OS one natively; the web has Inter)
 
 typedef enum ScreenKind { SCREEN_NONE, SCREEN_TV, SCREEN_PIANO, SCREEN_PC, SCREEN_LAB } ScreenKind;
