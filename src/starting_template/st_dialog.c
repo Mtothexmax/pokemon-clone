@@ -15,6 +15,7 @@ typedef enum DialogAction {
   ACT_BATTLE_PRACTICE, // Lumi
   ACT_DEX_SCARED,      // Dex: "Not now"
   ACT_OPEN_GATE,       // Prof. Quill at the gap: you have a Voxelmon
+  ACT_QUEST_PART,      // Prof. Quill: the Deck-o-Matic misses its Stud Core (find the suit, dive for it)
 } DialogAction;
 
 typedef struct DialogLine {
@@ -47,6 +48,7 @@ typedef enum DialogId {
   DLG_DEX_LOST,
   DLG_LUMI_WON,
   DLG_LUMI_LOST,
+  DLG_MACHINE, // the Deck-o-Matic in the lab
   DLG_COUNT
 } DialogId;
 
@@ -128,14 +130,33 @@ hz_internal Dialog dialog_for(DialogId id, const GameSave *s, b32 has_voxelmon, 
                    .count = 3};
     break;
   case DLG_PROF:
-    if (!s->has_deck) {
+    // the first deck: the Deck-o-Matic prints it, but it misses its Stud Core - lost in the pond cave
+    if (!s->has_deck && !s->has_part) {
+      if (!s->quest_part)
+        d = (Dialog){.speaker = "Prof. Hazel Quill",
+                     .lines = {L("Ah, there you are! Welcome to Quill Lab.", VOICE("df9ece56")),
+                               L("All around Brickhollow live BRICK BEASTS \xe2\x80\x94 little creatures snapped together from living bricks!", VOICE("97e8d994")),
+                               L("Trainers here battle with decks of 12 Beast cards, fighting over 3 zones for 6 turns.", VOICE("faa6ffcd")),
+                               L("I wanted to print your very first deck with my Deck-o-Matic over there... but it only blinks MISSING PART!", NULL),
+                               L("Its Stud Core is gone. I dropped it while diving in the pond. Yes, the pond: it is the way into a deep, flooded cave.", NULL),
+                               L("My old diving suit must be somewhere in this lab. Find it, dive down and bring me the Stud Core!", NULL)},
+                     .count = 6, .on_end = ACT_QUEST_PART};
+      else if (!s->has_suit)
+        d = (Dialog){.speaker = "Prof. Hazel Quill",
+                     .lines = {L("Found my diving suit yet? It is in here somewhere... in a corner nobody ever looks into, I suppose.", NULL)},
+                     .count = 1};
+      else
+        d = (Dialog){.speaker = "Prof. Hazel Quill",
+                     .lines = {L("The suit fits you! Go to the pond and dive in.", NULL),
+                               L("Deep down the Stud Core glows yellow. Follow the light, and mind the dark parts.", NULL)},
+                     .count = 2};
+    } else if (!s->has_deck) {
       d = (Dialog){.speaker = "Prof. Hazel Quill",
-                   .lines = {L("Ah, there you are! Welcome to Quill Lab.", VOICE("df9ece56")),
-                             L("All around Brickhollow live BRICK BEASTS \xe2\x80\x94 little creatures snapped together from living bricks!", VOICE("97e8d994")),
-                             L("Trainers here battle with decks of 12 Beast cards, fighting over 3 zones for 6 turns.", VOICE("faa6ffcd")),
+                   .lines = {L("The Stud Core! You really found it down there!", NULL),
+                             L("Let me put it in... *clank* *whirr* ... the Deck-o-Matic is printing!", NULL),
                              L("Here are 18 cards to start your collection. I've already built you a deck of 12!", VOICE("83c29583")),
                              L("Wild Beasts hide in the tall grass on Route 1, north of the village. Beat them to collect new cards!", VOICE("a633cd6e"))},
-                   .count = 5, .on_end = ACT_GIVE_STARTER};
+                   .count = 4, .on_end = ACT_GIVE_STARTER};
     } else {
       u32 n = 0;
       for (i32 c = 0; c < CARD_POOL; c++)
@@ -147,6 +168,17 @@ hz_internal Dialog dialog_for(DialogId id, const GameSave *s, b32 has_voxelmon, 
                              L("Did you know? Glimmerlings fold light into tiny bricks. Fascinating creatures.", VOICE("c83f36f4"))},
                    .count = 2};
     }
+    break;
+  case DLG_MACHINE:
+    if (!s->has_deck && !s->has_part)
+      d = (Dialog){.speaker = "Deck-o-Matic",
+                   .lines = {L("*beep* ERROR: MISSING PART. Stud Core not found.", NULL),
+                             L("Insert a Stud Core to print Beast decks. *beep*", NULL)},
+                   .count = 2};
+    else if (!s->has_deck)
+      d = (Dialog){.speaker = "Deck-o-Matic", .lines = {L("*beep* Stud Core detected. Waiting for Prof. Quill.", NULL)}, .count = 1};
+    else
+      d = (Dialog){.speaker = "Deck-o-Matic", .lines = {L("*whirr* READY. Decks printed today: 1. Have fun!", NULL)}, .count = 1};
     break;
   case DLG_PROF_AFTER:
     d = (Dialog){.speaker = "Prof. Hazel Quill",

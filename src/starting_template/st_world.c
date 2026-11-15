@@ -92,7 +92,7 @@ hz_internal Readable readable(i32 i) {
 
 
 // everything you can do something with: read it, talk to someone, feed, sit, sleep, watch, play, use, open
-typedef enum TargetKind { T_READ, T_TALK, T_FEED, T_SIT, T_SLEEP, T_TV, T_PIANO, T_PC, T_LAB, T_CHEST } TargetKind;
+typedef enum TargetKind { T_READ, T_TALK, T_FEED, T_SIT, T_SLEEP, T_TV, T_PIANO, T_PC, T_LAB, T_CHEST, T_SUIT, T_DIVE } TargetKind;
 
 typedef struct Target {
   TargetKind kind;
@@ -102,7 +102,10 @@ typedef struct Target {
   i32 arg;      // the readable or the DialogId
 } Target;
 
-#define STATIC_TARGETS 21
+#define STATIC_TARGETS 22
+
+hz_internal b32 g_suit_here; // the diving suit still stands in the lab (st_dive.c sets these every frame)
+hz_internal b32 g_can_dive;  // you wear it: the pond takes you down
 
 hz_internal f32 g_gate_prof_x = -5.4f; // where Prof. Quill stands at the gap (in the middle while it is closed)
 
@@ -126,6 +129,9 @@ hz_internal Target world_target(i32 i) {
   case 11: return (Target){T_TALK, 52.5f, -1.8f, "Talk to", "Dex", DLG_DEX};
   case 12: return (Target){T_TALK, 256.1f, 2.0f, "Talk to", "Lumi", DLG_LUMI};
   case 13: return (Target){T_TALK, g_gate_prof_x, -22.6f, "Talk to", "Prof. Quill", DLG_GATE};
+  case 14: return (Target){T_TALK, 341.6f, -6.4f, "Look at", "the Deck-o-Matic", DLG_MACHINE};
+  case 15: return g_suit_here ? (Target){T_SUIT, 315.6f, -7.2f, "Take", "the old diving suit", 0} : (Target){T_READ, 0, 0, "", "", 0};
+  case 16: return g_can_dive ? (Target){T_DIVE, -13.0f, 18.5f, "Dive into", "the pond", 0} : (Target){T_READ, 0, 0, "", "", 0};
   default: return (Target){T_READ, 0, 0, "", "", 0};
   }
 }

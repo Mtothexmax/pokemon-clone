@@ -93,6 +93,8 @@ ecs_system(player_input_system, EcsIn(Player), EcsIn(WorldTransform), EcsInOut(C
 // resource: how much of the sun reaches you (1 outside; inside the rooms the warm ceiling lights take over)
 typedef struct IndoorLight {
   f32 sun_scale;
+  f32 water; // diving (st_dive.c): the fog and the light of the cave's water
+  f32 depth; // 0 at the hole .. 1 at the bottom
 } IndoorLight;
 ECS_COMPONENT_TYPEDEF(IndoorLight);
 
@@ -109,10 +111,21 @@ ecs_system(indoor_ambient_system, EcsInOut(EcsSceneSettings), EcsResIn(IndoorLig
   f32 in = 1.0f - il->sun_scale; // 0 outside .. ~1 inside
   for (i32 i = 0; i < it->count; i++) {
     EcsSceneSettings *ss = ecs_sys_get_component_mut(EcsSceneSettings, i);
+    f32 amb0 = ss->ambient_intensity;
     ss->ambient_intensity *= 1.0f - 0.7f * in;
     ss->ambient_color.r = m_lerpf(ss->ambient_color.r, 1.0f, in * 0.5f);
     ss->ambient_color.g = m_lerpf(ss->ambient_color.g, 0.86f, in * 0.5f);
     ss->ambient_color.b = m_lerpf(ss->ambient_color.b, 0.7f, in * 0.5f);
+    if (il->water > 0.0f) { // under water (abyssal-garden): blue-green near the top, nearly black deep down, seen not far
+      f32 dp = il->depth;
+      ss->fog_mode = RENDERER_FOG_LINEAR;
+      ss->fog_color = (ColorF32){m_lerpf(0.08f, 0.01f, dp), m_lerpf(0.42f, 0.05f, dp), m_lerpf(0.62f, 0.12f, dp), 1.0f};
+      ss->fog_start = m_lerpf(4.0f, 1.0f, dp);
+      ss->fog_end = m_lerpf(42.0f, 20.0f, dp);
+      ss->fog_sky_unfogged = false;
+      ss->ambient_color = (ColorF32){0.3f, 0.65f, 0.85f, 1.0f}; // the cave's roof shades the sun: the water's own light carries it
+      ss->ambient_intensity = amb0 * m_lerpf(1.8f, 0.7f, dp);
+    }
   }
 }
 
@@ -211,6 +224,7 @@ typedef struct LoadWatch {
 #include "st_swipe.c"
 hz_internal TouchControls make_touch_controls(UISystem *ui, b32 swipe);
 #include "st_vox.c"
+#include "st_dive.c"
 #include "st_screens.c"
 #include "st_debug.c"
 
@@ -384,6 +398,8 @@ typedef struct AppState {
   b32 dancing;
   CardGame cards;      // battles, rewards, the deck menu (st_cardgame.c)
   Vox vox;             // your Voxelmon and the fights in the tall grass (st_vox.c)
+  Dive dive;           // the diving suit, the Deck-o-Matic and the pond cave (st_dive.c)
+  b32 dive_cam;        // the dive owns the camera (its follow is off)
   Settings set;        // the menu: voices, music, graphics (st_settings.c)
   LoadWatch load;      // the first load's progress, for the web start page (load_watch)
   Swipe swipe;         // swipe walking on phones (st_swipe.c)
@@ -478,6 +494,7 @@ HZ_APP_API void app_init(AppMemory *memory) {
   s->set.applied = -1; // (buses 0: the mixer starts with both on)
   s->set.click_gfx = s->set.click_touch = -1;
   vox_init(&s->vox, &s->life, (u32)(os_time_unix_ms() >> 3));
+  dive_init(&s->dive, &s->life);
 
   log_info("brickhollow initialized");
 }
@@ -593,6 +610,19 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         give_starter(&s->save.data);
       cg_start_battle(&s->cards, BATTLE_PRACTICE, w, &s->audio);
     }
+    if (input->buttons[KEY_F3].pressed_this_frame) { // dev builds: try the first quest from the start (this session is never saved)
+      GameSave *g = &s->save.data;
+      g->has_deck = false;
+      g->quest_part = g->has_suit = g->has_part = 0;
+      g->dive_found = 0;
+      s->save.no_write = true;
+      life_toast(&s->life, "Dev: the first quest from the start (not saved)");
+    }
+    if (input->buttons[KEY_F2].pressed_this_frame && s->dive.on) { // dev builds: the diver to the trench, by the Stud Core
+      s->dive.p = (v3){0.0f, -19.0f, 38.0f};
+      s->dive.yaw = 0.0f;
+      s->dive.pitch = -0.2f;
+    }
     if (input->buttons[KEY_F6].pressed_this_frame) // dev builds: a wild Voxelmon right here (with one walking with you)
       s->vox.force = true;
     if (input->buttons[KEY_F7].pressed_this_frame && !cg_busy(&s->cards)) { // dev builds: three packs to open (shown only)
@@ -639,7 +669,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // hold the right mouse button to look around; the warp on the lock frame is not a look. Over a full-screen UI (a
     // battle, the deck, rewards, a TV or computer, the menu) the camera stays put: dragging cards and scrolling the
     // collection used to turn and zoom it, and after a battle the town was seen from anywhere
-    b32 cam_frozen = s->editor_open || cg_busy(&s->cards) || s->scr.kind != SCREEN_NONE || s->set.open;
+    b32 cam_frozen = s->editor_open || cg_busy(&s->cards) || s->scr.kind != SCREEN_NONE || s->set.open || s->dive.on;
     b32 look = !cam_frozen && input->buttons[MOUSE_RIGHT].is_pressed;
     os_lock_mouse(look);
     v2 mouse = look && s->look_locked ? (v2){input->mouse_delta.x, -input->mouse_delta.y} : (v2){0};
@@ -674,7 +704,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
                     &s->audio);
       }
     }
-    b32 busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade;
+    b32 busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade || s->dive.on;
     if (pwt && !s->editor_open) {
       if (s->dlg.open) {
         dialog_update(&s->dlg, w, &s->audio, input, advance);
@@ -691,6 +721,9 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
             sound_play(&s->snd, SND_FANFARE, 1.0f, 0.8f);
             life_toast(&s->life, "The way to Route 1 is open!");
             s->gate_shown = false;
+          } else if (act == ACT_QUEST_PART) {
+            s->save.data.quest_part = true; // now find the suit (st_dive.c)
+            save_mark(&s->save);
           } else
             cg_dialog_action(&s->cards, act, &s->save, &s->dlg, &s->snd, w, &s->audio);
         }
@@ -773,11 +806,21 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         case T_PC: screens_open(&s->scr, SCREEN_PC, w, &s->audio, weather, s->world.target.x, s->world.target.z, (u32)(memory->total_time * 1000.0)); break;
         case T_LAB: screens_open(&s->scr, SCREEN_LAB, w, &s->audio, weather, s->world.target.x, s->world.target.z, (u32)(memory->total_time * 1000.0)); break;
         case T_CHEST: life_open_chest(&s->life); break;
+        case T_SUIT:
+          s->save.data.has_suit = true;
+          save_mark(&s->save);
+          sound_play(&s->snd, SND_FANFARE, 1.0f, 0.8f);
+          life_toast(&s->life, "Prof. Quill's old diving suit! Now the pond can take you down.");
+          break;
+        case T_DIVE:
+          dive_start(&s->dive);
+          sound_play(&s->snd, SND_SPLASH, 0.8f, 0.9f);
+          break;
         default: break;
         }
         sound_play(&s->snd, SND_BLIP, 1.2f, 0.4f);
       }
-      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade || cg_busy(&s->cards) || fight || s->set.open;
+      busy = s->dlg.open || s->scr.kind != SCREEN_NONE || s->life.fade || cg_busy(&s->cards) || fight || s->set.open || s->dive.on;
       b32 moving = v2_length(controls.move) > 0.2f;
       // the bench: any move gets you up; Q dances (moving stops it)
       if (s->life.sitting && moving && !busy)
@@ -856,13 +899,37 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         zoom_to = &s->scr.board;
       b32 zoomed = sign_zoom_update(&s->zoom, w, s->sim.camera_query, zoom_to, dt);
       vox_camera(&s->vox, w, s->sim.camera_query, pwt->position, dt); // a fight in the tall grass: the camera watches the two beasts
+      dive_lab(&s->dive, &s->save.data);
+      if (s->dive.on && cam_e != ECS_ENTITY_INVALID && follow) {
+        if (!s->dive_cam) {
+          CameraFollow f = *follow;
+          f.disabled = true;
+          ecs_component_set(w, cam_e, CameraFollow, f);
+          s->dive_cam = true;
+        }
+        const Camera *cc = ecs_component_get(w, cam_e, Camera);
+        if (cc) {
+          Camera c = *cc;
+          f32 uw = (f32)memory->canvas_width / m_maxf(memory->dpr, 0.5f), uh = (f32)memory->canvas_height / m_maxf(memory->dpr, 0.5f);
+          dive_update(&s->dive, input, s->ui, &s->save, &c, uw, uh, dt);
+          ecs_component_set(w, cam_e, Camera, c);
+        }
+        controls.move = (v2){0};
+        controls.jump = false;
+      } else if (s->dive_cam && cam_e != ECS_ENTITY_INVALID && follow) { // back at the pond
+        CameraFollow f = *follow;
+        f.disabled = false;
+        f.snap = true;
+        ecs_component_set(w, cam_e, CameraFollow, f);
+        s->dive_cam = false;
+      }
       if (zoomed) {
         controls.move = (v2){0};
         controls.jump = false;
       }
       // the figure would stand between the camera and the board
       {
-        b32 show_me = !(s->zoom.active && s->zoom.t > 0.25f);
+        b32 show_me = !(s->zoom.active && s->zoom.t > 0.25f) && !s->dive.on;
         for (u32 k = 0; k < FIG_PART_COUNT; k++) {
           const EcsVisibility *v = ecs_component_get(w, me->part[k], EcsVisibility);
           if (v && v->visible != show_me) {
@@ -889,7 +956,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       // and sinks back once the view is free (a ray from the head to the camera, checked a step lower)
       const CameraRigState *rs = ecs_resource_get(w, CameraRigState);
       const EcsPhysicsWorld *pw = ecs_resource_get(w, EcsPhysicsWorld);
-      if (follow && !s->zoom.active && !s->vox.cam_on) {
+      if (follow && !s->zoom.active && !s->vox.cam_on && !s->dive.on) {
         CameraFollow f = *follow;
         f32 base = f.pitch - s->cam_lift;
         f32 lift = s->cam_lift;
@@ -930,13 +997,16 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       // inside a room the sun is only a soft remainder: the warm ceiling lights light it
       IndoorLight *il = ecs_resource_get_mut(w, IndoorLight);
-      f32 want_sun = s->world.area >= 0 ? 0.04f : 1.0f;
+      f32 want_sun = s->dive.on ? 0.3f * (1.0f - dive_depth(&s->dive)) + 0.03f : s->world.area >= 0 ? 0.04f : 1.0f;
       il->sun_scale += (want_sun - il->sun_scale) * m_minf(1.0f, dt * 6.0f);
+      il->water = s->dive.on ? 1.0f : 0.0f;
+      il->depth = s->dive.on ? dive_depth(&s->dive) : 0.0f;
       // draw only the village outside, only this room inside
-      if (s->world.area != s->shown_area) {
-        s->shown_area = s->world.area;
+      i32 shown = s->dive.on ? 100 : s->world.area; // diving: the cave alone
+      if (shown != s->shown_area) {
+        s->shown_area = shown;
         for (u32 g = 0; g < TOWN_GROUPS; g++) {
-          b32 on = s->world.area < 0 ? g == 0 : g == (u32)(s->world.area + 1);
+          b32 on = shown == 100 ? g == CAVE_GROUP : shown < 0 ? g == 0 : g == (u32)(shown + 1);
           for (u32 i = 0; i < s->groups.count[g]; i++) {
             const EcsVisibility *v = ecs_component_get(w, s->groups.ents[g][i], EcsVisibility);
             if (v && v->visible != on) {
@@ -1025,14 +1095,16 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       g_ui_night = m_smoothstepf(0.35f, 0.65f, s->life.night); // dusk to dark over the game's evening
       b32 cards_screen = s->cards.in_battle || s->cards.ui.deck_open;
       if (!cards_screen && s->scr.kind == SCREEN_NONE) { // a screen (TV, PC) has the whole view
-        hud_draw(&s->touch);
-        b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
-        world_draw(&s->world, s->touch.last_active, busy_ui);
+        if (!s->dive.on) { // diving: only the studs and the messages
+          hud_draw(&s->touch);
+          b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
+          world_draw(&s->world, s->touch.last_active, busy_ui);
+        }
         life_draw(&s->life);
       }
-      if (!cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && s->world.area < 0 && !s->zoom.active)
+      if (!cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && s->world.area < 0 && !s->zoom.active && !s->dive.on)
         cg_quest_draw(&s->cards, &s->save.data);
-      if (!cards_screen && !s->zoom.active) {
+      if (!cards_screen && !s->zoom.active && !s->dive.on) {
         const WorldTransform *mp = ecs_component_get(w, s->sim.player, WorldTransform);
         u32 gold = 0;
         for (u32 k = 0; k < GOLDEN_COUNT; k++)
@@ -1040,7 +1112,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         if (mp)
           cg_markers_draw(&s->save.data, &s->figs, w, cam, mp->position, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->mom_talked, s->kid_talked, gold);
       }
-      if (!cards_screen)
+      if (!cards_screen && !s->dive.on)
         vox_draw(&s->vox, input, cam, ui_w, ui_h, m_maxf(memory->dpr, 0.5f), s->world.area < 0 && !s->dlg.open);
       cg_draw(&s->cards, &s->save.data, input, ui_w, ui_h, (f32)memory->canvas_width / m_maxf(ui_w, 1.0f), !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE);
       {
@@ -1048,15 +1120,16 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         for (u32 k = 0; k < GOLDEN_COUNT; k++)
           gold_n += (s->save.data.golden_mask >> k) & 1u;
         settings_draw(&s->set, &s->cards.ui, &s->save.data, input, ui_w, s->touch.last_active,
-                      !cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !cg_busy(&s->cards), gold_n,
+                      !cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !cg_busy(&s->cards) && !s->dive.on, gold_n,
                       GOLDEN_COUNT);
       }
+      dive_draw(&s->dive, &s->save.data, input, s->touch.last_active, ui_w, ui_h);
       dialog_draw(&s->dlg, input, s->touch.last_active, ui_w);
       screens_draw(&s->scr, input, &s->save.data, cam, ui_w, ui_h, s->zoom.active ? s->zoom.t : 0.0f,
                    s->scr.voiced && audio_voice_playing(&s->audio, s->scr.voice));
       debug_draw(&s->dbg);
       touch_controls_draw_stick(&s->touch);
-      if (s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE) { // at a TV or computer, in a fight: their own buttons only
+      if (s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && !s->dive.on) { // at a TV or computer, in a fight, diving: no
         touch_controls_draw_jump_button(&s->touch);
         touch_controls_draw_button(&s->touch, 0);
       }

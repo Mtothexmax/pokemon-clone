@@ -44,7 +44,7 @@ typedef struct TownRect {
 #define TOWN_MAX_RECTS 1024
 // draw groups: 0 the village, 1 + RoomId each room. Only the group you are in is drawn (from inside a room you would see
 // the other rooms, they lie side by side east of the village)
-#define TOWN_GROUPS 5
+#define TOWN_GROUPS 6 // the village, the four rooms, the pond cave (st_cave.c)
 #define TOWN_GROUP_MAX 512
 
 // a named thing for the debug picker: a circle (studs) around x, z
@@ -658,6 +658,7 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 // ---------------------------------------------------------------- the village
 
 #include "st_rooms.c"
+#include "st_cave.c"
 
 // main lane, once: the whole village into one slot; the parts become static renderer entities
 hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, TownRect *out_blocks, u32 *out_count, u32 cap,
@@ -956,6 +957,7 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
 
   // ---- the rooms, far east of the village (st_rooms.c) ----
   rooms_build(t);
+  cave_build(t); // the flooded cave under the pond, far east too (st_cave.c)
   town_group_switch(t, 0);
 
   // ---- the wild LEGO plants wherever there is room (the garden inside its fence stays as it is) ----

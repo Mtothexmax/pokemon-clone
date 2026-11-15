@@ -537,8 +537,14 @@ hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in,
 // the current goal (the three.js quest line), top left
 hz_internal void cg_quest_draw(CardGame *cg, const GameSave *s) {
   CString text;
-  if (!s->has_deck)
+  if (!s->has_deck && !s->quest_part)
     text = "Visit Prof. Quill in her lab (south-east)";
+  else if (!s->has_deck && !s->has_part && !s->has_suit)
+    text = "Find Prof. Quill's old diving suit somewhere in the lab";
+  else if (!s->has_deck && !s->has_part)
+    text = "Dive into the pond and find the Stud Core, deep in the cave";
+  else if (!s->has_deck)
+    text = "Bring the Stud Core to Prof. Quill";
   else if (!s->rival_wins)
     text = "Beat Dex \xe2\x80\x94 he waits at his big house (east)";
   else if (!s->voxelmon) {
@@ -580,7 +586,7 @@ hz_internal void cg_markers_draw(const GameSave *s, const MinifigSet *figs, EcsW
   mark[3] = s->voxelmon > 0 && !s->gate_open;
   mark[4] = !s->has_deck && !mom_talked;
   mark[5] = s->has_deck && !s->wins;
-  mark[6] = !s->has_deck;
+  mark[6] = !s->has_deck && (!s->quest_part || s->has_part); // Prof. Quill: the start, and the Stud Core
   v3 fwd = camera_forward(cam);
   for (u32 i = 1; i < figs->count && i < 7; i++) {
     const WorldTransform *wt = ecs_component_get(w, figs->figs[i].root, WorldTransform);

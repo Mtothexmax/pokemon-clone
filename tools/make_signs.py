@@ -37,6 +37,9 @@ BOARDS = {
     'room_dex': (5.0, 1.25, '#7b2fbe', '#f2cd37', 'DEX IS #1', [], None),
     'room_lab': (7.0, 1.75, '#f4f4f4', '#0055bf', 'QUILL LAB', [], None),
     'room_stairs': (2.6, 0.65, '#f2cd37', '#1b2a34', 'MY ROOM \u25b2', [], None),
+    # the Deck-o-Matic's screen in the lab (st_dive.c shows one or the other)
+    'machine_missing': (2.2, 1.4, '#140404', '#ff4a3a', 'MISSING PART', ['INSERT STUD CORE'], None),
+    'machine_ready': (2.2, 1.4, '#03140a', '#4dff8a', 'READY', ['DECKS PRINTED: 1'], None),
 }
 
 
@@ -197,6 +200,8 @@ def defs(W, H):
   <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf1"/></linearGradient>
   <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
   <filter id="soft" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="{H * 0.012:.1f}" stdDeviation="{H * 0.01:.1f}" flood-opacity="0.35"/></filter>
+  <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="2" fill="#ffffff" fill-opacity="0.05"/></pattern>
+  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="{H * 0.02:.1f}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 </defs>'''
 
 
@@ -214,6 +219,22 @@ def board_svg(name, w, h, bg, fg, title, lines, note):
     W, H = int(w * PX), int(h * PX)
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">', defs(W, H)]
     m = H * 0.06  # frame width
+    if name.startswith('machine_'):  # a glowing screen: scanlines, a warning sign or a tick, big lit letters
+        cx, cy, s0 = W / 2, H * 0.3, H * 0.17
+        o.append(f'<rect width="{W}" height="{H}" fill="{bg}"/><rect width="{W}" height="{H}" fill="url(#scan)"/>')
+        if name == 'machine_missing':
+            o.append(f'<path d="M{cx:.1f} {cy - s0:.1f} L{cx + s0 * 1.15:.1f} {cy + s0 * 0.85:.1f} L{cx - s0 * 1.15:.1f} {cy + s0 * 0.85:.1f} Z" '
+                     f'fill="none" stroke="{fg}" stroke-width="{H * 0.025:.1f}" stroke-linejoin="round" filter="url(#glow)"/>')
+            o.append(text(cx, cy + s0 * 0.3, '!', TITLE[0], s0 * 1.0, fg, extra='filter="url(#glow)"'))
+        else:
+            o.append(f'<path d="M{cx - s0 * 0.75:.1f} {cy:.1f} L{cx - s0 * 0.15:.1f} {cy + s0 * 0.6:.1f} L{cx + s0 * 0.85:.1f} {cy - s0 * 0.55:.1f}" '
+                     f'fill="none" stroke="{fg}" stroke-width="{H * 0.05:.1f}" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>')
+        ts = fit(title, TITLE[1], H * 0.2, W * 0.86)
+        o.append(text(cx, H * 0.64, title, TITLE[0], ts, fg, extra='filter="url(#glow)"'))
+        bs = fit(lines[0], BODY[1], H * 0.09, W * 0.8)
+        o.append(text(cx, H * 0.83, lines[0], "Consolas, monospace", bs, fg, extra='fill-opacity="0.8"'))
+        o.append('</svg>')
+        return '\n'.join(o), W, H
     if name in ('garden', 'route'):  # wood: a frame of planks around a painted panel
         o.append(f'<rect width="{W}" height="{H}" fill="url(#wood)"/>' + wood_grain(0, 0, W, H, '#2e1a0b', 9))
         panel = '#e9d4a2' if name == 'garden' else '#ffd23f'

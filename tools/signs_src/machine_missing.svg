@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="352" height="224" viewBox="0 0 352 224">
+<defs>
+  <radialGradient id="screw" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#ffffff"/><stop offset="0.5" stop-color="#c3c9d1"/><stop offset="1" stop-color="#7d8692"/></radialGradient>
+  <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8692f"/><stop offset="1" stop-color="#7a4520"/></linearGradient>
+  <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf1"/></linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+  <filter id="soft" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="2.7" stdDeviation="2.2" flood-opacity="0.35"/></filter>
+  <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="2" fill="#ffffff" fill-opacity="0.05"/></pattern>
+  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect width="352" height="224" fill="#140404"/><rect width="352" height="224" fill="url(#scan)"/>
+<path d="M176.0 29.1 L219.8 99.6 L132.2 99.6 Z" fill="none" stroke="#ff4a3a" stroke-width="5.6" stroke-linejoin="round" filter="url(#glow)"/>
+<text x="176.0" y="78.6" font-family="'Segoe UI Black', 'Arial Black', sans-serif" font-size="38.1" font-weight="700" fill="#ff4a3a" text-anchor="middle" dominant-baseline="central" filter="url(#glow)">!</text>
+<text x="176.0" y="143.4" font-family="'Segoe UI Black', 'Arial Black', sans-serif" font-size="41.8" font-weight="700" fill="#ff4a3a" text-anchor="middle" dominant-baseline="central" filter="url(#glow)">MISSING PART</text>
+<text x="176.0" y="185.9" font-family="Consolas, monospace" font-size="20.2" font-weight="700" fill="#ff4a3a" text-anchor="middle" dominant-baseline="central" fill-opacity="0.8">INSERT STUD CORE</text>
+</svg>

@@ -5,6 +5,8 @@
   <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf1"/></linearGradient>
   <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
   <filter id="soft" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="3.6" stdDeviation="3.0" flood-opacity="0.35"/></filter>
+  <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="2" fill="#ffffff" fill-opacity="0.05"/></pattern>
+  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 </defs>
 <rect width="832" height="304" fill="#1e5aa8"/>
 <rect x="18.24" y="18.24" width="795.52" height="267.52" rx="15.200000000000001" fill="url(#enamel)"/>

@@ -34,6 +34,12 @@ typedef struct GameSave {
   u8 voices_off, music_off;
   u8 auto_step;  // the step Auto reached + 1 (0: not chosen yet)
   u8 touch_mode; // phones: 0 Swipe (the default), 1 D-pad (the stick)
+  // ---- the first deck's quest and the pond cave (appended) ----
+  u8 quest_part; // Prof. Quill told you the Deck-o-Matic misses its Stud Core
+  u8 has_suit;   // you took her old diving suit (in a corner of the lab)
+  u8 has_part;   // you found the Stud Core deep in the pond cave
+  u8 _quest_pad;
+  u32 dive_found; // the pearls found in the cave (a bit each)
 } GameSave;
 
 typedef struct SaveState {
@@ -43,6 +49,7 @@ typedef struct SaveState {
   f32 write_wait; // seconds until a dirty save is written (coalesces bursts)
   OsStoreOp *op;
   b32 op_is_read;
+  b32 no_write; // dev builds (F3): a trial of the first quest that is never written
 } SaveState;
 
 hz_internal void save_begin(SaveState *s) {
@@ -78,7 +85,7 @@ hz_internal void save_update(SaveState *s, f32 dt) {
     os_store_release(s->op);
     s->op = NULL;
   }
-  if (!s->loaded || !s->dirty)
+  if (!s->loaded || !s->dirty || s->no_write)
     return;
   s->write_wait -= dt;
   if (s->write_wait > 0.0f)
