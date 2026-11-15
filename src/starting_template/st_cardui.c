@@ -767,6 +767,32 @@ hz_internal void cu_brick_icon(f32 sz, HzUIColor c) {
   }
 }
 
+// a player's portrait (Marvel Snap): the opponent's at the top, yours at the bottom. Whoever reveals first this turn
+// (whoever wins more locations; a tie: a coin) is lit: a pulsing gold ring and a "1st" badge; the other one is dimmed
+hz_internal void cu_portrait(CardUi *ui, HzUIElementId id, CString label, f32 label_size, u32 bg, f32 sz, b32 first, b32 show) {
+  HzUIColor white = {255, 255, 255, 255}, none = {0};
+  f32 pulse = 0.5f + 0.5f * m_sinf(ui->time * 5.0f);
+  HzUIColor ring = first && show ? cu_rgb(0xffd23d) : cu_rgba(0xffffff, 0.45f);
+  ui_element({.id = id,
+              .layout = {.sizing = {.width = ui_sizing_fixed(sz), .height = ui_sizing_fixed(sz)}, .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+              .background_color = first || !show ? cu_rgb(bg) : cu_rgb((bg >> 1) & 0x7f7f7f), // the other one: half as bright
+              .border = {.color = ring, .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
+              .corner_radius = ui_corner_radius(sz * 0.28f),
+              .shadow = {.color = first && show ? cu_rgba(0xffd23d, 0.55f + 0.4f * pulse) : none, .blur = 10.0f + 8.0f * pulse, .spread = 2.0f + 2.0f * pulse}}) {
+    cu_textb(label, label_size, first || !show ? white : cu_rgba(0xffffff, 0.6f), 800, false, none);
+    if (first && show) {
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 36, .offset = {8.0f, -4.0f}, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                               .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP}},
+                  .layout = {.padding = {.left = 4, .right = 4, .top = 1, .bottom = 1}},
+                  .background_color = cu_rgb(0xffd23d),
+                  .border = {.color = white, .width = {.left = 1, .right = 1, .top = 1, .bottom = 1}},
+                  .corner_radius = ui_corner_radius(7)}) {
+        cu_textb("1st", 10, cu_rgb(0x2a1a00), 900, false, none);
+      }
+    }
+  }
+}
+
 hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const GameSave *s, f32 sw, f32 sh) {
   HzUIColor white = {255, 255, 255, 255}, none = {0};
   ui->sbuf_n = 0;
@@ -850,14 +876,11 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
                            .padding = {.left = (u16)((phone ? 6 : 10) + safe.left), .right = (u16)((phone ? 6 : 10) + safe.right), .top = (u16)(6 + safe.top), .bottom = 6},
                            .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_fixed(top_h)}, .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
                 .background_color = cu_black(0.3f)}) {
-      ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(36), .height = ui_sizing_fixed(36)}, .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
-                  .background_color = cu_rgb(0x7b2fbe),
-                  .border = {.color = cu_rgba(0xffffff, 0.6f), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
-                  .corner_radius = ui_corner_radius(10)}) {
+      {
         char *ini = (char *)cu_fmt_slot(ui);
         ini[0] = b->kind == BATTLE_WILD ? '?' : b->opponent[0];
         ini[1] = 0;
-        cu_textb(ini, 18, white, 800, false, none);
+        cu_portrait(ui, ui_id("FoePortrait"), ini, 18, 0x7b2fbe, 38.0f, b->first == B_SIDE_AI, b->phase != PHASE_OVER);
       }
       ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 1, .sizing = {.width = ui_sizing_fit(0.0f, phone ? 64.0f : 400.0f)}},
                   .clip = {.horizontal = true}}) {
@@ -881,18 +904,6 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
         cu_textb("T", 14, white, 500, false, none);
         cu_textb(cu_numstr(b->turn, false), 19, white, 800, false, none);
         cu_textb(CU_FMT(ui, "/%", fmt_i32(b->max_turns)), 14, white, 500, false, none);
-      }
-      // who reveals first this turn (whoever wins more zones; a tie: a coin): your blue, their purple
-      if (b->phase != PHASE_OVER) {
-        b32 me_first = b->first == B_SIDE_P;
-        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 4, .padding = {.left = 8, .right = 9, .top = 3, .bottom = 3},
-                               .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
-                    .background_color = me_first ? cu_rgb(0x1f6fd1) : cu_rgb(0x7b2fbe),
-                    .border = {.color = cu_rgba(0xffffff, 0.5f), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
-                    .corner_radius = ui_corner_radius(14)}) {
-          cu_textb(me_first ? "You" : (b->kind == BATTLE_WILD ? "Wild" : b->opponent), phone ? 12 : 14, white, 800, false, none);
-          cu_textb(phone ? "1st" : me_first ? "reveal 1st" : "reveals 1st", phone ? 10 : 12, cu_rgba(0xffffff, 0.85f), 700, false, none);
-        }
       }
       ui_element({.layout = {.sizing = {.width = ui_sizing_grow(0)}}}) {}
       if (cu_btn(ui_id("BtnLog"), "Log", BTN_GHOST, true, in, phone ? 12 : 14, ui_sizing_fit(0, 999), ui_sizing_fit(0, 999), false, ui->time) && !modal)
@@ -1022,7 +1033,8 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
 
     // ---- the hand row: the energy orb with the deck pile, the hand, Undo / End Turn ----
     f32 orb = phone ? 54.0f : rowh;
-    f32 ctrl_w = phone ? sw - orb - 40.0f - safe.left - safe.right : 150.0f;
+    f32 me_sz = phone ? 40.0f : 46.0f;
+    f32 ctrl_w = phone ? sw - orb - me_sz - 50.0f - safe.left - safe.right : 150.0f;
     f32 hand_w = (phone ? sw - 20.0f : sw - orb - ctrl_w - 20.0f - 20.0f) - safe.left - safe.right;
     i32 hn = b->hand_n[B_SIDE_P];
     f32 hgap = hn < 2 ? 6.0f : m_minf(6.0f, (hand_w - (f32)hn * hw) / (f32)(hn - 1));
@@ -1076,8 +1088,13 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
                ui_sizing_grow(0), phone ? ui_sizing_grow(0) : ui_sizing_fixed(orb * 0.62f), no_moves, ui->time) && !modal)                         \
       ui->click_end = true;                                                                                                                           \
   }
-      if (!phone)
+      if (!phone) {
+        ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 35, .offset = {10.0f + safe.left, -8.0f},
+                                 .attach_points = {.element = UI_ATTACH_POINT_LEFT_BOTTOM, .parent = UI_ATTACH_POINT_LEFT_TOP}}}) {
+          cu_portrait(ui, ui_id("MePortrait"), "You", 15, 0x1f6fd1, me_sz, b->first == B_SIDE_P, b->phase != PHASE_OVER);
+        }
         CU_ORB();
+      }
       // the hand: the cards overlap when there is not enough room
       ui_element({.id = ui_id("Hand"),
                   .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .sizing = {.width = ui_sizing_fixed(hand_w), .height = ui_sizing_fixed(rowh)},
@@ -1136,6 +1153,7 @@ hz_internal void battle_draw(CardUi *ui, Battle *b, const InputSystem *in, const
       }
       if (phone) {
         ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 10, .sizing = {.width = ui_sizing_grow(0)}, .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
+          cu_portrait(ui, ui_id("MePortrait"), "You", 13, 0x1f6fd1, me_sz, b->first == B_SIDE_P, b->phase != PHASE_OVER);
           CU_ORB();
           CU_CONTROLS(UI_LEFT_TO_RIGHT);
         }
