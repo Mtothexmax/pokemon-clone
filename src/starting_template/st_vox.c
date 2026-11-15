@@ -336,7 +336,7 @@ hz_internal void vox_start(Vox *v, v3 player, f32 heading, CardGame *cg, EcsWorl
     sound_play(v->l->snd, SND_ALERT, 1.0f, 0.7f);
     LIFE_TOAST(v->l, "A wild % jumped out of the grass!", fmt_cstr(card_def(id).name));
   }
-  cg_music(cg, w, audio, MUSIC_FIGHT);
+  cg_music(cg, w, audio, MUSIC_WILD); // its own tune, not the card battle's
 }
 
 hz_internal void vox_end(Vox *v, i32 result) {

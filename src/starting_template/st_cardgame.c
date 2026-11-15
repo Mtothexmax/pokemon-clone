@@ -2,7 +2,7 @@
 // taunts, what a battle earns (studs, EXP, cards), the reward screen, the deck menu (C) and the legendary card for
 // all golden studs. Included by starting_template.c above app_init, after st_life.c.
 
-typedef enum MusicTrack { MUSIC_NONE, MUSIC_HOME, MUSIC_INTRO, MUSIC_FIGHT, MUSIC_VICTORY, MUSIC_DEFEAT } MusicTrack;
+typedef enum MusicTrack { MUSIC_NONE, MUSIC_HOME, MUSIC_INTRO, MUSIC_FIGHT, MUSIC_VICTORY, MUSIC_DEFEAT, MUSIC_WILD } MusicTrack;
 
 typedef struct CardGame {
   CardUi ui;
@@ -30,14 +30,15 @@ hz_internal void cg_music(CardGame *cg, EcsWorld *w, AudioSystem *audio, MusicTr
   if (cg->track == t)
     return;
   CString path[] = {NULL, "brickhollow/music/home.hzt", "brickhollow/music/battle-intro.hzt", "brickhollow/music/fight.hzt",
-                    "brickhollow/music/victory.hzt", "brickhollow/music/defeat.hzt"};
+                    "brickhollow/music/victory.hzt", "brickhollow/music/defeat.hzt",
+                    "brickhollow/music/wild.hzt"}; // wild: a Voxelmon fight in the tall grass (st_vox.c)
   // as quiet as in the three.js version (VOL 0.15): the voices (0.95) must stay clear above the music
-  f32 vol[] = {0.0f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f};
+  f32 vol[] = {0.0f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f};
   clip_stop(&cg->music, 0.4f);
   cg->track = t;
   cg->track_t = 0.0f;
   if (t != MUSIC_NONE)
-    clip_play(w, path[t], &(EcsAudioPlayDesc){.volume = vol[t], .loop = t == MUSIC_HOME || t == MUSIC_FIGHT, .bus = AUDIO_BUS_MUSIC},
+    clip_play(w, path[t], &(EcsAudioPlayDesc){.volume = vol[t], .loop = t == MUSIC_HOME || t == MUSIC_FIGHT || t == MUSIC_WILD, .bus = AUDIO_BUS_MUSIC},
               &cg->music);
 }
 
