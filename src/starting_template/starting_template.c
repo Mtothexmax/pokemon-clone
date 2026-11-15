@@ -814,11 +814,15 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       v3 pip_studs = s->life.pip_p;
       const Target *t = busy ? NULL
                              : world_pick(&s->world, pwt->position, use, input->buttons[KEY_ESCAPE].pressed_this_frame, pip_studs,
-                                          s->life.chest_live && !s->life.chest_open, s->life.chest_p);
+                                          life_pip_hidden(&s->life), s->life.chest_live && !s->life.chest_open, s->life.chest_p);
       if (t) {
         u32 weather = s->life.rain > 0.5f ? 2u : s->life.night > 0.5f ? 1u : 0u;
         switch (t->kind) {
         case T_TALK: {
+          if (t->arg == DLG_PIP && life_pip_hidden(&s->life)) { // hide and seek: found him, no chat
+            life_pip_found(&s->life);
+            break;
+          }
           // turn to whom you talk to: the villager nearest to you (they may have walked), else the target's spot
           v2 at = {t->x * TOWN_STUD, t->z * TOWN_STUD};
           f32 best = 6.0f * TOWN_STUD;

@@ -244,7 +244,7 @@ hz_internal void world_doors(WorldState *ws, v3 pos_m, PlayerControls *controls,
 
 // main lane: what is in reach (the static targets, Pip and the chest); returns the target the player triggered with
 // `press` (E / the touch button), else NULL. A sign opens and closes its text here; walking away closes it.
-hz_internal const Target *world_pick(WorldState *ws, v3 pos_m, b32 press, b32 cancel, v3 pip, b32 chest, v3 chest_p) {
+hz_internal const Target *world_pick(WorldState *ws, v3 pos_m, b32 press, b32 cancel, v3 pip, b32 pip_hidden, b32 chest, v3 chest_p) {
   v3 p = v3_scale(pos_m, 1.0f / TOWN_STUD);
   Target best_t = {0};
   f32 best = 1e9f;
@@ -254,7 +254,8 @@ hz_internal const Target *world_pick(WorldState *ws, v3 pos_m, b32 press, b32 ca
     if (i < STATIC_TARGETS)
       t = world_target(i);
     else if (i == STATIC_TARGETS)
-      t = (Target){T_TALK, pip.x, pip.z, "Talk to", "Pip", DLG_PIP};
+      t = pip_hidden ? (Target){T_TALK, pip.x, pip.z, "Found you,", "Pip!", DLG_PIP} // hide and seek: E finds him
+                     : (Target){T_TALK, pip.x, pip.z, "Talk to", "Pip", DLG_PIP};
     else if (chest)
       t = (Target){T_CHEST, chest_p.x, chest_p.z, "Open", "the treasure chest", 0};
     else

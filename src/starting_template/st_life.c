@@ -856,6 +856,20 @@ hz_internal f32 pip_move(Life *l, v2 to, f32 speed, f32 dt) {
   return len;
 }
 
+// hide and seek: you found Pip (walked up to him, or pressed E at him)
+hz_internal void life_pip_found(Life *l) {
+  l->pip_mode = PIP_WAVE;
+  l->save->data.seek_wins++;
+  l->save->data.seek_played++;
+  l->save->data.studs += 5;
+  save_mark(l->save);
+  sound_play(l->snd, SND_FANFARE, 1.0f, 0.7f);
+  life_toast(l, "You found Pip! +5 studs");
+}
+
+// hiding and the countdown is over: E at him finds him (not his chat)
+hz_internal b32 life_pip_hidden(const Life *l) { return l->pip_mode == PIP_HIDING && l->seek_count <= 0.0f; }
+
 hz_internal void life_hide_seek_start(Life *l) {
   l->seek_count = 3.0f;
   l->fade = true;
@@ -913,13 +927,7 @@ hz_internal void life_pip(Life *l, v3 p, f32 dt, b32 outside, b32 sprinting) {
     l->seek_left -= dt;
     l->hint_t -= dt;
     if (dp < 3.2f) {
-      l->pip_mode = PIP_WAVE;
-      l->save->data.seek_wins++;
-      l->save->data.seek_played++;
-      l->save->data.studs += 5;
-      save_mark(l->save);
-      sound_play(l->snd, SND_FANFARE, 1.0f, 0.7f);
-      life_toast(l, "You found Pip! +5 studs");
+      life_pip_found(l);
     } else if (l->seek_left <= -3.0f) {
       l->pip_mode = PIP_WAVE;
       l->save->data.seek_played++;
