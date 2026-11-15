@@ -1180,7 +1180,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       }
       if (!cards_screen && !s->dlg.open && s->scr.kind == SCREEN_NONE && s->vox.phase == VOX_NONE && s->world.area < 0 && !s->zoom.active && !s->dive.on)
         cg_quest_draw(&s->cards, &s->save.data);
-      if (!cards_screen && !s->zoom.active && !s->dive.on) {
+      if (!cards_screen && !s->zoom.active && !s->dive.on && s->scr.kind == SCREEN_NONE) { // at the piano, TV, a PC: no markers
         const WorldTransform *mp = ecs_component_get(w, s->sim.player, WorldTransform);
         u32 gold = 0;
         for (u32 k = 0; k < GOLDEN_COUNT; k++)

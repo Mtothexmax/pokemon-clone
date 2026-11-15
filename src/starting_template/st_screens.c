@@ -1286,24 +1286,41 @@ hz_internal void screens_draw(Screens *sc, const InputSystem *in, const GameSave
     return;
   HzUIColor white = {255, 255, 255, 255};
   if (sc->kind == SCREEN_PIANO) {
+    // the keyboard is 536 px wide: on a narrow screen (a phone upright) every key shrinks to fit
+    f32 u = m_minf(1.0f, (sw - 24.0f - 24.0f) / 536.0f);
+    b32 narrow = sw <= 640.0f;
     ui_element({.id = ui_id("ScreenDim"),
-                .floating = {.attach_to = UI_ATTACH_TO_ROOT},
+                .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 10}, // above the "!" markers and the HUD
                 .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)},
                            .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
                 .background_color = cu_black(0.55f)}) {
-      ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 12, .padding = ui_padding_all(20),
+      ui_element({.layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 12, .padding = ui_padding_all(narrow ? 12 : 20),
                              .child_alignment = {.x = UI_ALIGN_X_CENTER}},
                   .gradient = cu_lin2(180.0f, cu_rgb(0x2b2622), cu_rgb(0x15120f)),
                   .corner_radius = ui_corner_radius(16),
                   .shadow = {.color = cu_black(0.5f), .offset_y = 10.0f, .blur = 30.0f}}) {
+        // an x in the corner to stop (a phone has no E or Esc)
+        ui_element({.id = ui_id("PianoClose"),
+                    .floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 11, .offset = {-10.0f, 10.0f},
+                                 .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP}},
+                    .layout = {.sizing = {.width = ui_sizing_fixed(40), .height = ui_sizing_fixed(40)},
+                               .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                    .background_color = cu_rgb(0x4a423b),
+                    .corner_radius = ui_corner_radius(20),
+                    .border = {.color = cu_rgba(0xffffff, 0.35f), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
+                    .brightness = ui_hovered() ? opt_some(f32, 1.3f) : opt_none(f32)}) {
+          if (ui_hovered() && in->buttons[MOUSE_LEFT].pressed_this_frame)
+            sc->click_close = true;
+          scr_textw("\xc3\x97", 26, white, 700, false);
+        }
         scr_textw("Lumi's piano", 26, white, 700, false);
         // black keys row, then white keys row (a simple two-row keyboard)
-        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 6, .padding = {.left = 30}}}) {
+        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = (u16)(6.0f * u), .padding = {.left = (u16)(30.0f * u)}}}) {
           i32 gaps[PIANO_KEYS - PIANO_WHITE] = {0, 0, 1, 0, 0, 1, 0}; // a gap after E and B
           for (i32 b = 0; b < PIANO_KEYS - PIANO_WHITE; b++) {
             i32 k = PIANO_WHITE + b;
             ui_element({.id = ui_idi("PianoBlack", (u32)b),
-                        .layout = {.sizing = {.width = ui_sizing_fixed(46), .height = ui_sizing_fixed(110)}},
+                        .layout = {.sizing = {.width = ui_sizing_fixed(46.0f * u), .height = ui_sizing_fixed(110.0f * u)}},
                         .gradient = sc->key_lit[k] > 0.0f ? cu_lin2(180.0f, cu_rgb(0x3d9bff), cu_rgb(0x0055bf)) : cu_lin2(180.0f, cu_rgb(0x3a3a40), cu_rgb(0x0c0c0e)),
                         .corner_radius = ui_corner_radius(5),
                         .shadow = {.color = cu_black(0.5f), .offset_y = 3.0f, .blur = 4.0f}}) {
@@ -1311,14 +1328,14 @@ hz_internal void screens_draw(Screens *sc, const InputSystem *in, const GameSave
                 sc->click_key = k;
             }
             if (gaps[b])
-              ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(52)}}}) {}
+              ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(52.0f * u)}}}) {}
           }
         }
-        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 4}}) {
+        ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = (u16)(4.0f * u)}}) {
           CString labels[PIANO_WHITE] = {"A", "S", "D", "F", "G", "H", "J", "K", "L"};
           for (i32 k = 0; k < PIANO_WHITE; k++) {
             ui_element({.id = ui_idi("PianoWhite", (u32)k),
-                        .layout = {.sizing = {.width = ui_sizing_fixed(56), .height = ui_sizing_fixed(170)},
+                        .layout = {.sizing = {.width = ui_sizing_fixed(56.0f * u), .height = ui_sizing_fixed(170.0f * u)},
                                    .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_BOTTOM}, .padding = {.bottom = 8}},
                         .gradient = sc->key_lit[k] > 0.0f ? cu_lin2(180.0f, cu_rgb(0xd6ebff), cu_rgb(0x96c8ff)) : cu_lin2(180.0f, cu_rgb(0xffffff), cu_rgb(0xe6e4dc)),
                         .corner_radius = ui_corner_radius(6),
@@ -1329,7 +1346,11 @@ hz_internal void screens_draw(Screens *sc, const InputSystem *in, const GameSave
             }
           }
         }
-        scr_text("Keys A..L (white) and W, T, Y, U, O, P (black), or tap the keys. E / Esc to stop.", 14, (HzUIColor){190, 196, 204, 255}, false);
+        ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(536.0f * u)}, .child_alignment = {.x = UI_ALIGN_X_CENTER}}}) {
+          scr_text(narrow ? "Tap the keys to play. \xc3\x97 to stop."
+                          : "Keys A..L (white) and W, T, Y, U, O, P (black), or tap the keys. E / Esc / \xc3\x97 to stop.",
+                   14, (HzUIColor){190, 196, 204, 255}, true);
+        }
       }
     }
     return;
