@@ -8,7 +8,7 @@ typedef struct CardGame {
   CardUi ui;
   Battle b;
   b32 in_battle;
-  f32 flash;        // the white flash before a battle (seconds left)
+  f32 flash;        // the way into a battle (seconds left of BATTLE_TRANS; cg_transition_draw)
   BattleKind pending_kind;
   MusicTrack track;
   HzHandleT(AudioVoice) music;
@@ -98,10 +98,111 @@ hz_internal void cg_init(CardGame *cg, EcsWorld *w, AudioSystem *audio, u32 seed
 
 hz_internal b32 cg_busy(const CardGame *cg) { return cg->in_battle || cg->flash > 0.0f || cg->ui.deck_open || cg->ui.reward_n > 0; }
 
-// a dialogue chose a battle: the flash and the intro fanfare, then the board
+// ---- the way into a battle (BATTLE_TRANS s): a white flash, rows of LEGO bricks slide in from both sides and cover
+// the town, "YOU vs <opponent>" slams in, the board is set up under the bricks, and they slide on and away ----
+#define BATTLE_TRANS 2.1f
+#define BATTLE_TRANS_BOARD 1.55f // the board starts here (under the cover)
+
+hz_internal f32 cg_ease_back(f32 x) { // overshoots a little, then settles (css ease-out-back)
+  x = m_clampf(x, 0.0f, 1.0f) - 1.0f;
+  return 1.0f + 2.7f * x * x * x + 1.7f * x * x;
+}
+
+hz_internal void cg_transition_draw(const CardGame *cg, const GameSave *s, f32 sw, f32 sh, f32 e) {
+  static const u32 colors[5] = {0xc91a09, 0xf2cd37, 0x0055bf, 0x237841, 0xfe8a18};
+  // the bricks, seen from above: 2 x 4 studs, rows alternately from the left and the right, in and on out again
+  f32 rh = m_maxf(sh / 6.0f, 60.0f), bw = rh * 2.0f;
+  i32 rows = (i32)m_ceilf(sh / rh), cols = (i32)m_ceilf(sw / bw) + 2;
+  for (i32 r = 0; r < rows; r++) {
+    f32 dir = (r & 1) ? 1.0f : -1.0f;
+    f32 pin = cu_ease_out(m_clampf((e - 0.18f - 0.045f * (f32)r) / 0.4f, 0.0f, 1.0f));
+    f32 pout = m_clampf((e - 1.65f - 0.035f * (f32)r) / 0.32f, 0.0f, 1.0f);
+    pout = pout * pout;
+    if (pin <= 0.0f || pout >= 1.0f)
+      continue;
+    f32 x = dir * (1.0f - pin) * (sw + bw) - dir * pout * (sw + bw) - ((r & 1) ? bw * 0.5f : 0.0f);
+    for (i32 c = 0; c < cols; c++) {
+      u32 hash = (u32)(r * 7 + c * 13 + r * c);
+      HzUIColor col = cu_rgb(colors[hash % 5]);
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 80, .offset = {x + (f32)c * bw - bw * 0.5f, (f32)r * rh}},
+                  .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_fixed(bw), .height = ui_sizing_fixed(rh)},
+                             .padding = ui_padding_all((u16)(rh * 0.1f)), .child_gap = (u16)(rh * 0.1f)},
+                  .background_color = col,
+                  .corner_radius = ui_corner_radius(rh * 0.06f),
+                  .border = {.color = cu_mix(col, cu_rgb(0x000000), 0.35f), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
+                  .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {
+        for (i32 sr = 0; sr < 2; sr++)
+          ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)},
+                                 .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}, .child_gap = (u16)(rh * 0.12f)}}) {
+            for (i32 st = 0; st < 4; st++)
+              ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(rh * 0.28f), .height = ui_sizing_fixed(rh * 0.28f)}},
+                          .gradient = cu_lin2(135.0f, cu_mix(col, cu_rgb(0xffffff), 0.35f), cu_mix(col, cu_rgb(0x000000), 0.12f)),
+                          .corner_radius = ui_corner_radius(rh * 0.14f),
+                          .shadow = {.color = cu_black(0.35f), .offset_x = rh * 0.025f, .offset_y = rh * 0.04f, .blur = rh * 0.04f}}) {}
+          }
+      }
+    }
+  }
+  // YOU vs the opponent: two panels slide in, the VS slams down, everything leaves with the bricks
+  f32 pv = cu_ease_out(m_clampf((e - 0.75f) / 0.22f, 0.0f, 1.0f)), out = m_clampf((e - 1.62f) / 0.25f, 0.0f, 1.0f);
+  if (pv > 0.0f && out < 1.0f) {
+    CString opp = cg->pending_kind == BATTLE_RIVAL ? (s->rival_wins ? "DEX \xe2\x98\x85" : "DEX") : "LUMI";
+    f32 bh = m_clampf(sh * 0.2f, 90.0f, 170.0f), fs = bh * 0.38f, y = sh * 0.5f - bh * 0.5f;
+    for (i32 side = 0; side < 2; side++) {
+      f32 dir = side == 0 ? -1.0f : 1.0f;
+      f32 px = side == 0 ? 0.0f : sw * 0.5f;
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 81,
+                               .offset = {px + dir * (1.0f - pv) * sw * 0.6f + dir * out * sw * 0.6f, y + (side ? bh * 0.12f : -bh * 0.12f)}},
+                  .layout = {.sizing = {.width = ui_sizing_fixed(sw * 0.5f), .height = ui_sizing_fixed(bh)},
+                             .child_alignment = {.x = side == 0 ? UI_ALIGN_X_RIGHT : UI_ALIGN_X_LEFT, .y = UI_ALIGN_Y_CENTER},
+                             .padding = {.left = (u16)(bh * 0.55f), .right = (u16)(bh * 0.55f)}},
+                  .gradient = side == 0 ? cu_lin2(90.0f, cu_rgb(0x0b3d91), cu_rgb(0x1e6fe0)) : cu_lin2(90.0f, cu_rgb(0xe0301e), cu_rgb(0x8f1306)),
+                  .shadow = {.color = cu_black(0.45f), .offset_y = 6.0f, .blur = 18.0f},
+                  .transform = cu_tf(0, 0, 1, side == 0 ? -4.0f : -4.0f),
+                  .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {
+        HzUITextConfig c = {.fontSize = fs, .textColor = cu_rgb(0xffffff), .weight = 800};
+        c.shadows[0] = (HzUITextShadow){.color = cu_black(0.5f), .offset_y = fs * 0.06f, .blur = fs * 0.1f};
+        ui_text(ui_str_c(side == 0 ? "YOU" : opp), c);
+      }
+    }
+    // the VS: falls in big, overshoots, settles; a white ring behind it
+    f32 pvs = m_clampf((e - 0.95f) / 0.22f, 0.0f, 1.0f);
+    if (pvs > 0.0f) {
+      f32 sc = 2.6f - 1.6f * cg_ease_back(pvs);
+      f32 d = bh * 1.15f;
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 82, .offset = {sw * 0.5f - d * 0.5f, sh * 0.5f - d * 0.5f}},
+                  .layout = {.sizing = {.width = ui_sizing_fixed(d), .height = ui_sizing_fixed(d)},
+                             .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
+                  .gradient = cu_rad(0.5f, 0.4f, cu_rgb(0xfff3a0), cu_rgb(0xf2a705), 1.0f),
+                  .corner_radius = ui_corner_radius(d * 0.5f),
+                  .border = {.color = cu_rgb(0xffffff), .width = {.left = 5, .right = 5, .top = 5, .bottom = 5}},
+                  .shadow = {.color = cu_black(0.5f), .offset_y = 6.0f, .blur = 20.0f},
+                  .opacity = opt_some(f32, m_minf(1.0f, pvs * 3.0f) * (1.0f - out)),
+                  .transform = cu_tf(0, 0, sc * (1.0f - 0.6f * out), -8.0f + 8.0f * pvs),
+                  .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {
+        HzUITextConfig c = {.fontSize = d * 0.42f, .textColor = cu_rgb(0xc91a09), .weight = 800};
+        c.shadows[0] = (HzUITextShadow){.color = cu_rgb(0xffffff), .offset_y = d * 0.025f, .blur = 0.0f};
+        ui_text(ui_str_c("VS"), c);
+      }
+    }
+  }
+  // the flash: two quick white blinks first, one more when the VS lands
+  f32 fl = 0.0f;
+  if (e < 0.32f)
+    fl = 0.85f * m_maxf(0.0f, m_sinf(e / 0.32f * 2.0f * M_PI));
+  if (e > 1.17f && e < 1.35f)
+    fl = 0.55f * (1.0f - (e - 1.17f) / 0.18f);
+  if (fl > 0.0f)
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 83},
+                .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}},
+                .background_color = cu_rgba(0xffffff, fl),
+                .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {}
+}
+
+// a dialogue chose a battle: the transition and the intro fanfare, then the board
 hz_internal void cg_start_battle(CardGame *cg, BattleKind kind, EcsWorld *w, AudioSystem *audio) {
   cg->pending_kind = kind;
-  cg->flash = 0.75f;
+  cg->flash = BATTLE_TRANS;
   cg_music(cg, w, audio, MUSIC_INTRO);
 }
 
@@ -194,10 +295,17 @@ hz_internal b32 cg_update(CardGame *cg, SaveState *save, Life *life, DialogState
   if (cg->track == MUSIC_INTRO && cg->track_t > 10.8f)
     cg_music(cg, w, audio, cg->in_battle ? MUSIC_FIGHT : MUSIC_HOME);
   if (cg->flash > 0.0f) {
-    cg->flash -= dt;
-    if (cg->flash <= 0.0f)
-      cg_begin_board(cg, s, w, audio);
-    return true;
+    f32 e0 = BATTLE_TRANS - cg->flash;
+    cg->flash = m_maxf(0.0f, cg->flash - dt);
+    f32 e1 = BATTLE_TRANS - cg->flash;
+    if (e0 < 0.2f && e1 >= 0.2f)
+      sound_play(snd, SND_KICK, 0.7f, 0.5f); // the bricks rush in
+    if (e0 < 1.12f && e1 >= 1.12f)
+      sound_play(snd, SND_POP, 0.55f, 0.9f); // the VS lands
+    if (!cg->in_battle && e1 >= BATTLE_TRANS_BOARD)
+      cg_begin_board(cg, s, w, audio); // under the bricks; they slide away from it
+    if (!cg->in_battle)
+      return true;
   }
   // the legendary card for all golden studs
   if (s->legendary && !owns(s, CARD_GOLDBRICK) && !cg_busy(cg) && !dlg->open) {
@@ -320,12 +428,8 @@ hz_internal b32 cg_dialog_action(CardGame *cg, DialogAction act, SaveState *save
 // the UI frame
 hz_internal void cg_draw(CardGame *cg, const GameSave *s, const InputSystem *in, f32 sw, f32 sh, f32 dpr, b32 show_button) {
   cg->ui.dpr = dpr;
-  if (cg->flash > 0.0f) {
-    ui_element({.id = ui_id("BattleFlash"),
-                .floating = {.attach_to = UI_ATTACH_TO_ROOT, .z_index = 80},
-                .layout = {.sizing = {.width = ui_sizing_grow(0), .height = ui_sizing_grow(0)}},
-                .background_color = {255, 255, 255, (f32)(255.0f * m_clampf(1.0f - cg->flash / 0.75f, 0.0f, 1.0f))}}) {}
-  }
+  if (cg->flash > 0.0f)
+    cg_transition_draw(cg, s, sw, sh, BATTLE_TRANS - cg->flash);
   if (cg->in_battle) {
     battle_draw(&cg->ui, &cg->b, in, s, sw, sh);
     if (cg->taunt_t > 0.0f && cg->taunt) {

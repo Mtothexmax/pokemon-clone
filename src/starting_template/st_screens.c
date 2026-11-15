@@ -403,7 +403,7 @@ hz_internal Optional(HzUITransform) scr_tf(f32 tx, f32 ty, f32 sx, f32 sy, f32 r
 
 // a glyph of the art set filling a w x h box at (x, y) of the parent (its viewBox scaled to the box), coloured c
 hz_internal void scr_glyph(CString g, f32 x, f32 y, f32 w, f32 h, HzUIColor c, Optional(HzUITransform) tf) {
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {x, y}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {x, y}},
               .layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h)}},
               .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
               .transform = tf}) {
@@ -438,7 +438,7 @@ hz_internal void scr_layer(ScrCanvas cv, CString g, HzUIColor c, f32 tx, f32 ty,
 
 // a rounded box in viewBox units
 hz_internal void scr_box(ScrCanvas cv, f32 x, f32 y, f32 w, f32 h, f32 r, HzUIColor c, f32 rot) {
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {cv.ox + x * cv.k, cv.oy + y * cv.k}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {cv.ox + x * cv.k, cv.oy + y * cv.k}},
               .layout = {.sizing = {.width = ui_sizing_fixed(w * cv.k), .height = ui_sizing_fixed(h * cv.k)}},
               .background_color = c,
               .corner_radius = ui_corner_radius(r * cv.k),
@@ -448,7 +448,7 @@ hz_internal void scr_box(ScrCanvas cv, f32 x, f32 y, f32 w, f32 h, f32 r, HzUICo
 
 // a full-screen overlay piece over the w x h screen (gradients, scanlines)
 hz_internal void scr_cover(f32 w, f32 h, UIGradient g, const HzUIBackgrounds *bg, HzUIColor c) {
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z},
               .layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h)}},
               .gradient = g,
               .backgrounds = bg,
@@ -514,7 +514,7 @@ hz_internal void tv_static(Screens *sc, f32 w, f32 h, f32 a) {
     for (i32 x = 0; x < cols; x++) {
       seed = seed * 1664525u + 1013904223u;
       f32 v = (f32)(seed >> 24) / 255.0f;
-      ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {(f32)x * cw, (f32)y * ch}},
+      ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {(f32)x * cw, (f32)y * ch}},
                   .layout = {.sizing = {.width = ui_sizing_fixed(cw + 1.0f), .height = ui_sizing_fixed(ch + 1.0f)}},
                   .background_color = cu_rgba(0x101010 + 0x010101 * (u32)(v * 220.0f), a),
                   .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH}) {}
@@ -528,7 +528,7 @@ hz_internal void scr_shape(ScrCanvas cv, f32 x, f32 y, f32 w, f32 h, f32 r, HzUI
   f32 k = cv.k, e = lw * 0.5f;
   u16 b = (u16)m_maxf(lw > 0.0f ? 1.0f : 0.0f, lw * k + 0.5f);
   b32 moved = sx != 1.0f || sy != 1.0f || rot != 0.0f;
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {cv.ox + (x - e) * k, cv.oy + (y - e) * k}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {cv.ox + (x - e) * k, cv.oy + (y - e) * k}},
               .layout = {.sizing = {.width = ui_sizing_fixed((w + lw) * k), .height = ui_sizing_fixed((h + lw) * k)}},
               .background_color = fill,
               .corner_radius = ui_corner_radius((r + e) * k),
@@ -573,7 +573,7 @@ hz_internal void tv_bbn(Screens *sc, ScrCanvas cv, f32 w, f32 h, const GameSave 
   // the desk
   SHAPE(cv, 20, 118, 150, 40, 4, cu_rgb(0xc91a09));
   SHAPE(cv, 20, 118, 150, 8, 3, cu_rgb(0xff5a4a));
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {cv.ox + 20.0f * k, cv.oy + 120.0f * k}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {cv.ox + 20.0f * k, cv.oy + 120.0f * k}},
               .layout = {.sizing = {.width = ui_sizing_fixed(150.0f * k), .height = ui_sizing_fixed(18.0f * k)},
                          .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}}}) {
     scr_textw("BBN", 13.0f * k, cu_rgb(0xffffff), 800, false);
@@ -588,7 +588,7 @@ hz_internal void tv_bbn(Screens *sc, ScrCanvas cv, f32 w, f32 h, const GameSave 
   news[3] = sc->text[1];
   news[4] = "Mom reminds everyone: jackets on Route 1!";
   f32 fs = h / 15.0f, bar_h = fs * 1.45f;
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {0, h - bar_h * 2.1f}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {0, h - bar_h * 2.1f}},
               .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(bar_h * 1.1f)},
                          .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
     ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = (u16)(fs * 0.3f), .padding = {.left = (u16)(fs * 0.5f), .right = (u16)(fs * 0.5f)},
@@ -605,7 +605,7 @@ hz_internal void tv_bbn(Screens *sc, ScrCanvas cv, f32 w, f32 h, const GameSave 
       scr_textw(news[(u32)(t / 5.0f) % 5], fs * 0.8f, cu_rgb(0x0b2550), 700, false);
     }
   }
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {0, h - bar_h}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {0, h - bar_h}},
               .layout = {.sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(bar_h)}},
               .background_color = cu_rgb(0x0b1d3a)}) {
     cstr_format(sc->text[2], 96, "%   \xe2\x98\x85   %   \xe2\x98\x85   ", fmt_cstr(news[0]), fmt_cstr(news[1]));
@@ -615,7 +615,7 @@ hz_internal void tv_bbn(Screens *sc, ScrCanvas cv, f32 w, f32 h, const GameSave 
     f32 tw = td.found ? m_maxf(td.boundingBox.width, 100.0f) : 2000.0f;
     f32 x = w - m_fmodf(t * fs * 3.2f, tw + w);
     ui_element({.id = ui_id("TvTicker"),
-                .floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {x, 0}},
+                .floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {x, 0}},
                 .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .sizing = {.height = ui_sizing_fixed(bar_h)}, .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
       for (i32 i = 2; i <= 4; i++)
         scr_textw(sc->text[i], fs * 0.78f, cu_rgb(0xffd23d), 700, false);
@@ -661,7 +661,7 @@ hz_internal void tv_weather(Screens *sc, ScrCanvas cv, f32 w, f32 h) {
   // the forecast card, top left
   f32 fs = h / 15.0f;
   i32 temp = night ? 12 : rain ? 15 : 21;
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {fs * 0.8f, fs * 0.8f}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {fs * 0.8f, fs * 0.8f}},
               .layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = (u16)(fs * 0.6f), .padding = {.left = (u16)(fs * 0.7f), .right = (u16)(fs * 0.9f), .top = (u16)(fs * 0.4f), .bottom = (u16)(fs * 0.4f)},
                          .child_alignment = {.y = UI_ALIGN_Y_CENTER}},
               .background_color = cu_rgba(0xffffff, 0.86f),
@@ -700,12 +700,12 @@ hz_internal void tv_cartoon(Screens *sc, ScrCanvas cv, f32 w, f32 h) {
   CIRCLE(cv, bx - 7, by - bh * 0.57f, 2, ink);
   CIRCLE(cv, bx + 11, by - bh * 0.57f, 2, ink);
   // his smile: the bottom of a ring
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {cv.ox + (bx - 6.0f) * k, cv.oy + (by - bh * 0.4f - 4.0f) * k}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {cv.ox + (bx - 6.0f) * k, cv.oy + (by - bh * 0.4f - 4.0f) * k}},
               .layout = {.sizing = {.width = ui_sizing_fixed(14.0f * k), .height = ui_sizing_fixed(7.0f * k)}},
               .corner_radius = {.bottom_left = 7.0f * k, .bottom_right = 7.0f * k},
               .border = {.color = ink, .width = {.bottom = (u16)(2.5f * k), .left = (u16)(1.0f * k), .right = (u16)(1.0f * k)}}}) {}
   // Stud, rolling after him
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {cv.ox + 46.5f * k, cv.oy + 124.5f * k}},
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {cv.ox + 46.5f * k, cv.oy + 124.5f * k}},
               .layout = {.sizing = {.width = ui_sizing_fixed(27.0f * k), .height = ui_sizing_fixed(27.0f * k)},
                          .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
               .background_color = cu_rgb(0xffd23d),
@@ -715,7 +715,7 @@ hz_internal void tv_cartoon(Screens *sc, ScrCanvas cv, f32 w, f32 h) {
     ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(12.0f * k), .height = ui_sizing_fixed(4.0f * k)}}, .background_color = cu_rgb(0xa87a00),
                 .corner_radius = ui_corner_radius(2.0f * k)}) {}
   }
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z,
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z,
                            .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
                            .offset = {-(w - (cv.ox + 300.0f * k)), cv.oy + 12.0f * k}}}) {
     HzUITextConfig c = {.fontSize = 15.0f * k, .textColor = red, .weight = 800};
@@ -754,7 +754,7 @@ hz_internal void tv_wild(Screens *sc, ScrCanvas cv, f32 w, f32 h) {
               0.5f, 1.0f);
   }
   scr_vignette(w, h, 0.62f, 0.7f); // the lens
-  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {cv.ox + 16.0f * k, cv.oy + 12.0f * k}}}) {
+  ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {cv.ox + 16.0f * k, cv.oy + 12.0f * k}}}) {
     scr_textw("WILD BRICKS", 12.0f * k, cu_rgba(0xffffff, 0.85f), 800, false);
   }
 }
@@ -773,7 +773,7 @@ hz_internal void tv_draw(Screens *sc, f32 w, f32 h, const GameSave *g, b32 talki
     f32 fs = h / 17.0f;
     f32 pop = m_clampf(sc->line_t / 0.18f, 0.0f, 1.0f);
     b32 top = sc->channel == 0;
-    ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z,
+    ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z,
                              .attach_points = top ? (HzUIFloatingAttachPoints){.element = UI_ATTACH_POINT_CENTER_TOP, .parent = UI_ATTACH_POINT_CENTER_TOP}
                                                   : (HzUIFloatingAttachPoints){.element = UI_ATTACH_POINT_CENTER_BOTTOM, .parent = UI_ATTACH_POINT_CENTER_BOTTOM},
                              .offset = {0, top ? fs * 0.6f : -fs * 0.6f}},
@@ -911,12 +911,12 @@ hz_internal void lab_draw(Screens *sc, const InputSystem *in, f32 w, f32 h) {
             f32 y = 8.0f + (f32)i * 6.4f, a = t * 1.6f + (f32)i * 0.55f;
             f32 x1 = 50.0f + m_sinf(a) * 30.0f, x2 = 50.0f - m_sinf(a) * 30.0f, z = m_cosf(a);
             f32 l = m_minf(x1, x2);
-            ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {ox + l * s, oy + (y - 0.6f) * s}},
+            ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {ox + l * s, oy + (y - 0.6f) * s}},
                         .layout = {.sizing = {.width = ui_sizing_fixed(m_absf(x2 - x1) * s), .height = ui_sizing_fixed(1.2f * s)}},
                         .background_color = cu_rgb(0x1f6f4a)}) {}
             for (i32 e = 0; e < 2; e++) {
               f32 zz = e == 0 ? z : -z, r = (2.4f + zz * 0.9f) * s, cx = (e == 0 ? x1 : x2) * s;
-              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {ox + cx - r, oy + y * s - r}},
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {ox + cx - r, oy + y * s - r}},
                           .layout = {.sizing = {.width = ui_sizing_fixed(r * 2.0f), .height = ui_sizing_fixed(r * 2.0f)}},
                           .background_color = zz > 0.0f ? cu_rgb(0x5dff9d) : cu_rgb(0x2a9d60),
                           .corner_radius = ui_corner_radius(r),
@@ -936,7 +936,7 @@ hz_internal void lab_draw(Screens *sc, const InputSystem *in, f32 w, f32 h) {
           f32 bw = wb.found ? wb.boundingBox.width : 100.0f, bh = wb.found ? wb.boundingBox.height : 40.0f;
           f32 sx = bw / 100.0f, sy = bh / 40.0f;
           for (i32 gy = 1; gy <= 3; gy++)
-            ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {0, (f32)gy * 10.0f * sy}},
+            ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {0, (f32)gy * 10.0f * sy}},
                         .layout = {.sizing = {.width = ui_sizing_fixed(bw), .height = ui_sizing_fixed(1.0f)}},
                         .background_color = cu_rgb(0x14402c)}) {}
           f32 px = 0, py = 0;
@@ -947,7 +947,7 @@ hz_internal void lab_draw(Screens *sc, const InputSystem *in, f32 w, f32 h) {
             y *= sy;
             if (i > 0) {
               f32 dx = x - px, dy = y - py, len = m_sqrtf(dx * dx + dy * dy);
-              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z, .offset = {(px + x) * 0.5f - len * 0.5f, (py + y) * 0.5f - fs * 0.07f}},
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z, .offset = {(px + x) * 0.5f - len * 0.5f, (py + y) * 0.5f - fs * 0.07f}},
                           .layout = {.sizing = {.width = ui_sizing_fixed(len + fs * 0.1f), .height = ui_sizing_fixed(fs * 0.14f)}},
                           .background_color = cu_rgb(0x5dff9d),
                           .corner_radius = ui_corner_radius(fs * 0.07f),
@@ -1062,7 +1062,7 @@ hz_internal void pc_content(Screens *sc, const InputSystem *in, const GameSave *
                 badge = sc->text[10];
               }
               if (badge)
-                ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = SCR_Z,
+                ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .z_index = SCR_Z,
                                          .attach_points = {.element = UI_ATTACH_POINT_CENTER_CENTER, .parent = UI_ATTACH_POINT_RIGHT_TOP}},
                             .layout = {.padding = {.left = (u16)(fs * 0.35f), .right = (u16)(fs * 0.35f), .top = 1, .bottom = 1}},
                             .background_color = cu_rgb(0xc91a09),
@@ -1365,7 +1365,9 @@ hz_internal void screens_draw(Screens *sc, const InputSystem *in, const GameSave
               .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .sizing = {.width = ui_sizing_fixed(w), .height = ui_sizing_fixed(h)}},
               .background_color = bg,
               .corner_radius = ui_corner_radius(h * 0.02f),
-              .clip_path = {.round = ui_corner_radius(h * 0.02f)},
+              // the TV picture is cut to the screen (its scenes are wider); the computers are not: a clip_path also clips the
+              // pointer, and their buttons (power, apps) stopped taking clicks
+              .clip_path = sc->kind == SCREEN_TV ? (HzUIClipPath){.round = ui_corner_radius(h * 0.02f)} : (HzUIClipPath){0},
               .opacity = opt_some(f32, shown),
               .brightness = opt_some(f32, 1.0f + 2.5f * (1.0f - boot)),
               .transform = scr_tf(0, 0, 1.0f, 0.02f + 0.98f * cu_ease_out(boot), 0, 0.5f, 0.5f)}) {

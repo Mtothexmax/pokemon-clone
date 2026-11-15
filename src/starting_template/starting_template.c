@@ -77,6 +77,7 @@ ecs_system(player_input_system, EcsIn(Player), EcsIn(WorldTransform), EcsInOut(C
     ci->heading = c->heading;
     ci->run = p->sprint_enabled && c->run;
     ci->jump |= c->jump; // consumed by the next fixed step
+    ci->face_yaw = c->face_yaw; // used while the tuning faces INPUT (talking)
     if (c->teleport) {
       ci->teleport = true;
       ci->teleport_pos = c->teleport_pos;
@@ -346,6 +347,9 @@ typedef struct AppState {
   EcsEditorDefault editor;
 #endif
   b32 playable; // the first frame with nothing left to load has been logged
+  b32 face_on;  // the player turns to whom they talk to (face_yaw) while the dialog is open
+  f32 face_yaw;
+  b32 facing_input; // the character's tuning faces INPUT now
   AudioSystem audio;
   MinifigSet figs; // the LEGO player and the villagers
   WorldState world; // doors, stairs, signs, the area title
@@ -586,7 +590,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       s->touch_layout = swipe_mode ? 0 : 1;
       swipe_stop(&s->swipe);
     }
-    touch_controls_set_button(&s->touch, 0, s->world.nearby >= 0 || s->dlg.open || s->scr.kind != SCREEN_NONE, s->world.reading);
+    // Use: in reach of something, or to go on in a dialog; never at a TV or computer (it has its own buttons)
+    touch_controls_set_button(&s->touch, 0, (s->world.nearby >= 0 || s->dlg.open) && s->scr.kind == SCREEN_NONE, s->world.reading);
     TouchControlsFrame tf = touch_controls_update(&s->touch, input, memory->total_time);
     b32 touch_on = tf.active && !s->editor_open;
     // keys, pad and touch to camera-relative controls; R respawns
@@ -702,7 +707,21 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       if (t) {
         u32 weather = s->life.rain > 0.5f ? 2u : s->life.night > 0.5f ? 1u : 0u;
         switch (t->kind) {
-        case T_TALK:
+        case T_TALK: {
+          // turn to whom you talk to: the villager nearest to you (they may have walked), else the target's spot
+          v2 at = {t->x * TOWN_STUD, t->z * TOWN_STUD};
+          f32 best = 6.0f * TOWN_STUD;
+          for (u32 i = 1; i < s->figs.count; i++) {
+            const WorldTransform *fw = ecs_component_get(w, s->figs.figs[i].root, WorldTransform);
+            f32 d = fw ? v2_length((v2){fw->position.x - pwt->position.x, fw->position.z - pwt->position.z}) : 1e9f;
+            if (d < best) {
+              best = d;
+              at = (v2){fw->position.x, fw->position.z};
+            }
+          }
+          s->face_on = true;
+          s->face_yaw = m_atan2f(at.x - pwt->position.x, at.y - pwt->position.z);
+        }
           dialog_open(&s->dlg, dialog_for((DialogId)t->arg, &s->save.data, s->save.data.voxelmon > 0, s->dlg_buf, sizeof(s->dlg_buf)), w,
                       &s->audio);
           s->mom_talked |= t->arg == DLG_MOM;
@@ -898,6 +917,20 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
     // the menu and the graphics level (Auto steps down when the frame rate drops: anti-aliasing first)
     settings_update(&s->set, &s->save, ecs_resource_get_mut(w, RendererState), &s->audio, input, dt, memory->focused);
     // the editor pauses the simulation
+    // talking: the figure turns to the one it talks to (the character turns smoothly to face_yaw), then walks as before
+    if (!s->dlg.open)
+      s->face_on = false;
+    controls.face = s->face_on;
+    controls.face_yaw = s->face_yaw;
+    if (s->facing_input != s->face_on) {
+      const CharacterTuning *tu = ecs_component_get(w, s->sim.player, CharacterTuning);
+      if (tu) {
+        CharacterTuning nt = *tu;
+        nt.facing = s->face_on ? CHARACTER_FACING_INPUT : CHARACTER_FACING_MOVEMENT;
+        ecs_component_set(w, s->sim.player, CharacterTuning, nt);
+        s->facing_input = s->face_on;
+      }
+    }
     game_sim_begin_frame(&s->sim, &controls, dt, s->editor_open);
     fig_animate(&s->figs, w, s->sim.player, dt);
   }
@@ -979,8 +1012,10 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
                    s->scr.voiced && audio_voice_playing(&s->audio, s->scr.voice));
       debug_draw(&s->dbg);
       touch_controls_draw_stick(&s->touch);
-      touch_controls_draw_jump_button(&s->touch);
-      touch_controls_draw_button(&s->touch, 0);
+      if (s->scr.kind == SCREEN_NONE) { // at a TV or computer: its own buttons only
+        touch_controls_draw_jump_button(&s->touch);
+        touch_controls_draw_button(&s->touch, 0);
+      }
 #ifndef HZ_PUBLISH
       perf_stats_draw(input, memory->dt); // the editor's hierarchy sits where the stats draw
 #endif
