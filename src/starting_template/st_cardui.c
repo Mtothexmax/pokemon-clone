@@ -1757,25 +1757,40 @@ hz_internal void deck_draw(CardUi *ui, GameSave *s, const InputSystem *in, f32 s
           b32 in_deck = false;
           for (i32 i = 0; i < s->deck_count; i++)
             in_deck |= s->deck[i] == c;
-          ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(gw)}}}) {
-            if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
+          // the picked card is lifted (cu_card: up 14 px, 1.06x): it is drawn as a layer above its neighbours, so the
+          // ticks of the row above do not cover it, and its green frame and tick go up with it
+          b32 up = k.lit;
+          i16 z0 = up ? 6 : 0, zc = ui->z;
+          f32 lx = up ? gw * 0.03f : 0.0f, ly = up ? -14.0f : 0.0f, ls = up ? 1.06f : 1.0f;
+          ui_element({.layout = {.sizing = {.width = ui_sizing_fixed(gw), .height = ui_sizing_fixed(gw * 1.4f)}}}) {
+            if (up) {
+              ui->z = 7;
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = z0, .clip_to = UI_CLIP_TO_ATTACHED_PARENT}}) {
+                if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
+                  ui->click_coll = c;
+              }
+              ui->z = zc;
+            } else if (cu_card(ui, k, in, ui_idi("Coll", (u32)c)) && have)
               ui->click_coll = c;
             if (in_deck) { // in your deck: a green frame and a tick in the corner
-              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 4, .offset = {-3.0f, -3.0f},
-                                       .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = (i16)(z0 + 4), .offset = {-3.0f, -3.0f},
+                                       .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH, .clip_to = UI_CLIP_TO_ATTACHED_PARENT},
                           .layout = {.sizing = {.width = ui_sizing_fixed(gw + 6.0f), .height = ui_sizing_fixed(gw * 1.4f + 6.0f)}},
                           .corner_radius = ui_corner_radius(gw * 0.08f),
-                          .border = {.color = cu_rgb(0x27b05a), .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}}}) {}
+                          .border = {.color = cu_rgb(0x27b05a), .width = {.left = 3, .right = 3, .top = 3, .bottom = 3}},
+                          .transform = cu_tf(0.0f, ly, ls, 0.0f)}) {}
               f32 d = m_clampf(gw * 0.3f, 18.0f, 26.0f);
-              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = 5,
+              ui_element({.floating = {.attach_to = UI_ATTACH_TO_PARENT, .z_index = (i16)(z0 + 5),
                                        .attach_points = {.element = UI_ATTACH_POINT_CENTER_CENTER, .parent = UI_ATTACH_POINT_RIGHT_BOTTOM},
-                                       .offset = {-d * 0.25f, -d * 0.25f}, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH},
+                                       .offset = {-d * 0.25f, -d * 0.25f}, .pointer_capture_mode = UI_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                                       .clip_to = UI_CLIP_TO_ATTACHED_PARENT},
                           .layout = {.sizing = {.width = ui_sizing_fixed(d), .height = ui_sizing_fixed(d)},
                                      .child_alignment = {.x = UI_ALIGN_X_CENTER, .y = UI_ALIGN_Y_CENTER}},
                           .background_color = cu_rgb(0x27b05a),
                           .corner_radius = ui_corner_radius(d * 0.5f),
                           .border = {.color = cu_rgb(0xffffff), .width = {.left = 2, .right = 2, .top = 2, .bottom = 2}},
-                          .shadow = {.color = cu_black(0.35f), .offset_y = 1.0f, .blur = 3.0f}}) {
+                          .shadow = {.color = cu_black(0.35f), .offset_y = 1.0f, .blur = 3.0f},
+                          .transform = cu_tf(lx, ly + gw * 1.4f * 0.03f, 1.0f, 0.0f)}) {
                 cu_textb("\xe2\x9c\x93", d * 0.62f, cu_rgb(0xffffff), 800, false, (HzUIColor){0}); // a tick
               }
             }
