@@ -78,6 +78,7 @@ typedef struct Vox {
   VoxNumber num[VOX_NUMBERS];
   i32 num_i;
   f32 meter, rustle_cd;
+  b32 hide_me; // the camera is at your eyes (a close-up while talking, a sign): your Voxelmon steps out of the view
   v3 last_p;
   v2 face; // where the player walks
   i32 result; // 0 win 1 lose 2 fled (VOX_END)
@@ -509,7 +510,9 @@ hz_internal b32 vox_update(Vox *v, SaveState *save, CardGame *cg, EcsWorld *w, A
       me->yaw = vox_turn(me->yaw, vox_face_to(me->p, p), dt * 3.0f);
     Fighter shown = *me;
     shown.p.y = ground;
-    if (v->show_id != me->id) // (rising as the new Voxelmon: vox_showcase poses it)
+    if (v->hide_me)
+      vox_hide(v, me->e);
+    else if (v->show_id != me->id) // (rising as the new Voxelmon: vox_showcase poses it)
       vox_pose(v, &shown, 1.0f);
     if (v->force) {
       v->force = false;
@@ -833,10 +836,11 @@ hz_internal void vox_draw(Vox *v, const InputSystem *in, const Camera *cam, f32 
                 .floating = {.attach_to = UI_ATTACH_TO_ROOT, .attach_points = {.element = UI_ATTACH_POINT_RIGHT_TOP, .parent = UI_ATTACH_POINT_RIGHT_TOP},
                              .offset = {-safe.right - 14.0f, g_hud.row3}},
                 .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 4, .padding = {.left = 12, .right = 12, .top = 6, .bottom = 8}},
-                .background_color = {250, 250, 246, 225}, .corner_radius = ui_corner_radius(10)}) {
+                .background_color = ui_night_mix((HzUIColor){250, 250, 246, 225}, (HzUIColor){24, 32, 42, 225}), // dark at night (as the goal)
+                .corner_radius = ui_corner_radius(10)}) {
       cstr_format(v->text[1], 96, "%%  %/%", fmt_cstr(me->tired ? "\xe2\x98\xbe " : ""), fmt_cstr(card_def(me->id).name), fmt_i32((i32)me->hp),
                   fmt_i32((i32)me->max));
-      cu_text(v->text[1], 14, ink);
+      cu_text(v->text[1], 14, ui_night_mix(ink, (HzUIColor){232, 238, 244, 255}));
       vox_bar(ui_id("VoxPillBar"), me->hp / m_maxf(me->max, 1.0f), 150.0f, me->tired ? (HzUIColor){120, 130, 200, 255} : vox_hp_color(me->hp / m_maxf(me->max, 1.0f)));
     }
   }

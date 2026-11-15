@@ -47,6 +47,8 @@ hz_internal b32 sign_zoom_update(SignZoom *z, EcsWorld *w, EcsQuery *camera_quer
   f32 tan_half = m_tanf(cam->fov * (M_PI / 180.0f) * 0.5f);
   f32 aspect = m_maxf(cam->aspect, 0.5f);
   f32 dist = m_maxf(bd.h * 1.3f * 0.5f / tan_half, bd.w * 1.15f * 0.5f / (tan_half * aspect)) * TOWN_STUD;
+  if (bd.max_dist > 0.0f)
+    dist = m_minf(dist, bd.max_dist);
   v3 normal = {m_sinf(bd.yaw) * m_cosf(bd.tilt), m_sinf(bd.tilt), m_cosf(bd.yaw) * m_cosf(bd.tilt)};
   v3 center = town_m(bd.c.x, bd.c.y, bd.c.z);
   v3 to_pos = v3_add(center, v3_scale(normal, dist));

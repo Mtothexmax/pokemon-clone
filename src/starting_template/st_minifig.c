@@ -210,4 +210,5 @@ hz_internal void fig_place(EcsWorld *w, Minifig *f, v3 at, f32 yaw) {
   f->yaw = yaw;
   quat q = quat_from_euler((v3){0.0f, yaw, 0.0f});
   ecs_component_set(w, f->root, LocalTransform, {.position = at, .rotation = q, .scale = V3_ONE});
+  ecs_component_set(w, f->root, WorldTransform, {.position = at, .rotation = q, .scale = V3_ONE}); // a root: no parent carries it
 }

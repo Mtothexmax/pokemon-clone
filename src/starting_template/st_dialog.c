@@ -101,7 +101,8 @@ hz_internal Dialog dialog_script(DialogId id) {
                      L("Also\xe2\x80\xa6 there are 15 golden studs hidden around Brickhollow. Some are even inside houses! Find them all and "
                        "something legendary happens.",
                        VOICE("f19b68ac")),
-                     L("My big brother says there are 34 different Brick Beasts. I only know the fishy ones.", VOICE("153eb44f"))}, .count = 3, .choice = {"Play hide and seek", "Play tag"}, .action = {ACT_HIDE_SEEK, ACT_TAG}};
+                     L("My big brother says there are 34 different Brick Beasts. I only know the fishy ones.", VOICE("153eb44f")),
+                     L("Hey, I'm bored! Wanna play hide and seek? Or tag? I'm super fast!", NULL)}, .count = 4, .choice = {"Play hide and seek", "Play tag"}, .action = {ACT_HIDE_SEEK, ACT_TAG}};
   default:
     return (Dialog){.speaker = "Prof. Hazel Quill", .lines = {L("Wait! Don't go out there!", VOICE("c77df687")),
                                           L("Wild Brick Beasts live in the tall grass. You can't go without any Beast cards!",

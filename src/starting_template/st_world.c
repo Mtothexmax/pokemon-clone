@@ -8,6 +8,7 @@ typedef struct SignBoard {
   f32 yaw;
   f32 w, h;
   f32 tilt; // leaning back (the lab computers' screens): the camera looks down at it
+  f32 max_dist; // metres, > 0: no farther (something stands between, e.g. a bush when you talk to someone)
 } SignBoard;
 
 // the boards of readables 0..3 (st_world.c), as town_build places them
@@ -321,8 +322,8 @@ hz_internal void world_draw(const WorldState *ws, b32 touch, b32 busy) {
               .floating = {.attach_to = UI_ATTACH_TO_ROOT,
                            .attach_points = {.element = UI_ATTACH_POINT_CENTER_CENTER, .parent = UI_ATTACH_POINT_CENTER_CENTER}},
               .layout = {.layout_direction = UI_TOP_TO_BOTTOM, .child_gap = 10, .child_alignment = {.x = UI_ALIGN_X_CENTER},
-                         .sizing = {.width = ui_sizing_fixed(480)},
-                         .padding = {.left = 26, .right = 26, .top = 20, .bottom = 18}},
+                         .sizing = {.width = ui_sizing_fixed(m_minf(480.0f, m_maxf(200.0f, g_hud.sw - 24.0f)))}, // phones: fits
+                         .padding = {.left = 18, .right = 18, .top = 20, .bottom = 18}},
               .background_color = r.bg,
               .border = {.color = r.fg, .width = {.left = 4, .right = 4, .top = 4, .bottom = 4}},
               .corner_radius = ui_corner_radius(10)}) {

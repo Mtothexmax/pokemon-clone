@@ -161,6 +161,7 @@ typedef struct HudLayout {
   f32 row2;    // wide: the studs (right); narrow: the studs (left) and the Deck (right)
   f32 row3;    // the Voxelmon pill (right)
   f32 center;  // the area title, toasts, the wild one's HP (centred)
+  f32 sw;      // the screen's width (UI units): panels never wider
 } HudLayout;
 hz_global HudLayout g_hud;
 
@@ -176,6 +177,7 @@ hz_internal void hud_layout(f32 sw) {
   OsSafeAreaInsets safe = os_get_safe_area();
   f32 top = safe.top + 14.0f, left = safe.left + 14.0f;
   g_hud.narrow = sw < 600.0f;
+  g_hud.sw = sw;
   f32 right = sw - safe.right - 14.0f - 40.0f - 10.0f; // left of the menu button
   f32 below = top + 36.0f;                             // under the menu button
   HzUIElementData q = ui_get_element_data(ui_id("Quest"));
@@ -388,6 +390,7 @@ typedef struct AppState {
   TownTag tags[TOWN_MAX_TAGS]; // names for the debug picker
   u32 tag_count;
   SignZoom zoom;       // the camera at a sign's board
+  u32 talk_fig;        // 1 + the villager you talk to (the camera looks at them from your eyes); 0: none
   DebugPick dbg;
   i32 shown_area;      // the area the groups were last shown for
   f32 cam_lift;        // radians the camera is raised because something hides the player
@@ -758,6 +761,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           controls.teleport_pos = town_m(gx, 0.2f, -22.6f);
           controls.teleport_yaw = 0.0f;
           dialog_open(&s->dlg, dialog_for(DLG_GATE, &s->save.data, s->save.data.voxelmon > 0, s->dlg_buf, sizeof(s->dlg_buf)), w, &s->audio);
+          s->talk_fig = 4; // Prof. Quill at the gap
         }
       }
       v3 pip_studs = s->life.pip_p;
@@ -771,12 +775,14 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
           // turn to whom you talk to: the villager nearest to you (they may have walked), else the target's spot
           v2 at = {t->x * TOWN_STUD, t->z * TOWN_STUD};
           f32 best = 6.0f * TOWN_STUD;
+          s->talk_fig = 0;
           for (u32 i = 1; i < s->figs.count; i++) {
             const WorldTransform *fw = ecs_component_get(w, s->figs.figs[i].root, WorldTransform);
             f32 d = fw ? v2_length((v2){fw->position.x - pwt->position.x, fw->position.z - pwt->position.z}) : 1e9f;
             if (d < best) {
               best = d;
               at = (v2){fw->position.x, fw->position.z};
+              s->talk_fig = i + 1;
             }
           }
           s->face_on = true;
@@ -897,6 +903,26 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         zoom_to = &zb;
       else if (s->scr.kind != SCREEN_NONE && s->scr.has_board)
         zoom_to = &s->scr.board;
+      else if (s->dlg.open && s->talk_fig > 0 && s->talk_fig <= s->figs.count) {
+        // talking: the camera goes to your eyes and looks at them (head and shoulders, above the dialog box)
+        const WorldTransform *fw = ecs_component_get(w, s->figs.figs[s->talk_fig - 1].root, WorldTransform);
+        if (fw) {
+          v2 to_me = {pwt->position.x - fw->position.x, pwt->position.z - fw->position.z};
+          f32 yaw = v2_length(to_me) > 0.01f ? m_atan2f(to_me.x, to_me.y) : 0.0f;
+          v3 c = v3_scale(fw->position, 1.0f / TOWN_STUD);
+          c.y += 3.3f; // the chin (studs): the face sits in the upper half, the dialog box covers the lower
+          zb = (SignBoard){c, yaw, 4.6f, 5.6f, 0.0f};
+          // from your eyes: never farther than where you stand (you walked up to them, so nothing is between), closer
+          // only when you stand far (Pip talks from 6 studs)
+          zb.max_dist = m_maxf(1.3f, v2_length(to_me) - 0.15f);
+          zoom_to = &zb;
+          Minifig *tf = &s->figs.figs[s->talk_fig - 1];
+          if (tf != s->life.pip) // they turn to you (Pip does in st_life.c)
+            fig_place(w, tf, fw->position, tf->yaw + fig_wrap(zb.yaw - tf->yaw) * m_minf(1.0f, dt * 8.0f));
+        }
+      }
+      if (!s->dlg.open)
+        s->talk_fig = 0;
       b32 zoomed = sign_zoom_update(&s->zoom, w, s->sim.camera_query, zoom_to, dt);
       vox_camera(&s->vox, w, s->sim.camera_query, pwt->position, dt); // a fight in the tall grass: the camera watches the two beasts
       dive_lab(&s->dive, &s->save.data);
@@ -930,6 +956,7 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
       // the figure would stand between the camera and the board
       {
         b32 show_me = !(s->zoom.active && s->zoom.t > 0.25f) && !s->dive.on;
+        s->vox.hide_me = !show_me;
         for (u32 k = 0; k < FIG_PART_COUNT; k++) {
           const EcsVisibility *v = ecs_component_get(w, me->part[k], EcsVisibility);
           if (v && v->visible != show_me) {
