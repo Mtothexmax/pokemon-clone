@@ -37,6 +37,17 @@ BOARDS = {
     'room_dex': (5.0, 1.25, '#7b2fbe', '#f2cd37', 'DEX IS #1', [], None),
     'room_lab': (7.0, 1.75, '#f4f4f4', '#0055bf', 'QUILL LAB', [], None),
     'room_stairs': (2.6, 0.65, '#f2cd37', '#1b2a34', 'MY ROOM \u25b2', [], None),
+    # Route 1 north and Stonecrest (the three.js round 2)
+    'north': (3.4, 1.8, '#fff6c8', '#6b3f1d', 'STONECREST ▲', ['Route 1 goes on through the forest.',
+                                                                    'Mind the creek, use the bridge!'], None),
+    'stonecrest': (3.4, 1.8, '#f4f4f4', '#6c6e68', 'STONECREST', ['"The town below the old castle."',
+                                                                  'Bakery · Inn · Market · Smith'], None),
+    'house_bakery': (3.4, 0.85, '#f4f4f4', '#c91a09', 'BAKERY', [], None),
+    'house_inn': (3.4, 0.85, '#f4f4f4', '#0055bf', 'INN', [], None),
+    'house_shop': (2.6, 0.65, '#f4f4f4', '#237841', 'SHOP', [], None),
+    'house_market': (3.4, 0.85, '#f4f4f4', '#fe8a18', 'MARKET', [], None),
+    'house_smith': (3.4, 0.85, '#f4f4f4', '#82422a', 'SMITH', [], None),
+    'house_post': (1.6, 0.4, '#f4f4f4', '#0055bf', 'POST', [], None),
     # the Deck-o-Matic's screen in the lab (st_dive.c shows one or the other)
     'machine_missing': (2.2, 1.4, '#140404', '#ff4a3a', 'MISSING PART', ['INSERT STUD CORE'], None),
     'machine_ready': (2.2, 1.4, '#03140a', '#4dff8a', 'READY', ['DECKS PRINTED: 1'], None),
@@ -235,7 +246,7 @@ def board_svg(name, w, h, bg, fg, title, lines, note):
         o.append(text(cx, H * 0.83, lines[0], "Consolas, monospace", bs, fg, extra='fill-opacity="0.8"'))
         o.append('</svg>')
         return '\n'.join(o), W, H
-    if name in ('garden', 'route'):  # wood: a frame of planks around a painted panel
+    if name in ('garden', 'route', 'north'):  # wood: a frame of planks around a painted panel
         o.append(f'<rect width="{W}" height="{H}" fill="url(#wood)"/>' + wood_grain(0, 0, W, H, '#2e1a0b', 9))
         panel = '#e9d4a2' if name == 'garden' else '#ffd23f'
         o.append(f'<rect x="{m}" y="{m}" width="{W - 2 * m}" height="{H - 2 * m}" rx="{m * 0.6}" fill="{panel}" stroke="#4a2a12" stroke-width="{m * 0.18}"/>')
@@ -303,13 +314,13 @@ def board_svg(name, w, h, bg, fg, title, lines, note):
             o.append(f'<circle cx="{sx:.1f}" cy="{cy:.1f}" r="{s * 0.2:.1f}" fill="#ffd23d"/>')
         y = m + band + m * 0.6 + tsize * 0.45
     else:
-        title_fill = {'garden': '#2f6b1f', 'route': '#3a2210'}.get(name, fg)
+        title_fill = {'garden': '#2f6b1f', 'route': '#3a2210', 'north': '#3a2210'}.get(name, fg)
         o.append(text(W / 2, ty, clean, TITLE[0], tsize, title_fill))
         tw = ImageDraw.Draw(Image.new('RGB', (1, 1))).textlength(clean, font=fnt(TITLE[1], tsize))
         if name == 'village':
             for sx, col, dk in ((W / 2 - tw / 2 - tsize * 1.25, '#c91a09', '#7a0f05'), (W / 2 + tw / 2 + tsize * 0.35, '#f2cd37', '#a87a00')):
                 o.append(brick(sx, ty - tsize * 0.45, tsize * 0.9, col, dk))
-        if name == 'route':
+        if name in ('route', 'north'):
             o.append(arrow_up(W / 2 + tw / 2 + tsize * 0.75, ty, tsize * 0.9, '#3a2210'))
         if name == 'garden':
             for sx in (W / 2 - tw / 2 - tsize * 0.7, W / 2 + tw / 2 + tsize * 0.7):
@@ -323,7 +334,7 @@ def board_svg(name, w, h, bg, fg, title, lines, note):
             o.append(f'<circle cx="{sx:.1f}" cy="{y:.1f}" r="{tsize * 0.09:.1f}" fill="{title_fill}" fill-opacity="0.55"/>')
         y += tsize * 0.38
     bsize = ih * 0.12
-    body_fill = {'garden': '#4a2a12', 'route': '#3a2210'}.get(name, '#1b2a34' if name != 'lab' else '#24476f')
+    body_fill = {'garden': '#4a2a12', 'route': '#3a2210', 'north': '#3a2210', 'stonecrest': '#3d3f3c'}.get(name, '#1b2a34' if name != 'lab' else '#24476f')
     nsize = bsize * 1.05
     room = (iy1 - (nsize * 1.4 if note else 0)) - y
     rows = []
@@ -345,7 +356,7 @@ def board_svg(name, w, h, bg, fg, title, lines, note):
         for (fx, col) in ((ix0 + bsize * 0.4, '#ff6fa8'), (ix1 - bsize * 0.4, '#ffd23d')):
             o.append(leaf(fx - bsize * 0.5, iy1 - bsize * 0.1, bsize * 0.8, 210) + leaf(fx + bsize * 0.1, iy1 - bsize * 0.2, bsize * 0.8, -30))
             o.append(flower(fx, iy1 - bsize * 0.75, bsize * 0.55, col, '#ffffff' if col == '#ffd23d' else '#ffd23d'))
-    if name == 'route':  # tufts of tall grass along the bottom
+    if name in ('route', 'north'):  # tufts of tall grass along the bottom
         for k in range(14):
             gx = m + (W - 2 * m) * (k + 0.5) / 14
             hgt = H * (0.06 + 0.03 * (k % 3))

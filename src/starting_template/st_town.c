@@ -187,7 +187,7 @@ hz_internal void town_block(Town *t, f32 x0, f32 x1, f32 z0, f32 z1) {
 
 // grey road plates (0.4 high, studs on top), as the three.js roads list
 
-#define TOWN_ROAD_COUNT 7
+#define TOWN_ROAD_COUNT 10
 hz_internal TownRect town_road(i32 i) {
   switch (i) {
   case 0: return (TownRect){-3, 3, -27, 24};
@@ -196,7 +196,11 @@ hz_internal TownRect town_road(i32 i) {
   case 3: return (TownRect){29, 66, 7, 10};
   case 4: return (TownRect){-16, -14, -6, -2};
   case 5: return (TownRect){3, 15, 16.5f, 19.5f};
-  default: return (TownRect){-20, -18, 3, 7};
+  case 6: return (TownRect){-20, -18, 3, 7};
+  // Stonecrest: the main street, the cross street, the square around the fountain
+  case 7: return (TownRect){-3, 3, -148, -111};
+  case 8: return (TownRect){-30, 40, -127, -122};
+  default: return (TownRect){-10, 10, -147, -133};
   }
 }
 
@@ -659,6 +663,7 @@ hz_internal void town_cloud(Town *t, f32 x, f32 y, f32 z, f32 s) {
 
 #include "st_rooms.c"
 #include "st_cave.c"
+#include "st_north.c"
 
 // main lane, once: the whole village into one slot; the parts become static renderer entities
 hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, TownRect *out_blocks, u32 *out_count, u32 cap,
@@ -844,15 +849,20 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
   town_box(t, C_TAN, 1.6f, 1.6f, 1.6f, 22.6f, 1.6f, 9.0f, true);
   town_block(t, 21.6f, 23.6f, 8.0f, 10.0f);
 
-  // ---- tall grass north of the village gap (Route 1 starts here) ----
+  // ---- tall grass: north of the village gap (Route 1 starts here) and the three patches further up the route ----
   {
     u32 greens[] = {0x58ab41u, C_GREEN, 0x7fc04au, 0x3c8c3au};
     i32 n = 0;
-    for (f32 x = -8.6f + 0.5f; x < 8.6f; x += 1.05f)
-      for (f32 z = -42.0f + 0.5f; z < -28.2f; z += 1.05f)
-        town_grass_tuft(t, x + (town_rand(&t->rng) - 0.5f) * 0.4f, z + (town_rand(&t->rng) - 0.5f) * 0.4f,
-                        0.8f + town_rand(&t->rng) * 0.5f, greens[(n++) % 4]);
+    for (i32 g = 0; g < TOWN_GRASS_COUNT; g++) {
+      TownRect r = g_town_grass[g];
+      for (f32 x = r.x0 + 0.5f; x < r.x1; x += 1.05f)
+        for (f32 z = r.z0 + 0.5f; z < r.z1; z += 1.05f)
+          town_grass_tuft(t, x + (town_rand(&t->rng) - 0.5f) * 0.4f, z + (town_rand(&t->rng) - 0.5f) * 0.4f,
+                          0.8f + town_rand(&t->rng) * 0.5f, greens[(n++) % 4]);
+    }
   }
+  // ---- Route 1 north and Stonecrest (st_north.c) ----
+  town_north(t);
 
   // ---- trees: the borders around the village (two staggered rows), the line between village and route ----
   {
@@ -891,16 +901,10 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
       town_spruce(t, x + step * 0.5f, -32.4f, 9.0f + town_rand(&t->rng) * 2.0f);
     }
     for (f32 x = 11.5f; x <= 27.0f; x += step)
-      for (f32 z = -44.5f; z <= -32.0f; z += step) {
+      for (f32 z = -40.9f; z <= -32.0f; z += step) { // (north of -41.6 the route begins)
         town_spruce(t, x, z, 8.5f + town_rand(&t->rng) * 2.5f);
         town_spruce(t, -x, z, 8.5f + town_rand(&t->rng) * 2.5f);
       }
-    for (f32 x = -9.0f; x <= 9.0f; x += step) {
-      if (m_absf(x) > 4.5f)
-        town_spruce(t, x, -45.0f, 9.5f);
-      if (m_absf(x + step * 0.5f) > 4.5f)
-        town_spruce(t, x + step * 0.5f, -43.2f, 9.5f);
-    }
     f32 bushes[][2] = {{-7.2f, -26.2f}, {7.2f, -26.2f}, {-24, 22}, {24, 22}, {-24, -24}, {-9, 22.5f},
                        {18, 22.5f},     {-26, 6},       {24, 14}, {64, 14}, {64, -24}};
     for (u32 i = 0; i < sizeof(bushes) / sizeof(bushes[0]); i++) {
@@ -995,7 +999,6 @@ hz_internal void town_build(EcsWorld *w, RendererState *r, Allocator *alloc, Tow
         {3.6f, 8.4f, -29.6f, -28.6f},
         {-9.4f, -8.4f, -41.6f, -28.6f},
         {8.4f, 9.4f, -41.6f, -28.6f},
-        {-9.4f, 9.4f, -42.6f, -41.6f},
     };
     for (u32 i = 0; i < sizeof(walls) / sizeof(walls[0]); i++)
       town_block(t, walls[i].x0, walls[i].x1, walls[i].z0, walls[i].z1);

@@ -105,8 +105,25 @@ def lab_computer():
     g.save(os.path.join(OUT, 'lab_computer.glb'), [p, g.mesh_prim(scr, smat)], 'lab_computer')
 
 
+def castle():
+    """The old castle north of Stonecrest (three.js static/models/castle.bin, voxelized from the "lego city" asset):
+    vertex colours stored as sRGB bytes (three.js converted them on load), here made linear. Units: studs before
+    the town's scale 1.6 (st_town.c places it turned by 90 degrees)."""
+    m = read('castle')
+    lin = lambda c: (c / 255.0) / 12.92 if c / 255.0 <= 0.04045 else ((c / 255.0 + 0.055) / 1.055) ** 2.4
+    table = [round(lin(c) * 255.0) for c in range(256)]
+    m['col'] = tuple(table[c] if (i % 4) != 3 else 255 for i, c in enumerate(m['col']))
+    g = PropGlb()
+    mat = g.material('#ffffff', None, 'castle')
+    g.j['materials'][mat]['pbrMetallicRoughness']['roughnessFactor'] = 0.65
+    g.save(os.path.join(OUT, 'castle.glb'), [g.mesh_prim(m, mat)], 'castle')
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
+    if sys.argv[1:] == ['castle']:
+        castle()
+        sys.exit(0)
     save('round_tree', [('round-tree', None, None)])
     save('spruce', [('spruce-tree', None, None)])
     save('cypress', [('cypress', None, None)])
@@ -124,4 +141,5 @@ if __name__ == '__main__':
     for v in ('leafy-a', 'leafy-b'):
         save(f'frog_{v.replace("-", "_")}', [(f'frog-{v}-green', DARK_GREEN, None)])
     lab_computer()
+    castle()
     print('props ->', OUT, len(os.listdir(OUT)), 'files')

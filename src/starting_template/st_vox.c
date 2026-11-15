@@ -3,10 +3,6 @@
 // skills (keys 1 and 2, they recharge) while the wild one lunges on its own. Positions are in studs.
 // Included by starting_template.c above app_init, after st_cardgame.c.
 
-#define VOX_GRASS_X0 -8.6f
-#define VOX_GRASS_X1 8.6f
-#define VOX_GRASS_Z0 -42.0f
-#define VOX_GRASS_Z1 -28.2f
 #define VOX_CUBES 10
 #define VOX_NUMBERS 8
 
@@ -185,7 +181,8 @@ hz_internal void vox_move_to(Fighter *f, v3 to, f32 dt, f32 speed) {
   f->p.z += dz / d * s;
 }
 
-hz_internal b32 vox_in_grass(f32 x, f32 z) { return x > VOX_GRASS_X0 && x < VOX_GRASS_X1 && z > VOX_GRASS_Z0 && z < VOX_GRASS_Z1; }
+// any patch of tall grass (the village's and the three up Route 1: g_town_grass, st_north.c)
+hz_internal b32 vox_in_grass(f32 x, f32 z) { return town_grass_at(x, z) >= 0; }
 
 // ---- the fight ----
 hz_internal void vox_end(Vox *v, i32 result);
@@ -313,8 +310,12 @@ hz_internal void vox_start(Vox *v, v3 player, f32 heading, CardGame *cg, EcsWorl
   v2 fwd = {-m_sinf(heading), -m_cosf(heading)}; // where the camera looks: the fight is in front of you
   v2 side = {-fwd.y, fwd.x};
   v3 c = {player.x + fwd.x * 7.0f, player.y, player.z + fwd.y * 7.0f};
-  c.x = m_clampf(c.x, VOX_GRASS_X0 + 3.6f, VOX_GRASS_X1 - 3.6f);
-  c.z = m_clampf(c.z, VOX_GRASS_Z0 + 3.6f, VOX_GRASS_Z1 - 2.0f);
+  { // the fight stays in the patch you stand in
+    i32 gi = town_grass_at(player.x, player.z);
+    TownRect g = g_town_grass[gi < 0 ? 0 : gi];
+    c.x = m_clampf(c.x, g.x0 + 3.6f, g.x1 - 3.6f);
+    c.z = m_clampf(c.z, g.z0 + 3.6f, g.z1 - 2.0f);
+  }
   Fighter *wf = &v->wild;
   vox_hide(v, wf->e);
   *wf = (Fighter){.id = id, .e = vox_model(v, id), .size = 2.4f + (f32)cost * 0.25f, .shiny = shiny,

@@ -18,6 +18,8 @@ hz_internal b32 sign_board(i32 readable, SignBoard *out) {
   case 1: *out = (SignBoard){{5.0f, 2.2f, -24.09f}, 0.0f, 3.4f, 1.8f, 0.0f, 0.0f}; return true;
   case 2: *out = (SignBoard){{-22.91f, 2.1f, 8.9f}, M_PI * 0.5f, 2.8f, 1.5f, 0.0f, 0.0f}; return true;
   case 3: *out = (SignBoard){{13.0f, 5.75f, 16.17f}, 0.0f, 5.2f, 1.9f, 0.0f, 0.0f}; return true;
+  case 13: *out = (SignBoard){{5.5f, 2.2f, -48.99f}, 0.0f, 3.4f, 1.8f, 0.0f, 0.0f}; return true;
+  case 14: *out = (SignBoard){{5.5f, 2.2f, -108.39f}, 0.0f, 3.4f, 1.8f, 0.0f, 0.0f}; return true;
   default: return false;
   }
 }
@@ -83,6 +85,13 @@ hz_internal Readable readable(i32 i) {
   case 11:
     return (Readable){196.2f, 38.6f, "your bed", "YOUR BED", {"Still warm. No time for a nap, there is a whole village outside!"},
                       NULL, paper, ink};
+  case 13:
+    return (Readable){5.5f, -48.0f, "the route sign", "STONECREST \xe2\x96\xb2",
+                      {"Route 1 goes on through the forest.", "Mind the creek, use the bridge!"}, NULL, wood, brown};
+  case 14:
+    return (Readable){5.5f, -107.4f, "the town sign", "STONECREST",
+                      {"\"The town below the old castle.\"", "Bakery \xc2\xb7 Inn \xc2\xb7 Market \xc2\xb7 Smith"}, NULL, paper,
+                      (HzUIColor){108, 110, 104, 255}};
   default:
     return (Readable){342.0f, 0.6f, "the lab computer", "RESEARCH NOTES",
                       {"Brick Beasts love studs, sunshine and being collected on cards.",
@@ -103,7 +112,7 @@ typedef struct Target {
   i32 arg;      // the readable or the DialogId
 } Target;
 
-#define STATIC_TARGETS 22
+#define STATIC_TARGETS 26
 
 hz_internal b32 g_suit_here; // the diving suit still stands in the lab (st_dive.c sets these every frame)
 hz_internal b32 g_can_dive;  // you wear it: the pond takes you down
@@ -133,6 +142,11 @@ hz_internal Target world_target(i32 i) {
   case 14: return (Target){T_TALK, 341.6f, -6.4f, "Look at", "the Deck-o-Matic", DLG_MACHINE};
   case 15: return g_suit_here ? (Target){T_SUIT, 315.6f, -7.2f, "Take", "the old diving suit", 0} : (Target){T_READ, 0, 0, "", "", 0};
   case 16: return (Target){T_READ, 0, 0, "", "", 0}; // the pond: jump in (starting_template.c)
+  // Route 1 north and Stonecrest (st_north.c)
+  case 17: { Readable r = readable(13); return (Target){T_READ, r.x, r.z, "Read", r.label, 13}; }
+  case 18: { Readable r = readable(14); return (Target){T_READ, r.x, r.z, "Read", r.label, 14}; }
+  case 19: return (Target){T_TALK, KNIGHT_X, KNIGHT_Z + 1.4f, "Talk to", "Sir Bricksworth", DLG_KNIGHT};
+  case 20: return (Target){T_TALK, BAKER_X, BAKER_Z + 1.4f, "Talk to", "Marla", DLG_BAKER};
   default: return (Target){T_READ, 0, 0, "", "", 0};
   }
 }
@@ -145,7 +159,11 @@ typedef struct WorldState {
   b32 reading;         // a sign's text is open
   f32 title_t;       // seconds the area title still shows
   CString title;
+  i32 zone;          // outside: 0 Brickhollow, 1 Route 1, 2 Stonecrest (st_north.c town_zone)
 } WorldState;
+
+hz_global CString const g_zone_names[3] = {"Brickhollow", "Route 1", "Stonecrest"};
+hz_global CString g_hud_place = "Brickhollow"; // the keys panel's heading
 
 hz_internal i32 world_area_at(v3 studs) {
   if (studs.x < 150.0f)
@@ -170,9 +188,17 @@ hz_internal void world_doors(WorldState *ws, v3 pos_m, PlayerControls *controls,
   ws->door_cooldown = m_maxf(0.0f, ws->door_cooldown - dt);
   ws->title_t = m_maxf(0.0f, ws->title_t - dt);
   i32 area = world_area_at(p);
+  i32 zone = town_zone(p.z);
+  if (area < 0)
+    g_hud_place = g_zone_names[zone];
   if (area != ws->area) {
     ws->area = area;
-    ws->title = area < 0 ? "Brickhollow" : room_def((RoomId)area).label;
+    ws->zone = zone;
+    ws->title = area < 0 ? g_zone_names[zone] : room_def((RoomId)area).label;
+    ws->title_t = 3.5f;
+  } else if (area < 0 && zone != ws->zone) { // walking from one zone into the next (three.js zoneLabel)
+    ws->zone = zone;
+    ws->title = zone == 2 ? "Welcome to Stonecrest!" : zone == 1 ? "Route 1" : "Back in Brickhollow";
     ws->title_t = 3.5f;
   }
   if (ws->door_cooldown > 0.0f)

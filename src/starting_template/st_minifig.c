@@ -4,7 +4,7 @@
 // Included by starting_template.c above app_init.
 
 #define FIG_PART_COUNT 6
-#define FIG_MAX 8
+#define FIG_MAX 10
 #define FIG_ARM_REST -0.22f // arms held a little forward, like a real minifig
 
 typedef enum FigStyle {
@@ -14,6 +14,8 @@ typedef enum FigStyle {
   FIG_STYLE_QUILL,
   FIG_STYLE_MOM,
   FIG_STYLE_LUMI,
+  FIG_STYLE_KNIGHT, // Stonecrest: Sir Bricksworth
+  FIG_STYLE_BAKER,  // Stonecrest: Marla
 } FigStyle;
 
 typedef struct Minifig {
@@ -73,6 +75,14 @@ hz_internal CString fig_part_path(FigStyle style, u32 part) {
   }
   case FIG_STYLE_MOM: {
     CString p[] = {FIG_PATHS("mom")};
+    return p[part];
+  }
+  case FIG_STYLE_KNIGHT: {
+    CString p[] = {FIG_PATHS("knight")};
+    return p[part];
+  }
+  case FIG_STYLE_BAKER: {
+    CString p[] = {FIG_PATHS("baker")};
     return p[part];
   }
   default: {

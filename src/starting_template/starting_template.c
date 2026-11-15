@@ -453,6 +453,9 @@ HZ_APP_API void app_init(AppMemory *memory) {
   fig_spawn_villager(&s->figs, w, FIG_STYLE_MOM, town_m(193.4f, 0.4f, -4.4f), 0.0f);
   fig_spawn_villager(&s->figs, w, FIG_STYLE_LUMI, town_m(254.5f, 0.4f, 2.0f), M_PI * 0.5f);
   fig_spawn_villager(&s->figs, w, FIG_STYLE_QUILL, town_m(337.0f, 0.4f, -1.2f), -M_PI * 0.5f);
+  // Stonecrest (st_north.c): Sir Bricksworth on the square below the castle (a road plate: 0.4), Marla by the bakery
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_KNIGHT, town_m(KNIGHT_X, 0.4f, KNIGHT_Z), 0.0f);
+  fig_spawn_villager(&s->figs, w, FIG_STYLE_BAKER, town_m(BAKER_X, 0.0f, BAKER_Z), 0.0f);
 
   // ---- UI (Clay): the HUD is built every frame after the scope, see app_update_and_render ----
   s->ui = ui_create(&(UIInitDesc){.max_glyphs = 4096}, assets);
@@ -544,7 +547,7 @@ hz_internal void hud_draw(const TouchControls *touch) {
                          .child_gap = 4},
               .background_color = panel,
               .corner_radius = ui_corner_radius(6)}) {
-    hud_text(ui_string("Brickhollow"), 18, ink);
+    hud_text(ui_str_c(g_hud_place), 18, ink);
     hud_text(ui_string("WASD move   Shift run   Space jump   E use / talk   Q dance"), 14, ink);
     hud_text(ui_string("Hold right mouse to look   Wheel to zoom   R respawn"), 14, dim);
 #if GAME_DEV_TOOLS
@@ -1169,6 +1172,8 @@ HZ_APP_API void app_update_and_render(AppMemory *memory) {
         if (!s->dive.on) { // diving: only the studs and the messages
           hud_draw(&s->touch);
           b32 busy_ui = s->dlg.open || s->scr.kind != SCREEN_NONE || cg_busy(&s->cards);
+          if (s->vox.phase != VOX_NONE) // a fight: its HP bar takes the title's place
+            s->world.title_t = 0.0f;
           world_draw(&s->world, s->touch.last_active, busy_ui);
         }
         life_draw(&s->life);

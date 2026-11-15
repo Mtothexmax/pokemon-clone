@@ -32,6 +32,9 @@ STYLES = {
     'pip': dict(face='pip', torso='#f2cd37', legs='#0055bf', hair='#583927', hairStyle='short', decal='stripe', decalColor='#c91a09'),
     'quill': dict(face='quill', torso='#3d6fd1', legs='#e4cd9e', hair='#c8c8c8', hairStyle='bob', coat=True, decalColor='#c91a09', female=True),
     'lumi': dict(face='lumi', torso='#ff9ecd', legs='#0055bf', hair='#f2cd37', hairStyle='bob', decal='star', decalColor='#f4f4f4', female=True),
+    # Stonecrest (the three.js round 2): Sir Bricksworth the castle guard, Marla the baker
+    'knight': dict(face='knight', torso='#a0a5a9', legs='#6c6e68', hair='#6c6e68', hairStyle='cap', cap='#a0a5a9', decal='star', decalColor='#f2cd37'),
+    'baker': dict(face='baker', torso='#f4f4f4', legs='#0055bf', hair='#82422a', hairStyle='bob', decal='apron', decalColor='#fe8a18', female=True),
     'mom': dict(face='mom', torso='#a0bcac', legs='#583927', hair='#82422a', hairStyle='ponytail', decal='apron', decalColor='#f4f4f4', female=True),
 }
 
@@ -331,6 +334,23 @@ def face_png(style):
         L([(144, 92), (172, 96)], 4)
         P([106, 160, 150, 184], 0, 180, (192, 40, 50))
         G([(106, 172), (128, 166), (150, 172)], (192, 40, 50))
+    elif face == 'knight':  # the old guard: bushy brows, a big grey moustache, a scar
+        eyes(y=118)
+        L([(78, 96), (96, 88), (114, 94)], 9, (90, 90, 90))
+        L([(142, 94), (160, 88), (178, 96)], 9, (90, 90, 90))
+        G([(96, 150), (128, 142), (160, 150), (170, 166), (150, 160), (128, 156), (106, 160), (86, 166)], (120, 120, 124))
+        A([112, 160, 144, 184], 30, 150, 5)
+        L([(168, 104), (178, 132)], 3, (190, 110, 60))
+    elif face == 'baker':  # warm and busy: lashes, a flour smudge, rosy cheeks, a wide smile
+        eyes(y=120, rx=8, ry=11, iris=(110, 70, 40))
+        lashes(120)
+        L([(84, 96), (112, 92)], 4)
+        L([(144, 92), (172, 96)], 4)
+        E(76, 152, 11, 6, (240, 150, 120))
+        E(180, 152, 11, 6, (240, 150, 120))
+        E(170, 82, 9, 5, (250, 248, 240))  # flour on the forehead
+        P([104, 150, 152, 186], 0, 180, (170, 40, 50))
+        G([(110, 168), (146, 168), (142, 175), (114, 175)], white)
     else:
         eyes()
         L([(82, 90), (112, 86)], 6)

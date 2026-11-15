@@ -49,6 +49,8 @@ typedef enum DialogId {
   DLG_LUMI_WON,
   DLG_LUMI_LOST,
   DLG_MACHINE, // the Deck-o-Matic in the lab
+  DLG_KNIGHT,  // Stonecrest: Sir Bricksworth at the castle
+  DLG_BAKER,   // Stonecrest: Marla by the bakery
   DLG_COUNT
 } DialogId;
 
@@ -96,6 +98,17 @@ hz_internal Dialog dialog_script(DialogId id) {
                      L("Tap any card to see it big, and tap a location to read what it does!", VOICE("fb9d3419")),
                      L("After turn 6, win 2 of the 3 zones to win! Hit SNAP to double the stakes if you feel confident.",
                        VOICE("251412fd"))}, .count = 8, .choice = {"Got it!"}, .action = {ACT_NONE}};
+  case DLG_KNIGHT: // (three.js +page.svelte: never voiced there either)
+    return (Dialog){.speaker = "Sir Bricksworth",
+                    .lines = {L("Welcome to Stonecrest, traveller! I guard the old castle.", NULL),
+                              L("It was built from the very first bricks of the valley. Some say Brick Beasts still live in its towers.", NULL),
+                              L("The gate is closed for now. Come back when you are a famous trainer!", NULL)},
+                    .count = 3};
+  case DLG_BAKER:
+    return (Dialog){.speaker = "Marla",
+                    .lines = {L("Oh, a visitor from Brickhollow! You came all the way through the forest?", NULL),
+                              L("Have a look around. Our fountain is the prettiest in the whole valley.", NULL)},
+                    .count = 2};
   case DLG_PIP:
     return (Dialog){.speaker = "Pip", .lines = {L("Psst! I saw something wiggle in the tall grass up north!", VOICE("afa6d9b1")),
                      L("Also\xe2\x80\xa6 there are 15 golden studs hidden around Brickhollow. Some are even inside houses! Find them all and "
