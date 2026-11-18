@@ -22,7 +22,19 @@
             font: 600 20px system-ui, sans-serif; color: #1d3b22; background: #ffd23f; border: 0; border-radius: 999px;
             padding: 14px 40px; box-shadow: 0 5px 0 #b8901a; cursor: pointer;
         }
-        #status { font-size: 13px; opacity: 0.75; min-height: 1.2em; }
+        #status { font-size: 13px; opacity: 0.8; min-height: 1.2em; }
+        #bar {
+            width: min(320px, 80vw); height: 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.28);
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); overflow: hidden;
+        }
+        #fill {
+            width: 0%; height: 100%; border-radius: 999px; transition: width 0.25s ease-out;
+            background: linear-gradient(90deg, #ffd23f, #fff1a8 50%, #ffd23f); background-size: 200% 100%;
+            animation: shimmer 1.2s linear infinite;
+        }
+        #start.loaded #bar { opacity: 0; transition: opacity 0.3s; }
+        @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+        #play.waiting { background: #e9e2c4; box-shadow: 0 5px 0 #a99f78; color: #5a5440; }
         #start.hidden { opacity: 0; pointer-events: none; }
         #play:disabled { background: #c9c9c9; box-shadow: 0 5px 0 #8a8a8a; }
         #logbox {
@@ -47,8 +59,9 @@
         <h1>Brickhollow</h1>
         <p>A little starter town. Walk around, visit the houses, the lab and the pond.<br>
            Keyboard: WASD to walk, Shift to run. Phone: swipe to walk, tap to stop.</p>
-        <button id="play">Tap to play</button>
-        <div id="status">Loading...</div>
+        <div id="bar"><div id="fill"></div></div>
+        <button id="play" class="waiting">Loading...</button>
+        <div id="status">Loading the game...</div>
     </div>
     <div id="logbox">
         <div id="logbar"><span>Error details</span><button id="copy">Copy to clipboard</button></div>
@@ -85,6 +98,28 @@
         const errors = [];     // shown: shortened
         const fullErrors = []; // copied: everything, as it came
         let ready = false, failed = false, gpuInfo = "";
+        // the first load: the engine reports "[load] NN" (percent) and "[load] done" (st: load_watch); the page shows
+        // the bar and opens the game only when the town is complete. A tap before that is remembered (and is the
+        // browser's permission for sound): the game opens by itself once loaded
+        const fill = document.getElementById("fill");
+        let loaded = false, tapped = false, enginePct = 0;
+        const setBar = (p) => { fill.style.width = Math.round(Math.max(0, Math.min(1, p)) * 100) + "%"; };
+        const refresh = () => {
+            if (failed) return;
+            if (loaded && tapped) { start.classList.add("hidden"); canvas.focus(); return; }
+            if (loaded) {
+                start.classList.add("loaded");
+                play.classList.remove("waiting");
+                play.textContent = "Tap to play";
+                status.textContent = "Ready";
+            } else {
+                const pct = Math.round(8 + enginePct * 0.92);
+                play.textContent = tapped ? "Starting..." : "Loading... " + pct + "%";
+                status.textContent = !ready ? "Loading the engine..." : enginePct < 85 ? "Loading the town..." : "Preparing the graphics...";
+                setBar(pct / 100);
+            }
+        };
+        const finishLoad = () => { if (loaded) return; loaded = true; setBar(1); setTimeout(refresh, 250); };
 
         // problems stay on screen (a phone has no console): the last engine and page errors, newest last
         const showLog = () => {
@@ -176,11 +211,24 @@
                 canvas, allowFullscreen: true, logRelay: true, ...bundleOpts,
                 onEngineMessage: (msg) => {
                     if (msg.type !== "engineLog") return;
-                    for (const [level, text] of msg.lines)
+                    for (const [level, text] of msg.lines) {
                         if (level === "error" || debug) addError(text);
+                        const m = /\[load\] (\d+|done)/.exec(text);
+                        if (m) {
+                            if (m[1] === "done") finishLoad();
+                            else { enginePct = Math.max(enginePct, +m[1]); refresh(); }
+                        }
+                    }
                 },
             });
-            game.ready.then(() => { ready = true; if (!failed) status.textContent = "Ready"; })
+            // until the engine runs, the bar creeps through its first few percent
+            setBar(0.02);
+            setTimeout(() => { if (!ready) setBar(0.05); }, 600);
+            game.ready.then(() => {
+                ready = true;
+                refresh();
+                setTimeout(finishLoad, 30000); // an engine that never reports: open anyway
+            })
                 .catch((e) => {
                     const code = e && e.code ? e.code : "";
                     fail(code === "webgpu_unavailable" ? "WebGPU could not start here: " + (e.message || "")
@@ -191,8 +239,8 @@
             // the first tap is the browser's permission to play sound (the engine resumes audio on pointerdown)
             start.addEventListener("pointerdown", () => {
                 if (failed) return;
-                start.classList.add("hidden");
-                canvas.focus();
+                tapped = true;
+                refresh();
             });
         }
     </script>
