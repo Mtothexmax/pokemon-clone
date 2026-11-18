@@ -71,6 +71,10 @@ typedef struct DebugPick {
   f32 copied_t;        // > 0: "Copied!" shows on the button that was pressed
   i32 copied;          // 0 the pick, 1 you
   char me_text[96];
+  f32 fps_acc;         // time and frames counted towards the next FPS reading (every half second)
+  i32 fps_frames;
+  f32 fps, fps_ms;     // the shown reading: frames per second and the mean frame time
+  char fps_text[64];
 } DebugPick;
 
 // what a ray hit: the nearest moving thing along it, else the tags at the hit point, else the ground
@@ -177,6 +181,14 @@ hz_internal void debug_draw(DebugPick *dp, const InputSystem *in, v3 me, f32 dt)
   if (!dp->on)
     return;
   dp->copied_t = m_maxf(0.0f, dp->copied_t - dt);
+  dp->fps_acc += dt;
+  dp->fps_frames++;
+  if (dp->fps_acc >= 0.5f) {
+    dp->fps = (f32)dp->fps_frames / dp->fps_acc;
+    dp->fps_ms = 1000.0f * dp->fps_acc / (f32)dp->fps_frames;
+    dp->fps_acc = 0.0f;
+    dp->fps_frames = 0;
+  }
   OsSafeAreaInsets safe = os_get_safe_area();
   ui_element({.id = ui_id("DebugPick"),
               .floating = {.attach_to = UI_ATTACH_TO_ROOT,
@@ -187,6 +199,12 @@ hz_internal void debug_draw(DebugPick *dp, const InputSystem *in, v3 me, f32 dt)
               .corner_radius = ui_corner_radius(8)}) {
     ui_text(ui_string("DEBUG  ( ` to close)  click on something"),
             ui_text_config({.fontSize = 13, .textColor = {255, 170, 150, 255}}));
+    cstr_format(dp->fps_text, sizeof(dp->fps_text), "% FPS  (% ms)", fmt_f32_p(dp->fps, 0), fmt_f32_p(dp->fps_ms, 1));
+    ui_text(ui_str_c((CString)dp->fps_text),
+            ui_text_config({.fontSize = 16,
+                            .textColor = dp->fps >= 50.0f ? (HzUIColor){150, 255, 150, 255}
+                                         : dp->fps >= 28.0f ? (HzUIColor){255, 230, 120, 255}
+                                                            : (HzUIColor){255, 120, 110, 255}}));
     if (dp->has) {
       ui_text(ui_str_c((CString)dp->text[0]), ui_text_config({.fontSize = 18, .textColor = {255, 255, 255, 255}}));
       ui_element({.layout = {.layout_direction = UI_LEFT_TO_RIGHT, .child_gap = 10, .child_alignment = {.y = UI_ALIGN_Y_CENTER}}}) {
