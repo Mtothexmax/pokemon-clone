@@ -21,6 +21,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(os.path.dirname(HERE), 'out', 'lan')
 CERT_DIR = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'KaigenProjects', 'pokemontest', 'tools', '.lan-cert')
 CA_CRT = os.path.join(CERT_DIR, 'brickhollow-test-ca.crt')
+# what the phone's console sends (tools/phone_log.js)
+PHONE_LOG = os.path.join(os.path.dirname(HERE), 'out', 'phone.log')
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -31,6 +33,18 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
+
+    def do_POST(self):
+        if self.path == '/__log':
+            n = int(self.headers.get('Content-Length') or 0)
+            line = self.rfile.read(n).decode('utf-8', 'replace')
+            with open(PHONE_LOG, 'a', encoding='utf-8') as f:
+                f.write(f'{self.client_address[0]} {line}' + '\n')
+            self.send_response(204)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        self.send_error(404)
 
     def do_GET(self):
         if self.path.split('?')[0] == '/brickhollow-test-ca.crt' and os.path.exists(CA_CRT):
