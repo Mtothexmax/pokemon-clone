@@ -32,7 +32,7 @@
     try {
       const s = window.engine?.call?.('stats');
       const v = s?.result ?? s;
-      r = v?.render ? { draws: v.render.draw_calls, tris: v.render.triangles, scale: v.render.render_scale, size: v.render.size ?? v.render.resolution, gpu_ms: v.render.gpu_ms?.frame } : null;
+      r = v?.render ? { draws: v.render.draw_calls, tris: v.render.triangles, scale: v.render.render_scale, size: v.render.size ?? v.render.resolution, gpu_ms: v.render.gpu_ms?.frame, lat_ms: v.render.gpu_latency_ms, in_flight: v.render.frames_in_flight, skipped: v.render.frames_skipped } : null;
     } catch {}
     send('fps', { fps: +(frames / 5).toFixed(1), screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
     frames = 0;
