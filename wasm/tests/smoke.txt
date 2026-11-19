@@ -1,0 +1,16 @@
+# Smoke test — run with: node C:/dev/wasmOnly/tools/bridge.mjs run tests/smoke.txt
+reload
+expect game_state.screen == "title"
+action play
+wait_for game_state.screen == "play" 3000
+pause
+step 60
+expect game_state.state.hero.grounded == true
+key Space
+step 12
+expect game_state.state.hero.jumps == 1
+step 60
+expect game_state.state.hero.grounded == true
+resume
+frames 10
+screenshot shots/play.png

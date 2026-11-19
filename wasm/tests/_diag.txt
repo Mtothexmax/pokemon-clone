@@ -1,0 +1,5 @@
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+resume
+call render {"auto_resolution": false, "render_scale": 1}
+frames 60

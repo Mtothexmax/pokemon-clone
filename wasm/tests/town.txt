@@ -1,0 +1,93 @@
+# Slice 1 — the walkable village. Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/town.txt --port 9223 --url http://localhost:8091/
+# Positions are in studs (the three.js town units), hero.y is the feet height.
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+pause
+step 30
+# the village is built: chunks of bricks, instanced studs, the LEGO plant models, colliders
+expect game_state.state.town.chunks >= 10
+expect game_state.state.town.studs >= 900
+expect game_state.state.town.props >= 400
+expect game_state.state.town.colliders >= 130
+expect game_state.state.hero.grounded == true
+# the LEGO models are drawn at full detail (no auto-LOD: it misshaped the figures and popped while walking)
+expect game_state.state.lods_left == 0
+expect game_state.state.hero.x ~= -15
+expect game_state.state.hero.z ~= -2.5
+
+# walk south (S) one second: 8.5 studs/s, the legs swing
+down KeyS
+step 30
+expect game_state.state.hero.speed > 7
+expect game_state.state.hero.legs != 0
+step 30
+up KeyS
+step 60
+expect game_state.state.hero.z > 3
+expect game_state.state.hero.z < 6.5
+# standing still: the legs come back
+expect game_state.state.hero.legs ~= 0
+
+# east along the road (D), the camera follows
+call teleport {"x": -10, "z": 0.5}
+step 5
+down KeyD
+step 120
+up KeyD
+step 30
+expect game_state.state.hero.x > 4
+expect game_state.state.hero.y > 0.35
+# (the camera follows per rendered frame, not per fixed step)
+resume
+wait_for game_state.state.camera.0 > 2 3000
+pause
+
+# your house blocks the way: from the front door north (W) you stop at its wall
+call teleport {"x": -15, "z": -2.5}
+step 5
+down KeyW
+step 90
+up KeyW
+step 10
+expect game_state.state.hero.z > -6
+expect game_state.state.hero.z < -4
+
+# a jump (Space) leaves the ground and lands again
+key Space
+step 12
+expect game_state.state.hero.jumps == 1
+expect game_state.state.hero.grounded == false
+step 60
+expect game_state.state.hero.grounded == true
+
+# the village edge: west of the garden there is a wall
+call teleport {"x": -24, "z": 0.5}
+step 5
+down KeyA
+step 90
+up KeyA
+step 10
+expect game_state.state.hero.x > -26.5
+
+# Prof. Quill guards the way north (the route is the next slice): you stop before the tall grass ends
+call teleport {"x": 0, "z": -20}
+step 5
+down KeyW
+step 240
+up KeyW
+step 10
+expect game_state.state.hero.z > -24.5
+
+# day and night (6 minutes a day like the original): at night the street lamps glow
+call time {"hours": 23}
+resume
+frames 20
+expect game_state.state.night > 0.8
+expect game_state.state.lamps.0 > 4
+screenshot shots/town-night.png
+call time {"hours": 12}
+frames 20
+expect game_state.state.night < 0.1
+expect game_state.state.lamps.0 < 0.5
+screenshot shots/town.png

@@ -1,0 +1,8 @@
+# Pinned stable toolchain for the engine core and games (reproducible builds).
+# The optional threads backend uses the nightly pinned in Cargo.toml
+# ([workspace.metadata.wasmonly] threads-toolchain); tools/dev.mjs selects it for --threads.
+[toolchain]
+channel = "1.99.0"
+targets = ["wasm32-unknown-unknown"]
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -1,0 +1,6 @@
+/target
+/dist
+/logs
+/tests/shots
+/.chrome-debug-profile
+/out

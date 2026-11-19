@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "wasmonly": {
+      "command": "node",
+      "args": [
+        "C:/dev/wasmOnly/tools/bridge.mjs",
+        "mcp"
+      ]
+    }
+  }
+}

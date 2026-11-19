@@ -1,0 +1,15 @@
+# NPCs are solid: walking into Pip (the kid by the pond, x -8 z 13.2 studs) stops you in front of them.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/npc_block.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call time {"hours": 12}
+resume
+call teleport {"x": -8, "z": 8}
+frames 60
+down KeyS
+frames 120
+up KeyS
+frames 10
+screenshot shots/npc-block.png
+expect game_state.state.hero.z < 12.4
