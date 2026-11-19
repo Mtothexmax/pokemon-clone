@@ -23,6 +23,20 @@
       send('adapter', { info: a.info ? { vendor: a.info.vendor, arch: a.info.architecture, desc: a.info.description } : null, features: [...a.features], limits: l });
     } catch (e) { send('adapter', 'error ' + e); }
   })();
+  // frame rate (requestAnimationFrame) and the engine's render size every 5 s
+  let frames = 0;
+  const tick = () => { frames++; requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  setInterval(() => {
+    let r = null;
+    try {
+      const s = window.engine?.call?.('stats');
+      const v = s?.result ?? s;
+      r = v?.render ? { draws: v.render.draw_calls, tris: v.render.triangles, scale: v.render.render_scale, size: v.render.size ?? v.render.resolution, gpu_ms: v.render.gpu_ms?.frame } : null;
+    } catch {}
+    send('fps', { fps: +(frames / 5).toFixed(1), screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
+    frames = 0;
+  }, 5000);
   // the engine's own log (validation errors, warnings) every 3 s once it is up
   let since = 0;
   setInterval(() => {
