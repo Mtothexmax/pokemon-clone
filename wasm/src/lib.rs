@@ -151,6 +151,22 @@ const TOUCH_BUTTONS: &str = "<div class='touch-buttons'><button data-action='jum
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
+/// Phones (a touch was seen): the village has ~300 trees and bushes and four shadow cascades, which a phone GPU
+/// draws at ~19 fps. Two cascades over a shorter range, simpler tree LODs sooner and no screen-space extras.
+fn phone_quality(ctx: &mut Ctx) {
+    let s = &mut ctx.renderer.settings;
+    s.shadow_cascades = 2;
+    s.shadow_distance = 30.0;
+    s.lod_bias = 3.0;
+    s.depth_darkening = 0.0;
+    s.bloom = false;
+    s.water_ssr = false;
+    s.lens_flare = 0.0;
+    // aim for ~30 fps instead of the desktop budget, resolution may drop to half
+    s.frame_budget_ms = 30.0;
+    s.min_render_scale = 0.5;
+}
+
 impl PlayScreen {
     fn hero_pos(&self, ctx: &Ctx) -> Option<(Vec3, f32)> {
         let h = self.hero?;
@@ -285,6 +301,7 @@ impl Screen<Data> for PlayScreen {
             self.touch_ui = true;
             ctx.ui.set("help", TOUCH_HELP);
             ctx.ui.set("touch", TOUCH_BUTTONS);
+            phone_quality(ctx);
         }
         let mut menu = ctx.input.key_pressed("Escape");
         for a in ctx.ui.take_actions() {

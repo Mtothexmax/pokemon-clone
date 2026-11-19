@@ -37,6 +37,21 @@
     send('fps', { fps: +(frames / 5).toFixed(1), screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
     frames = 0;
   }, 5000);
+  // smoothness: once in play, record the hero's drawn position for 120 frames, then send the samples
+  let traced = false;
+  const tracer = setInterval(() => {
+    try {
+      const g = window.engine?.call?.('game_state');
+      const st = g?.result ?? g;
+      const id = st?.state?.hero?.id;
+      // start once the hero walks (that is what should look smooth)
+      if (traced || id == null || !(st?.state?.hero?.speed > 1)) return;
+      traced = true;
+      clearInterval(tracer);
+      window.engine.call('trace', { id, frames: 120 });
+      setTimeout(() => { try { send('trace', window.engine.call('trace', { samples: true })); } catch (e) { send('trace', String(e)); } }, 8000);
+    } catch {}
+  }, 1000);
   // the engine's own log (validation errors, warnings) every 3 s once it is up
   let since = 0;
   setInterval(() => {
