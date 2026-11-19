@@ -11,5 +11,5 @@ Copy-Item -Recurse -Force (Join-Path $game 'dist/*') $out
 # the phone's console goes to out/phone.log (tools/serve_lan.py): load the relay before the game
 Copy-Item (Join-Path $PSScriptRoot 'phone_log.js') $out
 $index = Join-Path $out 'index.html'
-(Get-Content -Raw $index).Replace('<head>', '<head><script src="phone_log.js"></script>') | Set-Content -Encoding utf8 -NoNewline $index
+(Get-Content -Raw -Encoding UTF8 $index).Replace('<head>', '<head><script src="phone_log.js"></script>') | Set-Content -Encoding utf8 -NoNewline $index
 Write-Output "copied to $out"
