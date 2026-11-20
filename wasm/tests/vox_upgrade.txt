@@ -1,0 +1,51 @@
+# The upgrade to a Voxelmon (deck.rs + vox.rs showcase, Kaigen vox_showcase): a 6-energy card at its last card stage
+# upgraded in the deck screen bursts, the screen opens onto the town and the 3D beast rises out of two glowing rings
+# between you and the camera, spinning and growing; "Let's go!" closes the moment and it walks with you. "Walk with
+# me" on another Voxelmon swaps the one that follows you.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/vox_upgrade.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"has_deck": true}
+call cards {"give": ["titanoak", "stormaw"], "level": {"titanoak": 3, "stormaw": 4}, "exp": 5000}
+call teleport {"x": -10, "z": 0.5}
+frames 10
+expect game_state.state.vox.me == null
+# ---- the upgrade moment: Titanoak becomes a Voxelmon ----
+call cards {"open": true, "pick": "titanoak"}
+frames 10
+action deck_upgrade
+frames 5
+expect game_state.state.cards.upgrade.to == 4
+expect game_state.state.save.voxelmon == 32
+expect game_state.state.vox.show == null
+wait_for game_state.state.vox.show.id == "titanoak" 3000
+wait_for game_state.state.vox.show.size == 6 3000
+expect game_state.state.vox.me.id == "titanoak"
+wait_for game_state.state.vox.me.children > 0 10000
+frames 30
+screenshot shots/vox-showcase.png
+wait_for ui.slots.upgrade contains Let's go! 3000
+action up_ok
+frames 5
+expect game_state.state.cards.upgrade == null
+expect game_state.state.vox.show == null
+expect game_state.state.vox.me.shown == true
+# ---- Walk with me: Stormaw follows instead ----
+call cards {"pick": "stormaw"}
+frames 5
+expect ui.slots.deck_side contains Walk with me
+action deck_walk
+frames 5
+expect game_state.state.save.voxelmon == 33
+expect game_state.state.vox.me.id == "stormaw"
+call cards {"open": false}
+frames 60
+expect game_state.state.vox.me.shown == true
+expect ui.slots.vox_pill contains Stormaw
+screenshot shots/vox-walk.png
+call save_reset

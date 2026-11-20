@@ -1,0 +1,120 @@
+# Your Voxelmon and the wild fights in the tall grass (vox.rs, Kaigen st_vox.c): the Voxelmon walks behind you (the pill
+# top right with its HP); walking in the tall grass a wild one jumps out (alert, toast, the wild music); the camera
+# leaves you and watches the two from the side, you step back; the HUD shows the wild one's HP (top) and yours with the
+# two skills as icon tiles and Run (bottom). Skills recharge (key 1 / 2, the tiles), the wild one lunges on its own.
+# A win: +20 EXP, +3 studs, the wild card as a foil pack; back to the home music, the camera back on you.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/vox.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+# ---- no Voxelmon: nothing follows, the grass is quiet ----
+call teleport {"x": 0, "z": -30}
+frames 10
+expect game_state.state.vox.me == null
+expect ui.slots.vox_pill == ""
+# ---- Titanoak at its Voxelmon stage walks with you ----
+call flags {"has_deck": true}
+call cards {"give": ["titanoak", "pebbit", "flicker"], "level": {"titanoak": 4}}
+call flags {"voxelmon": 32}
+call teleport {"x": 0, "z": -20}
+frames 30
+expect game_state.state.vox.me.id == "titanoak"
+expect game_state.state.vox.me.max == 123
+expect game_state.state.vox.me.shown == true
+wait_for game_state.state.vox.me.children > 0 10000
+expect ui.slots.vox_pill contains Titanoak
+# it follows: walk west for a second, it comes after you
+down KeyA
+frames 60
+up KeyA
+frames 60
+expect game_state.state.vox.me.x < -3
+expect game_state.state.fight == false
+screenshot shots/vox-follow.png
+# ---- the tall grass: every 3 studs a chance (100 % here): a wild one jumps out ----
+call vox {"rate": 1.0, "seed": 7}
+call teleport {"x": 0, "z": -31}
+frames 10
+down KeyW
+frames 40
+up KeyW
+frames 5
+expect game_state.state.fight == true
+expect game_state.state.vox.phase == "Intro"
+expect game_state.state.vox.fights == 1
+expect game_state.state.sound.track == "wild"
+expect game_state.state.sound.last_sfx == "alert"
+expect game_state.state.toast contains out of the grass!
+expect ui.slots.goal == ""
+expect ui.slots.vox_pill == ""
+expect ui.slots.vox_wild contains Wild
+expect ui.slots.vox_mine contains Root Slam
+expect ui.slots.vox_mine contains Leaf Storm
+expect ui.slots.vox_mine contains >Run<
+wait_for game_state.state.vox.phase == "Fight" 3000
+# the camera is on the fight, you stepped back (8 studs from its middle)
+expect game_state.state.vox.cam_on == true
+wait_for game_state.state.vox.cam_t == 1 3000
+frames 60
+expect game_state.state.vox.walk.0 == 0
+expect game_state.state.vox.walk.1 == 0
+call vox {"rate": 0.22}
+screenshot shots/vox-fight.png
+# no menu with Esc in a fight and no Deck button: Esc runs (tested in vox_lose.txt)
+expect ui.slots.deck_btn == ""
+# ---- skills: key 1 (a dash), then it recharges; the tile shows the seconds ----
+key Digit1
+frames 2
+expect game_state.state.vox.me.act == "Dash"
+expect game_state.state.vox.skills_used == 1
+expect game_state.state.vox.cool.0 > 1.9
+expect ui.slots.vox_mine contains vx-sec
+key Digit1
+frames 2
+expect game_state.state.vox.skills_used == 1
+frames 30
+expect game_state.state.vox.hits >= 1
+expect game_state.state.vox.numbers >= 1
+# the tile (data-action): a volley of five voxel cubes (once the dash is back home)
+wait_for game_state.state.vox.me.act == "Idle" 2000
+action vox_skill:1
+frames 3
+expect game_state.state.vox.skills_used == 2
+expect game_state.state.vox.projectiles == 5
+screenshot shots/vox-volley.png
+frames 40
+expect game_state.state.vox.projectiles == 0
+expect game_state.state.vox.cool.1 > 5
+# recharged: a skill is ready again after its cooldown
+wait_for game_state.state.vox.cool.0 == 0 4000
+expect ui.slots.vox_mine contains vx-tile ready
+# ---- the win: the wild one at 1 HP, a tackle ----
+call vox {"hp": {"wild": 1}}
+key Digit1
+wait_for game_state.state.vox.phase == "End" 3000
+expect game_state.state.vox.result == "Won"
+expect game_state.state.save.exp == 20
+expect game_state.state.save.studs == 3
+expect game_state.state.sound.last_sfx == "fanfare"
+wait_for game_state.state.toast contains You won! 1000
+wait_for game_state.state.vox.phase == "None" 4000
+expect game_state.state.fight == false
+expect game_state.state.sound.track == "home"
+expect ui.slots.vox_mine == ""
+wait_for game_state.state.vox.cam_on == false 3000
+expect game_state.state.vox.wild == null
+# ---- a new card: it joins the collection as a foil pack ----
+expect game_state.state.cards.owned == 4
+wait_for game_state.state.cards.rewards != null 3000
+expect game_state.state.cards.rewards.cards.0 == "phantomule"
+screenshot shots/vox-reward.png
+key Enter
+frames 60
+action pack_ok
+frames 10
+expect game_state.state.cards.rewards == null
+expect game_state.state.save.vox_wins == 1

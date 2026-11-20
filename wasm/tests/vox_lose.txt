@@ -1,0 +1,75 @@
+# Wild fights lost and fled (vox.rs): Esc runs away ("Got away safely!", nothing won); at 0 HP your Voxelmon falls over
+# tired, the wild one hops away; a tired Voxelmon does not fight (the grass only rustles) and slowly rests; a night in
+# your bed makes it fit again (Kaigen: sleep restores its HP).
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/vox_lose.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"has_deck": true}
+call cards {"give": ["stormaw"], "level": {"stormaw": 4}}
+call flags {"voxelmon": 33}
+call teleport {"x": 0, "z": -32}
+frames 30
+expect game_state.state.vox.me.id == "stormaw"
+# ---- flee: Esc runs (no menu) ----
+call vox {"force": "flicker", "wild_idle": true}
+frames 2
+expect game_state.state.fight == true
+wait_for game_state.state.vox.phase == "Fight" 3000
+key Escape
+frames 3
+expect game_state.state.menu.open == false
+expect game_state.state.vox.result == "Fled"
+expect game_state.state.toast == "Got away safely!"
+wait_for game_state.state.fight == false 3000
+expect game_state.state.save.exp == 0
+expect game_state.state.save.vox_wins == 0
+expect game_state.state.vox.me.tired == false
+# ---- the Run tile flees too ----
+call vox {"force": "flicker"}
+wait_for game_state.state.vox.phase == "Fight" 3000
+expect ui.slots.vox_mine contains Thunder Bite
+expect ui.slots.vox_mine contains Storm Call
+action vox_run
+frames 3
+expect game_state.state.vox.result == "Fled"
+wait_for game_state.state.fight == false 3000
+# ---- lost: the wild one lunges at a nearly beaten Stormaw ----
+call vox {"force": "flicker", "wild_idle": false}
+wait_for game_state.state.vox.phase == "Fight" 3000
+call vox {"hp": {"me": 1}}
+wait_for game_state.state.vox.wild.act == "Lunge" 5000
+wait_for game_state.state.vox.phase == "End" 3000
+expect game_state.state.vox.result == "Lost"
+expect game_state.state.vox.me.tired == true
+expect game_state.state.vox.me.hp == 0
+frames 30
+screenshot shots/vox-lost.png
+wait_for game_state.state.fight == false 3000
+expect game_state.state.sound.track == "home"
+expect game_state.state.save.exp == 0
+expect ui.slots.vox_pill contains ☾
+# ---- tired: the grass only rustles ----
+call vox {"rate": 1.0}
+down KeyW
+frames 30
+up KeyW
+frames 5
+expect game_state.state.fight == false
+expect game_state.state.vox.rustles == 1
+expect game_state.state.toast contains too tired to fight
+call vox {"rate": 0.22}
+# ---- a night in your bed: fit again ----
+call teleport {"x": 196.2, "z": 36.6}
+frames 20
+expect game_state.state.nearby == "your bed"
+call talk
+frames 5
+expect game_state.state.sleeps == 1
+expect game_state.state.vox.me.tired == false
+expect game_state.state.vox.me.hp == 111
+call save_reset

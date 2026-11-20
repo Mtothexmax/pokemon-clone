@@ -21,6 +21,7 @@ mod sound;
 mod table;
 mod talk;
 mod town;
+mod vox;
 
 use engine::prelude::*;
 use play::PlayScreen;
@@ -97,6 +98,7 @@ impl Data {
             ctx.ui.set("style_screens", screens::STYLE);
             ctx.ui.set("style_cards", deck::STYLE);
             ctx.ui.set("style_battle", arena::STYLE);
+            ctx.ui.set("style_vox", vox::STYLE);
             self.cards = deck::CardUi::new();
         }
     }

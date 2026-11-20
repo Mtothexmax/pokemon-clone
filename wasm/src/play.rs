@@ -13,6 +13,7 @@ use crate::screens::{ScreenKind, Screens};
 use crate::talk::{self, CamZoom, Use, TARGETS};
 use crate::town::rooms::{self, RoomId};
 use crate::town::{self, TownAssets, TownStats, STUD};
+use crate::vox::Vox;
 use crate::{day_colours, setup_look, Data, Title};
 use engine::prelude::*;
 use serde_json::{json, Value};
@@ -124,6 +125,10 @@ pub struct PlayScreen {
     battle_seed: Option<u32>,
     /// battles played from here (tests)
     battles: u32,
+    // ---- your Voxelmon (vox.rs) ----
+    vox: Vox,
+    /// a fight in the tall grass holds you (you only step back to watch it)
+    fight: bool,
 }
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
@@ -414,6 +419,7 @@ impl PlayScreen {
         data.sound.sfx(ctx, Sfx::Blip, 1.0, 0.8);
         self.life.toast(if night { "Zzz\u{2026} Good morning, Brickhollow!" } else { "Zzz\u{2026} A cosy nap until the evening." });
         self.sleeps += 1;
+        self.vox.rest(); // a good night: your Voxelmon is fit again
     }
 
     /// What a closed dialog chose (Kaigen: starting_template.c + `cg_dialog_action`).
@@ -538,7 +544,8 @@ impl PlayScreen {
         if !self.touch_ui {
             return;
         }
-        if cards_busy {
+        if cards_busy || self.fight {
+            // (a fight: its own buttons only, no Jump and Use: Kaigen 8cf909e)
             ctx.ui.set("touch", "");
             return;
         }
@@ -572,7 +579,11 @@ impl PlayScreen {
     /// The goal pill, the talk prompt, the toast and the markers over the villagers.
     fn draw_hud(&mut self, ctx: &mut Ctx, data: &Data, night: f32) {
         let s = &data.save.data;
-        ctx.ui.set("goal", &format!("<div class='bh-goal{}'><b>GOAL</b><span>{}</span></div>", if night > 0.5 { " night" } else { "" }, talk::goal_text(s)));
+        let goal = if self.fight { String::new() } else { format!("<div class='bh-goal{}'><b>GOAL</b><span>{}</span></div>", if night > 0.5 { " night" } else { "" }, talk::goal_text(s)) };
+        ctx.ui.set("goal", &goal);
+        if self.fight {
+            self.title_t = 0.0; // a fight: its HP bar takes the title's place
+        }
         let prompt = match self.nearby {
             Some(i) if !self.busy => {
                 let t = &TARGETS[i];
@@ -723,11 +734,12 @@ impl Screen<Data> for PlayScreen {
         self.area = None;
         self.show_area(ctx);
         ctx.ui.set("help", KEYS_HELP);
+        self.vox.init(ctx);
     }
 
     fn pause(&mut self, ctx: &mut Ctx, _data: &mut Data) {
         // a battle covers the village: its HUD and the markers go
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn"] {
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill"] {
             ctx.ui.set(slot, "");
         }
         for n in &mut self.npcs {
@@ -756,7 +768,8 @@ impl Screen<Data> for PlayScreen {
         (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity) = self.base_light;
         self.scr.close(ctx, &mut data.sound);
         data.cards.deck_open = false;
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade"] {
+        ctx.input.touch.set_stick_enabled(true);
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill"] {
             ctx.ui.set(slot, "");
         }
     }
@@ -779,7 +792,14 @@ impl Screen<Data> for PlayScreen {
             jump = false;
             run = false;
         }
-        let face = if self.dlg.is_open() { self.face_yaw } else { None };
+        let mut face = if self.dlg.is_open() { self.face_yaw } else { None };
+        if self.fight {
+            // step back from the fight (a world direction: x east, y south) and keep watching it
+            axis = Vec2::new(self.vox.walk.x, -self.vox.walk.y);
+            jump = false;
+            run = false;
+            face = self.hero_pos(ctx).and_then(|(p, _)| self.vox.face_yaw(p / STUD));
+        }
         if let Some(h) = self.hero {
             let mut turned = None;
             if let Ok(mut cc) = ctx.world.get::<&mut CharacterController>(h) {
@@ -861,7 +881,7 @@ impl Screen<Data> for PlayScreen {
         let cards_before = data.cards.busy();
         // Esc: the dialog's (it closes it), else the menu
         // (a screen, a sign's text and the card screens close with Esc themselves)
-        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !cards_before;
+        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !cards_before && !self.fight;
         if ctx.input.key_pressed("Escape") && esc_free {
             data.settings.toggle();
         }
@@ -880,7 +900,7 @@ impl Screen<Data> for PlayScreen {
         let pos = self.hero_pos(ctx);
 
         // ---- the cards: the deck screen (C / the Deck button), the foil packs, the upgrade moment ----
-        let world_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !menu && self.door.is_none();
+        let world_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !menu && self.door.is_none() && !self.fight;
         let out = data.cards.update(ctx, &mut data.save, &mut data.sound, &actions, world_free, dt);
         if let Some(d) = out.after {
             self.dlg.open(ctx, &mut data.sound, dialog_for(d, &data.save.data));
@@ -903,7 +923,7 @@ impl Screen<Data> for PlayScreen {
             let clicks: Vec<String> = if menu { vec![] } else { actions.clone() };
             self.scr.update(ctx, &mut data.sound, &data.save.data, &clicks, !menu, dt);
         } else if let Some((p, _)) = pos {
-            self.nearby = if menu || cards_busy { None } else { self.pick_target(p) };
+            self.nearby = if menu || cards_busy || self.fight { None } else { self.pick_target(p) };
             // a sign's text closes when you walk, press Esc or are no longer at it
             if let Some(r) = self.reading {
                 let at = self.nearby.map(|i| TARGETS[i].kind) == Some(Use::Read(r));
@@ -920,6 +940,12 @@ impl Screen<Data> for PlayScreen {
             self.face_yaw = None;
         }
         self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some();
+
+        // ---- your Voxelmon: it follows you; in the tall grass a fight holds you in place ----
+        if let Some((p, _)) = pos {
+            self.vox.hide_me = self.hero_hidden;
+            self.fight = self.vox.update(ctx, data, &mut self.life, p / STUD, self.area, self.busy, &actions, dt);
+        }
 
         // ---- a new game wakes up in your room upstairs, with a thought about the day ----
         self.play_t += dt;
@@ -962,6 +988,14 @@ impl Screen<Data> for PlayScreen {
         };
         if let Some(cam) = self.camera {
             self.zoom.update(ctx, cam, board, dt);
+            if let Some((p, _)) = pos {
+                // a fight in the tall grass: the camera watches the two beasts
+                self.vox.camera(ctx, cam, p, dt);
+                // a new Voxelmon from the deck: it rises in 3D in front of the camera
+                let up = data.cards.up.as_ref().filter(|u| u.to >= cards::VOXEL_LEVEL).map(|u| (u.card, u.t));
+                let eye = ctx.world.get::<&Transform>(cam).ok().map(|t| t.translation);
+                self.vox.showcase(ctx, up.map(|u| u.0), up.map(|u| u.1).unwrap_or(0.0), eye, p / STUD);
+            }
         }
         // the camera is where you stand (a close-up): your figure would be in the way (Kaigen show_me)
         let hide = self.zoom.active && self.zoom.t > 0.25;
@@ -1007,9 +1041,15 @@ impl Screen<Data> for PlayScreen {
         } else {
             data.settings.draw(ctx, &data.save.data, &data.sound);
         }
-        let hud = !self.dlg.is_open() && !self.scr.is_open() && !self.zoom.active;
+        let hud = !self.dlg.is_open() && !self.scr.is_open() && !self.zoom.active && !self.fight;
         data.cards.draw(ctx, &data.save, &mut data.faces, hud, self.touch_ui);
         self.touch_buttons(ctx, cards_busy);
+        let narrow = ctx.canvas.client_width() < 640;
+        if cards_busy || self.scr.is_open() {
+            Vox::clear_hud(ctx);
+        } else {
+            self.vox.draw(ctx, self.area.is_none() && !self.dlg.is_open() && !self.zoom.active, night > 0.5, narrow);
+        }
         Trans::None
     }
 
@@ -1027,6 +1067,7 @@ impl Screen<Data> for PlayScreen {
             ("cards", "Cards and the save. args: {starter?: true (Prof. Quill's gift with its packs), give?: ['pebbit'|..] | 'all', exp?: n (adds), level?: {id: stage}, deck?: ['id'..], rewards?: ['id'..] (foil packs, shown only), open?: bool (deck screen), pick?: 'id'}"),
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
             ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
+            ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
         ]
     }
@@ -1170,6 +1211,20 @@ impl Screen<Data> for PlayScreen {
                 }
                 Some(Ok(json!({"battle": kind})))
             }
+            "vox" => {
+                self.vox.cheat(a);
+                if let Some(f) = a.get("force").filter(|f| !f.is_null() && f.as_bool() != Some(false)) {
+                    self.vox.force(f.as_str().and_then(cards::by_id), a["shiny"].as_bool().unwrap_or(false));
+                }
+                if let Some(k) = a["skill"].as_u64() {
+                    let used = self.vox.use_skill(ctx, data, k.min(1) as usize);
+                    return Some(Ok(json!({"used": used, "vox": self.vox.describe(ctx)})));
+                }
+                if a["run"].as_bool() == Some(true) {
+                    self.vox.run();
+                }
+                Some(Ok(self.vox.describe(ctx)))
+            }
             "card_face" => {
                 let f = Self::face_arg(a)?;
                 let url = data.faces.url(f);
@@ -1279,6 +1334,9 @@ impl Screen<Data> for PlayScreen {
             "pending_action": self.pending_action.map(|a| format!("{a:?}")),
             "battle_transition": data.trans.as_ref().map(|t| (t.t * 100.0).round() / 100.0),
             "battles": self.battles,
+            "fight": self.fight,
+            "vox": self.vox.describe(ctx),
+            "stick": ctx.input.touch.stick_enabled(),
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
@@ -1297,7 +1355,7 @@ impl Screen<Data> for PlayScreen {
                 "last_sfx": data.sound.last_sfx, "sfx_played": data.sound.sfx_played,
             },
             "cards": data.cards.describe(&data.save, &data.faces),
-            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
+            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "vox_wins": g.vox_wins, "voxelmon": g.voxelmon, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
         })
     }
 }
