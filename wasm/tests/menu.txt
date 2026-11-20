@@ -47,13 +47,17 @@ action set_gfx:1
 frames 3
 expect game_state.state.menu.step == 0
 expect game_state.state.menu.shadow_cascades == 4
+# High stores MSAA 4 for the next start, Auto goes back to the default (none stored)
+expect game_state.state.menu.msaa_pref == 4
 action set_gfx:0
 frames 3
 expect game_state.state.menu.gfx == "Auto"
-# ---- voices off: talking to Dex starts no voice line ----
+expect game_state.state.menu.msaa_pref == null
+# ---- voices off: the voice bus is muted (lines still play there, silently) ----
 action set_voices
 frames 3
 expect game_state.state.menu.voices == false
+expect audio.buses.voice == 0
 # the ☰ button closes it
 action menu
 frames 3
@@ -63,8 +67,8 @@ frames 20
 key KeyE
 frames 20
 expect game_state.state.dialog.id == "Dex"
-expect game_state.state.sound.voices_started == 0
-expect game_state.state.sound.voice == null
+wait_for audio.voices.-1.bus == "voice" 8000
+expect audio.buses.voice == 0
 key Escape
 frames 5
 # ---- the save keeps the choices (written half a second after a change) ----
@@ -74,6 +78,7 @@ screen play
 wait_for game_state.state.assets_pending == 0 15000
 frames 5
 expect game_state.state.menu.voices == false
+expect audio.buses.voice == 0
 expect game_state.state.menu.music_level == 1
 expect game_state.state.sound.music_volume ~= 0.08
 # ---- the menu's last row: the title screen ----
@@ -84,3 +89,5 @@ frames 5
 expect game_state.screen == "title"
 screen play
 call save_reset
+frames 3
+expect audio.buses.voice == 1

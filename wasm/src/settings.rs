@@ -4,8 +4,10 @@
 //! closes it. The choices are kept in the save.
 //!
 //! Auto measures the frame rate in 2 s windows and steps down while the game runs below 38 fps (not
-//! right after a change or a stall); the step it reached is saved. The engine fixes MSAA at start-up,
-//! so the steps are about shadows, effects, LOD distances and the adaptive resolution's budget.
+//! right after a change or a stall); the step it reached is saved. The engine fixes MSAA at start-up:
+//! choosing High stores MSAA 4 for the next start (`engine::set_msaa_pref`, no reload in the middle of
+//! the game), any other choice goes back to the game's default (no MSAA, FXAA); the steps themselves
+//! are about shadows, effects, LOD distances and the adaptive resolution's budget.
 
 use crate::save::{GameSave, Save};
 use crate::sound::{Sound, MUSIC_LEVEL_NAMES};
@@ -106,6 +108,8 @@ impl Settings {
                         changed = true;
                     } else if let Some(n) = a.strip_prefix("set_gfx:").and_then(|n| n.parse::<u8>().ok()) {
                         g.gfx = n.min(3);
+                        // High: sharper edges (MSAA 4) from the next start; the rest: the default (FXAA)
+                        engine::set_msaa_pref(if g.gfx == 1 { Some(4) } else { None }, false);
                         if g.gfx == 0 {
                             g.auto_step = 1; // Auto starts from the top again and steps down if needed
                         }
@@ -178,6 +182,8 @@ impl Settings {
         };
         let hint = if g.gfx == 0 {
             format!("Auto: now {}. It turns down if the game gets slow.", STEP_NAMES[self.step(g)])
+        } else if g.gfx == 1 {
+            "Smoother edges (MSAA) from the next start.".to_string()
         } else {
             "Lower settings run smoother on slow devices.".to_string()
         };

@@ -1013,7 +1013,7 @@ impl Screen<Data> for PlayScreen {
             "menu": {
                 "open": data.settings.open, "gfx": settings::GFX_NAMES[g.gfx as usize % 4], "step": data.settings.step(g),
                 "voices": !g.voices_off, "music_level": g.music_level, "fps": (data.settings.fps * 10.0).round() / 10.0,
-                "shadow_cascades": ctx.renderer.settings.shadow_cascades,
+                "shadow_cascades": ctx.renderer.settings.shadow_cascades, "msaa_pref": engine::msaa_pref(),
             },
             "sound": {
                 "track": data.sound.track().name(), "music_volume": ctx.audio.music_volume(),

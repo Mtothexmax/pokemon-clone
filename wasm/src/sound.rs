@@ -11,8 +11,8 @@
 //!   play from here.
 //! * `sound.voice(ctx, "10a293f7")` — a voice line (stops the one before); `prefetch_voice` loads early.
 //!
-//! The engine's audio has an sfx and a music bus only, so the "voices" switch of the menu is applied
-//! here (voice lines are not started while it is off; one playing is stopped).
+//! Voice lines play on the engine's `Bus::Voice`; the menu's "voices" switch sets that bus's volume
+//! (lines still play, silently, so their timing stays the same).
 
 #![allow(dead_code)] // hooks for later parts (see the module doc)
 
@@ -208,7 +208,7 @@ pub struct Sound {
     track: Option<Track>,
     music_level: usize,
     pub voices_on: bool,
-    /// The voice line playing (sound, voice, its url, seconds since it started).
+    /// The voice line playing or waiting for its file (sound, voice, its url, seconds waited for the file).
     voice: Option<(SoundId, Option<VoiceId>, String, f32)>,
     /// Voice lines started (for tests).
     pub voices_started: u32,
@@ -267,11 +267,10 @@ impl Sound {
         ctx.audio.set_music_volume(MUSIC_LEVELS[self.music_level]);
     }
 
+    /// The menu's Voices switch: the voice bus's volume (a line playing goes quiet at once).
     pub fn set_voices(&mut self, ctx: &mut Ctx, on: bool) {
         self.voices_on = on;
-        if !on {
-            self.stop_voice(ctx);
-        }
+        ctx.audio.set_bus_volume(Bus::Voice, if on { 1.0 } else { 0.0 });
     }
 
     fn voice_url(id: &str) -> String {
@@ -286,7 +285,7 @@ impl Sound {
     /// Plays voice line `id` (stops the one before). A line that is still loading starts when it arrives.
     pub fn voice(&mut self, ctx: &mut Ctx, id: Option<&str>) {
         self.stop_voice(ctx);
-        let (Some(id), true) = (id, self.voices_on) else { return };
+        let Some(id) = id else { return };
         let url = Self::voice_url(id);
         let snd = ctx.load_sound(&url);
         self.voice = Some((snd, None, url, 0.0));
@@ -299,20 +298,12 @@ impl Sound {
         }
     }
 
-    /// The voice line's state from the engine's audio snapshot ("loading", "ready", or a failure).
-    /// (The engine has no public per-sound state accessor; `describe()` is only read while a line waits.)
-    fn sound_state(ctx: &Ctx, id: SoundId) -> String {
-        let d = ctx.audio.describe();
-        let s = &d["sounds"][id.0 as usize]["state"];
-        s.as_str().map(|s| s.to_string()).unwrap_or_else(|| "failed".into())
-    }
-
     fn start_pending(&mut self, ctx: &mut Ctx) {
         let Some((snd, None, url, _)) = self.voice.clone() else { return };
-        match Self::sound_state(ctx, snd).as_str() {
-            "loading" => {}
-            "ready" => {
-                let v = ctx.audio.play(snd, Play::new().volume(0.95));
+        match ctx.audio.sound_state(snd) {
+            Some(SoundState::Loading) => {}
+            Some(SoundState::Ready) => {
+                let v = ctx.audio.play(snd, Play::new().volume(0.95).bus(Bus::Voice));
                 self.voice = Some((snd, v, url.clone(), 0.0));
                 self.voices_started += 1;
                 self.last_voice = Some(url);
@@ -327,7 +318,9 @@ impl Sound {
     /// Every frame: starts a voice line whose file has just arrived.
     pub fn update(&mut self, ctx: &mut Ctx, dt: f32) {
         if let Some(v) = &mut self.voice {
-            v.3 += dt;
+            if v.1.is_none() {
+                v.3 += dt;
+            }
             if v.1.is_none() && v.3 > 10.0 {
                 self.voice = None; // never arrived: forget it (a late start would not match the line any more)
                 return;

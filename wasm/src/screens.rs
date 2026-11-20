@@ -209,7 +209,7 @@ impl Screens {
     fn tv_line(&mut self, ctx: &mut Ctx, sound: &mut Sound) {
         let lines = tv_lines(self.channel, self.weather);
         let v = lines[self.line % lines.len()].2;
-        self.voiced = v.is_some() && sound.voices_on;
+        self.voiced = v.is_some(); // (voices off: the line plays on the muted voice bus, same timing)
         sound.voice(ctx, v);
         self.line_t = 0.0;
     }

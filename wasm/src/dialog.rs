@@ -299,7 +299,7 @@ impl DialogState {
         log_info!("dialog: {:?} ({} lines)", d.id, d.lines.len());
         // the later lines load while the first one plays
         for l in d.lines.iter().skip(1) {
-            if let (Some(v), true) = (l.voice, sound.voices_on) {
+            if let Some(v) = l.voice {
                 sound.prefetch_voice(ctx, v);
             }
         }
