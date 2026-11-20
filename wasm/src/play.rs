@@ -1556,7 +1556,7 @@ impl Screen<Data> for PlayScreen {
         let me = if self.area.is_none() { self.hero_pos(ctx).map(|h| h.0) } else { None };
         self.grass.update(ctx, me, dt);
         let layers = self.camera.and_then(|c| ctx.world.get::<&Camera>(c).ok().map(|c| c.layers)).unwrap_or(0);
-        self.fountain.set_visible(ctx, layers, self.area.is_none());
+        self.fountain.set_visible(layers, self.area.is_none());
         self.fountain.update(ctx, dt);
 
         // ---- the save: the clock every 20 s (the day goes on where you left it) ----

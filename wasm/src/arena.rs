@@ -519,6 +519,7 @@ fn burst(ctx: &mut Ctx, pos: Vec3, preset: ParticlePreset, color: Vec4, n: u32, 
     em.spread = 1.0;
     em.direction = Vec3::Y;
     em.additive = true;
+    em.layer = LAYER; // the battle camera's layer only (the village camera below does not draw it)
     ctx.spawn_particles("battle fx", pos, em);
 }
 
@@ -2282,6 +2283,12 @@ impl BattleScreen {
 impl Screen<Data> for BattleScreen {
     fn name(&self) -> &'static str {
         "battle"
+    }
+
+    /// The simulation keeps stepping under the battle: particles only move in fixed steps, a paused one froze the
+    /// battle's bursts at 0 particles (the village below gets no fixed_update; it just stands, nobody drives it).
+    fn pauses_below(&self) -> bool {
+        false
     }
 
     fn enter(&mut self, ctx: &mut Ctx, data: &mut Data) {

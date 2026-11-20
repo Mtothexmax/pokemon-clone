@@ -7,7 +7,9 @@
 //!   overflows in six arcs into the basin (clear streams + droplets running down them), and where they hit the
 //!   water spray jumps up and rings spread out (flat ring meshes growing and fading).
 //!
-//! Everything moving is off while the fountain's band is not drawn (`set_visible`): no particles, no ring updates.
+//! The emitters sit on the square's render layer (`ParticleEmitter::layer`): a camera without that band (the village,
+//! the rooms, the dive, the battle table) does not draw them. The ring meshes only move while the band is drawn
+//! (`set_visible`).
 
 use crate::town::{self, BOWL_R, BOWL_WATER, FOUNTAIN, FOUNTAIN_IN, FOUNTAIN_WATER, NOZZLE_TOP, STUD};
 use engine::geom::MeshBuilder;
@@ -140,13 +142,13 @@ impl Fountain {
             ..ParticleEmitter::preset(ParticlePreset::Splash)
         };
         let jet = drop(38.0, (2.95, 3.15), Vec3::Y, 0.11, (0.64, 0.7));
-        f.emitters.push(emitter(ctx, "fountain jet", c + Vec3::Y * NOZZLE_TOP * STUD, jet));
+        f.emitters.push(emitter(ctx, "fountain jet", c + Vec3::Y * NOZZLE_TOP * STUD, jet, layer));
         for k in 0..STREAMS {
             let a = k as f32 / STREAMS as f32 * std::f32::consts::TAU + 0.26;
             let dir = Vec3::new(a.cos(), 0.0, a.sin());
             let mut e = drop(14.0, (STREAM_V * 0.95, STREAM_V * 1.05), dir, 0.05, (tf * 0.95, tf));
             e.area = Vec3::new(0.02, 0.0, 0.02);
-            f.emitters.push(emitter(ctx, "fountain stream drops", stream_at(a, 0.0), e));
+            f.emitters.push(emitter(ctx, "fountain stream drops", stream_at(a, 0.0), e, layer));
             let spray = ParticleEmitter {
                 rate: 22.0,
                 max: 50,
@@ -166,7 +168,7 @@ impl Fountain {
             one_shot: false,
             ..ParticleEmitter::preset(ParticlePreset::Splash)
             };
-            f.emitters.push(emitter(ctx, "fountain spray", f.impacts[k] + Vec3::Y * 0.01, spray));
+            f.emitters.push(emitter(ctx, "fountain spray", f.impacts[k] + Vec3::Y * 0.01, spray, layer));
         }
         // ---- ripple rings: where the streams land and around the jet in the bowl ----
         let mut rb = MeshBuilder::new();
@@ -191,18 +193,13 @@ impl Fountain {
         f
     }
 
-    /// Particles only while the fountain's band is drawn (outside, near Stonecrest).
-    pub fn set_visible(&mut self, ctx: &mut Ctx, camera_layers: u32, outside: bool) {
+    /// The rings only move while the fountain's band is drawn (outside, near Stonecrest); the particles need nothing
+    /// (their layer).
+    pub fn set_visible(&mut self, camera_layers: u32, outside: bool) {
         let v = self.built && outside && camera_layers & (1 << self.layer) != 0;
-        if v == self.visible {
-            return;
-        }
-        self.visible = v;
-        self.toggles += 1;
-        for e in &self.emitters {
-            if let Ok(mut p) = ctx.world.get::<&mut ParticleSystem>(*e) {
-                p.emitter.enabled = v;
-            }
+        if v != self.visible {
+            self.visible = v;
+            self.toggles += 1;
         }
     }
 
@@ -228,16 +225,17 @@ impl Fountain {
 
     pub fn describe(&self, ctx: &Ctx) -> Value {
         let live: usize = self.emitters.iter().filter_map(|e| ctx.world.get::<&ParticleSystem>(*e).ok().map(|p| p.emitter.enabled as usize)).sum();
+        let layers: Vec<u8> = self.emitters.iter().filter_map(|e| ctx.world.get::<&ParticleSystem>(*e).ok().map(|p| p.emitter.layer)).collect();
         let r = |v: f32| (v * 100.0).round() / 100.0;
-        json!({"built": self.built, "visible": self.visible, "layer": self.layer, "emitters": self.emitters.len(), "emitting": live, "rings": self.rings.len(),
+        json!({"built": self.built, "visible": self.visible, "layer": self.layer, "emitters": self.emitters.len(), "emitting": live, "emitter_layers_ok": layers.iter().all(|l| *l == self.layer), "rings": self.rings.len(),
                "ring_opacity": self.rings.first().and_then(|g| ctx.world.get::<&MeshRenderer>(g.e).ok().map(|m| r(m.opacity))),
                "impacts": self.impacts.iter().map(|p| [r(p.x / STUD), r(p.z / STUD)]).collect::<Vec<_>>(), "fall_time": r(fall_time()), "toggles": self.toggles, "t": r(self.t)})
     }
 }
 
-/// An emitter with its own fixed seed (`ctx.spawn_particles` would draw the seed from `ctx.rng` and so shift every
-/// random roll after it: the wild encounters the tests rely on).
-fn emitter(ctx: &mut Ctx, name: &str, pos: Vec3, e: ParticleEmitter) -> Entity {
+/// An emitter on render layer `layer` with its own fixed seed (the same droplets every run).
+fn emitter(ctx: &mut Ctx, name: &str, pos: Vec3, mut e: ParticleEmitter, layer: u8) -> Entity {
     let seed = 0x5eed_f0u64 + name.len() as u64 * 7919 + (pos.x.to_bits() as u64 ^ pos.z.to_bits() as u64);
-    ctx.world.spawn((Transform::from_translation(pos), Name(name.to_string()), ParticleSystem::new(e, seed)))
+    e.layer = layer;
+    ctx.spawn_particles_seeded(name, pos, e, seed)
 }

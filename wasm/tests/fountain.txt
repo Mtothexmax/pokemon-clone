@@ -1,5 +1,6 @@
 # Stonecrest's fountain (fountain.rs): engine water in the hollow basin and the bowl, the jet, six falling streams,
-# droplets and spray (particles) and ripple rings where they land; all of it rests while the square is not drawn.
+# droplets and spray (particles on the square's render layer: no camera without that band draws them, not the village's,
+# not the battle table's) and ripple rings where they land (they rest while the square is not drawn).
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/fountain.txt --port 9223 --url http://localhost:8091/
 reload
 screen play
@@ -7,13 +8,15 @@ wait_for game_state.state.assets_pending == 0 20000
 call save_reset
 call time {"hours": 15}
 call life {"freeze": true, "pip_home": true}
-call flags {"gate_open": true}
+call flags {"gate_open": true, "has_deck": true}
+call cards {"starter": true}
 resume
 frames 30
-# ---- in the village the square is not drawn: nothing moves there ----
+# ---- in the village the square is not drawn: no rings move, no droplets are drawn ----
 expect game_state.state.fountain.built == true
 expect game_state.state.fountain.visible == false
-expect game_state.state.fountain.emitting == 0
+expect game_state.state.fountain.emitter_layers_ok == true
+expect stats.render.particles == 0
 # ---- on the square: the water runs ----
 call teleport {"x": 4, "z": -131}
 frames 90
@@ -36,4 +39,17 @@ frames 40
 call teleport {"x": 0, "z": 10}
 frames 30
 expect game_state.state.fountain.visible == false
-expect game_state.state.fountain.emitting == 0
+expect stats.render.particles == 0
+# ---- a card battle on the square: the table's camera draws only its own bursts, never the fountain's ----
+call teleport {"x": 4, "z": -131}
+frames 60
+expect stats.render.particles > 60
+call battle {"kind": "practice", "seed": 7, "instant": true}
+wait_for game_state.screen == "battle" 5000
+frames 20
+expect particles.emitters.length == 13
+expect stats.render.particles == 0
+call battle_auto {"end": true}
+wait_for particles.emitters.length > 13 8000
+expect stats.render.particles > 0
+expect stats.render.particles < 150
