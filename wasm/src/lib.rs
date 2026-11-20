@@ -63,6 +63,9 @@ fn setup_look(ctx: &mut Ctx) {
     s.sky_color = engine::renderer::srgb_hex(0xe8f4ff).truncate() * 0.55;
     s.ground_color = engine::renderer::srgb_hex(0x5a7a4a).truncate() * 0.45;
     s.shadow_distance = 60.0;
+    // desktop: the default 11 ms budget held the resolution at 0.5-0.65 (GPU ~9 ms); 14 ms still fits a
+    // 60 Hz frame and renders sharper. Phones get their own budget (phone_quality)
+    s.frame_budget_ms = 14.0;
     // the day/night cycle of the original: 6 minutes per day, starting in the morning. The engine
     // places the sun and moon and lights the scene; the sky and fog keep the original's flat colours
     // (day_colours, every frame)
