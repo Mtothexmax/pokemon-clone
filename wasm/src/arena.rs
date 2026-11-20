@@ -189,7 +189,6 @@ pub const STYLE: &str = "<style>
 .world-label.bt-fx{background:none;padding:0;pointer-events:none}
 .bt-fx span{display:block;transform:translateY(50%);font-size:26px;font-weight:900;color:#fff;text-shadow:0 0 6px #000,0 2px 0 #000}
 .bt-fx span.up{color:#8dff6a}.bt-fx span.dn{color:#ff6a5a}
-#ui .touch-stick,#ui .touch-knob{visibility:hidden}
 </style>";
 
 // ---------------------------------------------------------------- the 3D objects
@@ -426,7 +425,8 @@ pub struct BattleScreen {
     b: Option<Battle>,
     cam: Option<Entity>,
     saved: Option<engine::renderer::RenderSettings>,
-    hidden_cams: Vec<(Entity, Camera)>,
+    /// the camera that was main before the battle (the village's): main again on exit
+    prev_cam: Option<Entity>,
     cards: Vec<CardObj>,
     tiles: Vec<TileObj>,
     ghosts: Vec<(Entity, usize, usize, usize)>,
@@ -536,7 +536,7 @@ impl BattleScreen {
             b: None,
             cam: None,
             saved: None,
-            hidden_cams: vec![],
+            prev_cam: None,
             cards: vec![],
             tiles: vec![],
             ghosts: vec![],
@@ -710,6 +710,7 @@ impl BattleScreen {
         // ---- the camera ----
         let cam = ctx.world.spawn((Transform::from_translation(BASE + Vec3::new(0.0, 6.0, 6.0)).looking_at(BASE, Vec3::Y), Camera { fov_y_deg: FOV, near: 0.3, far: 60.0, layers: 1 << LAYER }, Name("battle camera".into())));
         self.cam = Some(cam);
+        ctx.set_main_camera(cam);
     }
 
     fn new_card_obj(&mut self, ctx: &mut Ctx, data: &mut Data) -> CardObj {
@@ -2285,12 +2286,9 @@ impl Screen<Data> for BattleScreen {
 
     fn enter(&mut self, ctx: &mut Ctx, data: &mut Data) {
         data.ensure_loaded(ctx);
-        // the village cameras step aside (the first camera found draws the screen)
-        let cams: Vec<(Entity, Camera)> = ctx.world.query::<(Entity, &Camera)>().iter().map(|(e, c)| (e, *c)).collect();
-        for (e, c) in cams {
-            let _ = ctx.world.remove_one::<Camera>(e);
-            self.hidden_cams.push((e, c));
-        }
+        // the village camera stays (with its state); the battle camera is made main once built, the stick is off
+        self.prev_cam = engine::scene::main_camera(&ctx.world);
+        ctx.input.touch.set_stick_enabled(false);
         // a table lit from above: no day cycle, no fog
         self.saved = Some(ctx.renderer.settings.clone());
         let s = &mut ctx.renderer.settings;
@@ -2328,9 +2326,10 @@ impl Screen<Data> for BattleScreen {
     }
 
     fn exit(&mut self, ctx: &mut Ctx, data: &mut Data) {
-        for (e, c) in self.hidden_cams.drain(..) {
-            let _ = ctx.world.insert_one(e, c);
+        if let Some(e) = self.prev_cam.take().filter(|e| ctx.world.contains(*e)) {
+            ctx.set_main_camera(e);
         }
+        ctx.input.touch.set_stick_enabled(true);
         if let Some(s) = self.saved.take() {
             ctx.renderer.settings = s;
         }

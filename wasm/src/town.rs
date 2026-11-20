@@ -240,8 +240,6 @@ pub struct Town {
     /// The area (-1 village, else `rooms::RoomId`) of each group, and of what is built now.
     group_area: Vec<i8>,
     area: i8,
-    /// Sloped colliders (the stairs): centre and half size (metres), turn about x (radians).
-    pub ramps: Vec<(Vec3, Vec3, f32)>,
     /// the LOD factor of the props placed now (`Prop::lod`)
     prop_lod: f32,
     /// the tall grass tufts' blades (instanced, see grass.rs)
@@ -293,7 +291,7 @@ fn y_to(dir: Vec3) -> Quat {
 
 impl Town {
     fn new() -> Self {
-        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0, rooms::VILLAGE_LAYER), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, ramps: vec![], prop_lod: 0.0, tufts: vec![], tuft_shadow: BTreeMap::new() }
+        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0, rooms::VILLAGE_LAYER), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, prop_lod: 0.0, tufts: vec![], tuft_shadow: BTreeMap::new() }
     }
 
     fn rand(&mut self) -> f32 {
@@ -1155,10 +1153,15 @@ impl Town {
         self.wild_plants();
 
         // ---- LEGO clouds ----
-        self.cloud(-10.0, 32.0, -60.0, 1.6);
-        self.cloud(30.0, 36.0, -70.0, 2.0);
-        self.cloud(70.0, 30.0, -50.0, 1.4);
-        self.cloud(-45.0, 34.0, -20.0, 1.5);
+        // the LEGO clouds hang beside and beyond the diorama at the camera's height: the eye-level views (close-ups,
+        // fights) see them in the sky, the top-down camera never has them below it (they used to float over Route 1
+        // under the camera: pale slabs and shadows on the route)
+        self.cloud(-92.0, 32.0, 4.0, 1.6);
+        self.cloud(-98.0, 36.0, -78.0, 2.0);
+        self.cloud(-90.0, 30.0, -150.0, 1.5);
+        self.cloud(125.0, 34.0, -12.0, 1.8);
+        self.cloud(118.0, 31.0, -105.0, 1.5);
+        self.cloud(18.0, 38.0, -252.0, 2.2);
 
         // ---- where you can walk: the village, the gap north and the grass patch (walls along the edges) ----
         for w in [
@@ -1305,14 +1308,10 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             ctx.set_layer(t, layer);
         }
         ctx.physics.add_static(ColliderBuilder::cuboid((p.x1 - p.x0) * 0.5 * STUD, 0.4 * STUD, (p.z1 - p.z0) * 0.5 * STUD), m((p.x0 + p.x1) * 0.5, -0.4, (p.z0 + p.z1) * 0.5));
-        // the creek's water (on the band of the bridge), in 8 square-ish pieces (a water surface is an n x n grid)
+        // the creek's water (on the band of the bridge): one strip (spawn_water tessellates each axis to the spacing)
         let c = CREEK;
-        let seg = (c.x1 - c.x0) / 8.0;
-        for k in 0..8 {
-            let x = c.x0 + seg * (k as f32 + 0.5);
-            let creek = ctx.spawn_water("creek water", assets.creek, Vec2::new(seg * STUD, (c.z1 - c.z0) * STUD), Transform::from_translation(m(x, 0.12, (c.z0 + c.z1) * 0.5)));
-            ctx.set_layer(creek, layer_at(0.0, (c.z0 + c.z1) * 0.5));
-        }
+        let creek = ctx.spawn_water("creek water", assets.creek, Vec2::new((c.x1 - c.x0) * STUD, (c.z1 - c.z0) * STUD), Transform::from_translation(m((c.x0 + c.x1) * 0.5, 0.12, (c.z0 + c.z1) * 0.5)));
+        ctx.set_layer(creek, layer_at(0.0, (c.z0 + c.z1) * 0.5));
         // the pond's water surface
         let pond = ctx.spawn_water("pond water", assets.water, Vec2::new((POND.x1 - POND.x0) * STUD, (POND.z1 - POND.z0) * STUD), Transform::from_translation(m((POND.x0 + POND.x1) * 0.5, 0.25, (POND.z0 + POND.z1) * 0.5)));
         ctx.set_layer(pond, village);
@@ -1424,10 +1423,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
         let (hx, hz) = ((s.r.x1 - s.r.x0) * 0.5 * STUD, (s.r.z1 - s.r.z0) * 0.5 * STUD);
         ctx.physics.add_static(ColliderBuilder::cuboid(hx, s.h * 0.5, hz), Vec3::new((s.r.x0 + s.r.x1) * 0.5 * STUD, s.y0 + s.h * 0.5, (s.r.z0 + s.r.z1) * 0.5 * STUD));
     }
-    for (c, half, ang) in &t.ramps {
-        ctx.physics.add_static(ColliderBuilder::cuboid(half.x, half.y, half.z).rotation(Vec3::X * *ang), *c);
-    }
-    stats.colliders = t.solids.len() + t.ramps.len();
+    stats.colliders = t.solids.len();
     stats.colours = assets.materials.len();
     engine::log_info!("town: {} chunks, {} meshes, {} tris, {} studs, {} props, {} colliders in {:.0} ms", stats.chunks, stats.meshes, stats.triangles, stats.studs, stats.props, stats.colliders, engine::log::now_ms() - t0);
     (t.solids, stats, occluders, tufts)

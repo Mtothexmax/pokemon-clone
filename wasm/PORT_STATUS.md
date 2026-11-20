@@ -39,6 +39,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Route 1 north and Stonecrest: the gate (Prof. Quill steps aside after the Voxelmon), the trail, the creek and
       bridge, three more grass patches with wild fights, the forest, Stonecrest (roads, six houses, fountain, castle,
       Marla, Sir Bricksworth), the two signs, area titles, walls; band layers + forest LODs (north.rs; test north.txt)
+- [x] Tall grass that moves (grass.rs: tufts bend away from you / villagers / Voxelmon, damped spring back, wind sway;
+      test grass.txt), Stonecrest's fountain water (fountain.rs: engine water in a hollow basin + bowl, jet, falling
+      streams, droplets, spray, ripple rings; test fountain.txt)
 - [ ] Hide and seek with Pip (then he battles), night pill, debug panel (the gate is done: Route 1 part)
 
 ## Hooks for later parts (sound / dialog / life slice)
@@ -114,8 +117,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 ## Hooks for later parts (card battle slice)
 - Start a battle like the dialogues do: `arena::start_transition(ctx, data, BattleKind::Pip)` from the play screen
   (`PlayScreen::start_battle`): the bricks slide in with the intro fanfare and at `arena::TRANS_BOARD` the play screen
-  pushes `BattleScreen` (scene "battle"; the village stays loaded below, its camera's `Camera` is taken off while
-  the battle shows and put back on pop). When it pops, `PlayScreen::resume` -> `battle_done` pays out (studs, EXP,
+  pushes `BattleScreen` (scene "battle"; the village stays loaded below with its camera; the battle camera is made main
+  with `ctx.set_main_camera` and the joystick is off (`set_stick_enabled(false)`) until the battle pops, then the
+  village camera is main again). When it pops, `PlayScreen::resume` -> `battle_done` pays out (studs, EXP,
   `cards::reward_card` packs, `rival_wins` / `pip_wins`) and opens the after-dialogue (`DexWon`, `PipLost`, ...).
 - Hide and seek -> Pip's battle: `DialogAction::BattlePip` already starts it once `seek_played` or `seek_wins` is set
   (else `PipNotYet`). The hide-and-seek part only has to count its rounds into the save (`seek_played += 1`, a win
@@ -205,5 +209,28 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Titles: walking between zones shows "Route 1" / "Welcome to Stonecrest!" / "Back in Brickhollow"; the help line's heading is
   the zone (`PlayScreen::help`).
 - Debug: `game_state.state` `zone`, `bands` (the outdoor layer mask drawn), `gate_stops`, `lods_village`; `save_reset` puts
-  Prof. Quill back at once. The LEGO clouds (`Town::cloud`, y 32 studs over z -20..-70) sit below the camera's height on Route 1
-  and show as pale slabs / shadows over the route's south part (as in three.js and Kaigen; move them if that bothers).
+  Prof. Quill back at once. The LEGO clouds (`Town::cloud`) hang beside and beyond the
+  diorama now (x -98..-90 / 118..125, z -252), at the camera's height: the eye-level views see them, the top-down camera
+  never has them under it (they used to hang over Route 1 below the camera: pale slabs and their shadows).
+
+## Hooks for later parts (tall grass / fountain / cleanup slice)
+- Tall grass (`grass.rs`, `PlayScreen::grass`): every tuft's blades are an instance of one mesh (`town::tuft_mesh`, the round
+  plate stays in the static bricks), built from `Town::tufts` (`TuftSpec`) and turned about the plate. Pushers are set every
+  fixed step (`Grass::set_pushers`: feet + radius in metres; the hero, outdoor NPCs, `Vox::pushers` = your Voxelmon and the
+  wild one); add Pip's hide-and-seek spots or the ducks there. Springs only run near pushers, the wind only within `VIEW`
+  of you; the moving blades cast no shadow, a hidden static copy (opacity 0, turned half a blade) casts it. Debug:
+  `tall_grass {wind}` (the engine already has a `grass` command), `game_state.state.grass` (tufts, patches, awake, swaying,
+  writes, bent, max_bend, near [[dist m, bend rad]..], pushers, wind).
+- Fountain (`fountain.rs`, `PlayScreen::fountain`): consts `town::FOUNTAIN`, `FOUNTAIN_IN`, `FOUNTAIN_WATER`, `BOWL_R`,
+  `BOWL_WATER`, `NOZZLE_TOP` (studs); the stone in `north.rs` `fountain`. Particles are spawned with fixed seeds (`emitter`):
+  `ctx.spawn_particles` takes its seed from `ctx.rng` and would shift every random roll after it (the wild encounters the
+  tests rely on). Emitters are off while the square's band is not drawn (`set_visible`). `game_state.state.fountain`.
+  The village pond already was engine water on a grid: left as it was.
+- Camera close-ups anywhere (debug): `look {at: [x, y, z] studs, yaw, w, h, tilt}`, `look {}` back (uses `talk::CamZoom`).
+- Rooms: the home stairs are real steps with one box collider each (engine 3edabf4 climbs them; `Town::ramps` is gone);
+  rooms.txt walks halfway up and down again. The lab's checker floor is one slab + inlays (no coplanar tile tops), the
+  rooms' dark surrounds sit below 0, each room's a little lower.
+- Indoor light: `PlayScreen::indoor_light` eases `settings.sun_scale` / `ambient_scale` (applied after the day cycle; the
+  sky outside is untouched); the dive owns both while `dive.on` and gives them back in `Dive::stop`; the play screen's exit
+  resets them to 1.
+- The creek is one `spawn_water` strip (engine 1c65e8e tessellates each axis).

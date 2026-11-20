@@ -118,31 +118,26 @@ impl Town {
         self.block(x - w * 0.5, x + w * 0.5, z - d * 0.5, z + d * 0.5);
     }
 
-    /// A sloped collider of width `w` (studs) from `a` to `b` (studs: x, y = the walked-on top, z), along z.
-    /// The stairs walk on it: the character controller stalled on the 0.6-stud steps (see the report).
-    fn ramp(&mut self, x: f32, w: f32, a: Vec2, b: Vec2) {
-        let (dz, dy) = (b.x - a.x, b.y - a.y);
-        let len = (dz * dz + dy * dy).sqrt();
-        // turning +z down by `ang` about x: rising towards -z
-        let ang = dy.atan2(-dz);
-        let normal = Vec3::new(0.0, ang.cos(), ang.sin());
-        let half = Vec3::new(w * 0.5, 0.15, len * 0.5) * STUD;
-        let mid = m(x, (a.y + b.y) * 0.5, (a.x + b.x) * 0.5) - normal * half.y;
-        self.ramps.push((mid, half, ang));
-    }
-
     /// Floor (planks or checker tiles), back and side walls with a wainscot, a low front wall with the door gap.
     fn room_shell(&mut self, r: &RoomDef, floor_a: u32, floor_b: u32, wall: u32, trim: u32, tiles: bool, door: bool) {
         let (ox, oz, w, d) = (r.ox, r.oz, r.w, r.d);
         // a dark floor around the room (instead of the baseplate)
-        self.brick(0x151f27, w + 60.0, 0.05, d + 50.0, ox, 0.0, oz + 6.0, false);
+        // (just below 0: its bottom face would lie in one plane with every wall's and tile's bottom; each room's a
+        // little lower than the last, as they overlap)
+        let k = ROOMS.iter().position(|id| room_def(*id).label == r.label).unwrap_or(0) as f32;
+        self.brick(0x151f27, w + 60.0, 0.05, d + 50.0, ox, -0.05 - 0.04 * k, oz + 6.0, false);
         if tiles {
+            // one slab in the first colour and thin inlays of the second: touching tiles of
+            // two colours lay their tops within a hair of each other (z-fighting the whole floor, bridge check)
+            self.brick(floor_a, w, 0.37, d, ox, 0.03, oz, false);
             let mut x = -w * 0.5;
             while x < w * 0.5 {
                 let mut z = -d * 0.5;
                 while z < d * 0.5 {
-                    let c = if ((x + z) * 0.5) as i32 & 1 != 0 { floor_b } else { floor_a };
-                    self.brick(c, 2.0, 0.4, 2.0, ox + x + 1.0, 0.0, oz + z + 1.0, false);
+                    if ((x + z) * 0.5) as i32 & 1 != 0 {
+                        // (sunk a little: their bottoms clear the furniture's, which stand at 0.4)
+                        self.brick(floor_b, 1.92, 0.09, 1.92, ox + x + 1.0, 0.36, oz + z + 1.0, false);
+                    }
                     z += 2.0;
                 }
                 x += 2.0;
@@ -293,11 +288,13 @@ impl Town {
         self.furn(C_RED_BROWN, 3.0, 1.2, 1.6, ox + 5.0, 0.4, oz + 1.2, true);
         // bookshelf and the stairs up to your room (walkable steps, a banister on the open side)
         self.room_bookshelf(ox + 10.6, oz - 8.0, 3.0);
+        // the real steps are walked on (one box collider each): the engine's controller climbs steps shallower than its
+        // capsule since 3edabf4 (before, a sloped collider through the steps' tops stood in for them)
         for i in 0..6 {
-            self.brick(0xc8955c, 3.0, 0.6 * (i + 1) as f32, 1.0, ox + 10.6, 0.4, oz + 1.6 - i as f32, true);
+            let (z, top) = (oz + 1.6 - i as f32, 0.4 + 0.6 * (i + 1) as f32);
+            self.brick(0xc8955c, 3.0, top - 0.4, 1.0, ox + 10.6, 0.4, z, true);
+            self.solids.push(Solid { r: Rect::new(ox + 9.1, ox + 12.1, z - 0.5, z + 0.5), y0: 0.0, h: top * STUD });
         }
-        // walked on as a slope through the middle of every step's top (z, y)
-        self.ramp(ox + 10.6, 3.0, Vec2::new(oz + 2.6, 0.4), Vec2::new(oz - 3.9, 4.3));
         for i in 0..6 {
             self.brick(C_WHITE, 0.25, 1.6, 0.25, ox + 9.0, 0.4 + 0.6 * (i + 1) as f32, oz + 1.6 - i as f32, false);
         }

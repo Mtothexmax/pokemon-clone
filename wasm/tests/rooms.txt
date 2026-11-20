@@ -49,6 +49,21 @@ expect game_state.state.room_lights_on == 3
 expect game_state.state.npcs.5.id == "mom"
 expect game_state.state.npcs.5.marker == "!"
 expect game_state.state.npcs.6.marker == ""
+# the real steps (no ramp): halfway up and down again
+frames 40
+down KeyW
+frames 30
+up KeyW
+frames 10
+expect game_state.state.hero.y > 1.6
+expect game_state.state.area == "Home"
+down KeyS
+frames 45
+up KeyS
+frames 20
+expect game_state.state.hero.y < 0.6
+expect game_state.state.hero.z > 2.6
+expect game_state.state.hero.grounded == true
 # ... and up the stairs again (walkable steps)
 frames 40
 down KeyW

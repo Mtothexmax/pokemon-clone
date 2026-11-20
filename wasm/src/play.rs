@@ -99,8 +99,6 @@ pub struct PlayScreen {
     room_lights: Vec<(RoomId, Entity, f32)>,
     /// 0 outside .. 1 inside (eased): dims the sun and the sky light
     indoor: f32,
-    /// the sky's light outside (setup_look's values), scaled by `indoor`
-    base_light: (f32, f32, f32),
     /// the Deck-o-Matic's screens: "MISSING PART" and "READY"
     machine: Option<(Entity, Entity)>,
     machine_ready: Option<bool>,
@@ -449,7 +447,8 @@ impl PlayScreen {
         }
     }
 
-    /// Inside, the sun and the sky light dim (eased); the engine's day cycle derives the light from these.
+    /// Inside, the sun and the sky light dim (eased): the engine's `sun_scale` / `ambient_scale` apply after the day
+    /// cycle, so the cycle's inputs (and the sky outside) stay as they are.
     fn indoor_light(&mut self, ctx: &mut Ctx, dt: f32) {
         let want = if self.area.is_some() { 1.0 } else { 0.0 };
         self.indoor += (want - self.indoor) * (dt * 6.0).min(1.0);
@@ -457,11 +456,9 @@ impl PlayScreen {
             self.indoor = want; // behind the black: no visible fade
         }
         let k = self.indoor;
-        let (day, atm, moon) = self.base_light;
         let s = &mut ctx.renderer.settings;
-        s.daylight_intensity = day * (1.0 + (INDOOR_SUN - 1.0) * k);
-        s.moon_intensity = moon * (1.0 + (INDOOR_SUN - 1.0) * k);
-        s.atmosphere_intensity = atm * (1.0 + (INDOOR_SKY - 1.0) * k);
+        s.sun_scale = 1.0 + (INDOOR_SUN - 1.0) * k;
+        s.ambient_scale = 1.0 + (INDOOR_SKY - 1.0) * k;
     }
 
     fn npc_index(&self, id: &str) -> Option<usize> {
@@ -934,8 +931,6 @@ impl Screen<Data> for PlayScreen {
         let missing = ctx.load_gltf("assets/signs/machine_missing.glb", Transform::from_translation(town::m(mx, my, mz)));
         let ready = ctx.load_gltf("assets/signs/machine_ready.glb", Transform::from_translation(town::m(mx, my, mz)));
         self.machine = Some((missing, ready));
-        let s = &ctx.renderer.settings;
-        self.base_light = (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity);
 
         // the fixed top-down camera of the original: (0, 32, 17) studs * zoom above you, looking at your feet + 1.5 studs
         let off = CAM_OFFSET * ZOOM * STUD;
@@ -991,7 +986,7 @@ impl Screen<Data> for PlayScreen {
         data.sound.stop_voice(ctx);
         data.settings.open = false;
         let s = &mut ctx.renderer.settings;
-        (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity) = self.base_light;
+        (s.sun_scale, s.ambient_scale) = (1.0, 1.0);
         self.scr.close(ctx, &mut data.sound);
         data.cards.deck_open = false;
         self.dive.abort(ctx);
