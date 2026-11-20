@@ -1,0 +1,61 @@
+# A wild fight on a phone held upright (390 x 844, touch): the stick walks you into the grass; in the fight there are
+# no Jump and Use buttons (Kaigen 8cf909e) and no joystick, only the skill tiles and Run (data-action), which fit the
+# screen; afterwards Jump and the stick are back.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/vox_touch.txt --port 9223 --url http://localhost:8091/
+reload
+viewport 390 844 3 touch
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"has_deck": true}
+call cards {"give": ["abyssquid", "pebbit"], "level": {"abyssquid": 4}}
+call flags {"voxelmon": 34}
+call teleport {"x": 0, "z": -30}
+frames 30
+# a touch: the touch HUD (Jump), the pill under the Deck button
+call input {"touch": {"id": 1, "x": 100, "y": 700, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 1, "x": 100, "y": 700, "phase": "end"}}
+frames 5
+expect ui.slots.touch contains >Jump<
+expect ui.slots.vox_pill contains Abyssquid
+expect game_state.state.stick == true
+# ---- the stick walks north into the grass: a wild one ----
+call vox {"rate": 1.0, "seed": 3}
+call input {"touch": {"id": 2, "x": 100, "y": 700, "phase": "start"}}
+call input {"touch": {"id": 2, "x": 100, "y": 640, "phase": "move"}}
+wait_for game_state.state.fight == true 4000
+call input {"touch": {"id": 2, "x": 100, "y": 640, "phase": "end"}}
+call vox {"rate": 0.22, "wild_idle": true}
+frames 5
+expect ui.slots.touch == ""
+expect game_state.state.stick == false
+expect ui.slots.vox_mine contains Ink Shot
+expect ui.slots.vox_mine contains Tidal Whirl
+wait_for game_state.state.vox.phase == "Fight" 3000
+wait_for game_state.state.vox.cam_t == 1 3000
+screenshot shots/vox-touch.png
+# ---- tap the tiles: Ink Shot (a volley), Tidal Whirl (a wave) ----
+action vox_skill:0
+frames 3
+expect game_state.state.vox.projectiles == 5
+frames 40
+action vox_skill:1
+frames 3
+expect game_state.state.vox.projectiles == 1
+expect game_state.state.vox.skills_used == 2
+frames 10
+screenshot shots/vox-touch-wave.png
+frames 40
+expect game_state.state.vox.hits >= 6
+# ---- Run: back to walking, Jump and the stick return ----
+action vox_run
+wait_for game_state.state.fight == false 3000
+frames 5
+expect ui.slots.touch contains >Jump<
+expect game_state.state.stick == true
+call save_reset
+viewport off

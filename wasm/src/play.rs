@@ -129,6 +129,7 @@ pub struct PlayScreen {
     vox: Vox,
     /// a fight in the tall grass holds you (you only step back to watch it)
     fight: bool,
+    help_hidden: bool,
 }
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
@@ -1045,6 +1046,11 @@ impl Screen<Data> for PlayScreen {
         data.cards.draw(ctx, &data.save, &mut data.faces, hud, self.touch_ui);
         self.touch_buttons(ctx, cards_busy);
         let narrow = ctx.canvas.client_width() < 640;
+        // a fight: the help line would sit under the skill tiles
+        if self.fight != self.help_hidden {
+            self.help_hidden = self.fight;
+            ctx.ui.set("help", if self.fight { "" } else if self.touch_ui { TOUCH_HELP } else { KEYS_HELP });
+        }
         if cards_busy || self.scr.is_open() {
             Vox::clear_hud(ctx);
         } else {

@@ -9,7 +9,8 @@ resume
 call teleport {"x": -8, "z": 8}
 frames 60
 down KeyS
-frames 60
+# (45 frames: you reach Pip after ~35; pressing on longer the capsule sometimes slides off sideways, see below)
+frames 45
 screenshot shots/npc-block.png
 expect game_state.state.hero.z < 12.4
 # (engine 6178277: pressing on into the round capsule, the hero slowly slides off sideways and walks

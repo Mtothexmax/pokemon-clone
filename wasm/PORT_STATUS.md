@@ -30,7 +30,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Card battle in 3D vs Dex, Lumi, Pip: rules (battle.rs), the table / slab cards / tiles / effects / HUD
       (arena.rs, table.rs), brick transition, battle music + taunts, rewards (tests battle.txt, battle_dex.txt,
       battle_touch.txt)
-- [ ] Wild Voxelmon fights in the tall grass, skills, upgrades, own music, no touch Jump/Use in fights
+- [x] Wild Voxelmon fights in the tall grass, skills, upgrades, own music, no touch Jump/Use in fights (vox.rs: the
+      follower, encounters, the real-time fight with its camera and HUD, rewards, the upgrade showcase in 3D, HP back on
+      sleep; beasts `assets/beasts/*.glb`; tests vox.txt, vox_lose.txt, vox_upgrade.txt, vox_touch.txt)
 - [ ] Lab quest: diving suit, deck machine "missing part", pond dive into the cave (swim in 3D, darker with depth,
       seaweed, glowing plants, collectibles, marine snow, part deep down), deck built on return
 - [ ] Route 1 north and Stonecrest
@@ -137,3 +139,22 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   `bt_take_back`, `bt_activate`, `bt_cancel_act`, `bt_close`, `bt_continue`.
 - Tests: drive cards with touch input (`input {touch}`), not the mouse: the real mouse over the debug window moves the
   pointer between frames.
+
+## Hooks for later parts (Voxelmon slice)
+- `vox.rs` (`PlayScreen::vox`, Kaigen `st_vox.c`): the fight stays in the village (as Kaigen, no screen of its own).
+  `Vox::update` every frame returns whether a fight holds you (`PlayScreen::fight`: no Jump / Use buttons, no
+  joystick (`set_stick_enabled(false)`), no Deck button, goal, help line, area title, Esc = Run); `walk` / `face_yaw`
+  steer you back from the arena in `fixed_update`. The fight camera is its own entity made main with
+  `ctx.set_main_camera` and despawned afterwards (the village camera keeps following you, the way back ends where it is).
+- Beast models: `assets/beasts/<card id>.glb` (Kaigen's, split per colour by `tools/glb-split-colors.mjs`; 1 unit high,
+  feet at 0, facing +z). `Vox::model(ctx, card)` loads one (hidden on `HIDDEN_LAYER`, shown on layer 0); other parts
+  (Pip's Voxelmon, the dive) can reuse `show_model`.
+- Tall grass: `town::GRASSES` (all four patches; only patch 0 is built and walkable yet). Route 1 (next part) builds the
+  other three and the land north of patch 0: the fight camera looks from the side away from you, at patch 0 that is
+  north, where the map still ends (the edge shows at the bottom of the view until then).
+- Debug: `vox {force: true|'id', shiny, skill: 0|1, run, hp: {me, wild}, tired, wild_idle, rate, seed}`;
+  `game_state.state.vox` (phase, me / wild {id, hp, max, tired, shiny, x, y, z, act, shown, size, children}, skills,
+  cool, result, center, walk, meter, rate, cam_on, cam_t, projectiles, numbers, show, fights, skills_used, hits,
+  rustles), `fight`, `stick`; `save.vox_wins`, `save.voxelmon`. HUD slots `vox_wild`, `vox_mine` (actions
+  `vox_skill:0|1`, `vox_run`), `vox_pill`.
+- The gate (Prof. Quill steps aside once you have a Voxelmon): `save.voxelmon > 0`, as the dialogues already check.

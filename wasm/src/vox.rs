@@ -1036,7 +1036,12 @@ impl Vox {
         }
         // from the side, a little above, far enough that both beasts (and the space between) fit
         // (Kaigen's camera sees 60 degrees high, ours 38: the same framing from further away)
-        let dist = (sep * 0.8 + 1.6).max(5.0) * (30f32.to_radians().tan() / (vcam.fov_y_deg * 0.5).to_radians().tan()).max(1.0);
+        let tan_v = (vcam.fov_y_deg * 0.5).to_radians().tan();
+        let mut dist = (sep * 0.8 + 1.6).max(5.0) * (30f32.to_radians().tan() / tan_v).max(1.0);
+        // a phone held upright: both beasts (half a beast's width beyond each) fit across
+        let (w, h) = ctx.renderer.size();
+        let aspect = w as f32 / h.max(1) as f32;
+        dist = dist.max((sep * 0.5 + 1.4) / (tan_v * aspect) / 1.2);
         let look = mid + Vec3::Y * 0.6;
         let pos = look + Vec3::new(n.x * self.cam_side * dist, dist * 0.72, n.y * self.cam_side * dist);
         let kf = 1.0 - (-dt * 3.0).exp(); // eases after the beasts as they move
