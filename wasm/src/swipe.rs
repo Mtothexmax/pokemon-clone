@@ -106,14 +106,15 @@ impl Swipe {
         self.seen = ids;
     }
 
-    /// Is a step of the figure's width this way free? Rays at chest height (low steps and curbs do not count), from
-    /// just outside your capsule (the engine's ray has no "ignore this body").
-    fn free(ctx: &Ctx, pos: Vec3, d: Vec2) -> bool {
+    /// Is a step of the figure's width this way free? Rays at chest height (low steps and curbs do not count) from
+    /// your middle, ignoring your own capsule (`me`).
+    fn free(ctx: &Ctx, pos: Vec3, d: Vec2, me: Option<Entity>) -> bool {
         let dir = Vec3::new(d.x, 0.0, d.y);
         let side = Vec3::new(-d.y, 0.0, d.x);
+        let skip: Vec<Entity> = me.into_iter().collect();
         (-1..=1).all(|k| {
-            let a = pos + Vec3::Y * 0.6 + side * 0.2 * k as f32 + dir * 0.36;
-            ctx.physics.raycast(a, dir, 0.75 - 0.36).is_none()
+            let a = pos + Vec3::Y * 0.6 + side * 0.2 * k as f32;
+            ctx.physics.raycast_excluding(a, dir, 0.75, &skip).is_none()
         })
     }
 
@@ -143,7 +144,7 @@ impl Swipe {
     }
 
     /// The way to go now (world x/z), or None: stuck or through a door, stop (Kaigen `swipe_step`). `pos` = feet, m.
-    pub fn step(&mut self, ctx: &Ctx, pos: Vec3, now: f32, area: Option<rooms::RoomId>) -> Option<Vec2> {
+    pub fn step(&mut self, ctx: &Ctx, pos: Vec3, me: Option<Entity>, now: f32, area: Option<rooms::RoomId>) -> Option<Vec2> {
         self.dodging = false;
         if area != self.area {
             return None; // through a door: stand still on the other side
@@ -157,7 +158,7 @@ impl Swipe {
         } else if now - self.gained > 1.5 {
             return None;
         }
-        if Self::free(ctx, pos, a) {
+        if Self::free(ctx, pos, a, me) {
             return Some(a);
         }
         // around the obstacle: one side the first time (towards a door nearby), then keep it
@@ -175,7 +176,7 @@ impl Swipe {
                 let sd = if self.side != 0 { self.side } else { *o };
                 let (c, s) = ((ang * sd as f32).cos(), (ang * sd as f32).sin());
                 let d = Vec2::new(a.x * c - a.y * s, a.x * s + a.y * c);
-                if Self::free(ctx, pos, d) {
+                if Self::free(ctx, pos, d, me) {
                     self.side = sd;
                     self.dodging = true;
                     return Some(d);

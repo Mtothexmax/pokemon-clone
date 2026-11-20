@@ -1225,8 +1225,9 @@ pub struct LifeView {
     bulbs: Vec<Entity>,
     bulb_mat: Option<MaterialId>,
     bulb_glow: f32,
-    /// the rain loop (on `Bus::Ambience`, its volume is the bus's)
+    /// the rain loop (on `Bus::Ambience`) and the volume it was last given (it follows the rain's strength)
     pub rain_voice: Option<VoiceId>,
+    rain_vol: f32,
     /// the fish's splash clip
     pub fish_clip: Option<SoundId>,
 }
@@ -1346,17 +1347,35 @@ impl LifeView {
                 m.emissive = Vec3::new(1.0, 0.86, 0.5) * glow;
             }
         }
+        // the loop's own voice follows the rain (a short ramp per change); dry: it fades out and stops
+        let want = l.rain_level * 0.35;
         if l.rain_level > 0.01 && self.rain_voice.is_none() {
-            self.rain_voice = ctx.audio.play_named(Sfx::Rain.name(), Play::new().looped().volume(1.0).bus(Bus::Ambience));
+            self.rain_voice = ctx.audio.play_named(Sfx::Rain.name(), Play::new().looped().volume(0.0).bus(Bus::Ambience));
+            self.rain_vol = 0.0;
         }
-        ctx.audio.set_bus_volume(Bus::Ambience, l.rain_level * 0.35);
+        if let Some(v) = self.rain_voice {
+            if l.rain_level <= 0.01 {
+                self.stop(ctx, 0.6);
+            } else if (want - self.rain_vol).abs() > 0.005 {
+                self.rain_vol = want;
+                if !ctx.audio.set_voice_volume(v, want, 0.15) {
+                    self.rain_voice = None; // ended (audio context gone): played again next frame
+                }
+            }
+        }
     }
 
-    /// Leaving the play screen: the rain loop stops.
-    pub fn stop(&mut self, ctx: &mut Ctx) {
+    /// The rain loop fades out over `fade` s (leaving the play screen, a battle on top).
+    pub fn stop(&mut self, ctx: &mut Ctx, fade: f32) {
         if let Some(v) = self.rain_voice.take() {
-            ctx.audio.stop(v);
+            ctx.audio.fade_out(v, fade);
         }
+        self.rain_vol = 0.0;
+    }
+
+    /// The rain loop's volume (None: not playing), for the debug state.
+    pub fn rain_volume(&self, ctx: &Ctx) -> Option<f32> {
+        self.rain_voice.and_then(|v| ctx.audio.voice_volume(v))
     }
 
     /// Debug picker: the moving things as spheres (name, centre studs, radius studs).

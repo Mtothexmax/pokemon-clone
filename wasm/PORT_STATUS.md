@@ -39,8 +39,8 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Route 1 north and Stonecrest: the gate (Prof. Quill steps aside after the Voxelmon), the trail, the creek and
       bridge, three more grass patches with wild fights, the forest, Stonecrest (roads, six houses, fountain, castle,
       Marla, Sir Bricksworth), the two signs, area titles, walls; band layers + forest LODs (north.rs; test north.txt)
-- [x] Tall grass that moves (grass.rs: tufts bend away from you / villagers / Voxelmon, damped spring back, wind sway;
-      test grass.txt), Stonecrest's fountain water (fountain.rs: engine water in a hollow basin + bowl, jet, falling
+- [x] Tall grass that moves (grass.rs: tufts bend away from you / villagers / Voxelmon on the GPU (`Material::bend`),
+      a short wake behind you, wind sway from two far pushers; test grass.txt), Stonecrest's fountain water (fountain.rs: engine water in a hollow basin + bowl, jet, falling
       streams, droplets, spray, ripple rings; test fountain.txt)
 - [x] Village life and the last Kaigen pieces (life.rs: golden studs, ducks + feeding, fish, butterflies, fireflies, the ball
       and the goal, the treasure chest, rain + puddles + TV rain, glowing lamps, the park bench, dancing, Pip's hide and seek
@@ -218,17 +218,21 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   never has them under it (they used to hang over Route 1 below the camera: pale slabs and their shadows).
 
 ## Hooks for later parts (tall grass / fountain / cleanup slice)
-- Tall grass (`grass.rs`, `PlayScreen::grass`): every tuft's blades are an instance of one mesh (`town::tuft_mesh`, the round
-  plate stays in the static bricks), built from `Town::tufts` (`TuftSpec`) and turned about the plate. Pushers are set every
-  fixed step (`Grass::set_pushers`: feet + radius in metres; the hero, outdoor NPCs, `Vox::pushers` = your Voxelmon and the
-  wild one); add Pip's hide-and-seek spots or the ducks there. Springs only run near pushers, the wind only within `VIEW`
-  of you; the moving blades cast no shadow, a hidden static copy (opacity 0, turned half a blade) casts it. Debug:
-  `tall_grass {wind}` (the engine already has a `grass` command), `game_state.state.grass` (tufts, patches, awake, swaying,
-  writes, bent, max_bend, near [[dist m, bend rad]..], pushers, wind).
+- Tall grass (`grass.rs`, `PlayScreen::grass`): every tuft's blades are an instance of one mesh (`town::tuft_mesh`, origin at
+  its foot; the round plate stays in the static bricks) with a bending material per green (`TownAssets::tuft_material`,
+  `Material::bend` = `grass::TUFT_BEND`); the transforms never change (no per-frame upload, the tufts are static shadow
+  casters, their shadows stay upright). Walkers are set every fixed step (`Grass::set_pushers(feet + radius m, dt)`: the
+  hero first, outdoor NPCs, `Vox::pushers`; add Pip's spots or the ducks there); `Grass::update` hands the nearest 14 plus
+  your wake (3 fading points) and two far *wind pushers* to `ctx.renderer.set_pushers` every frame (none indoors; cleared on
+  exit). The engine's bend has no wind of its own (only its GPU grass sways): the wind pushers stand ~250 m upwind with a
+  300 m radius and move with a gust / flutter, which leans the field 0.02..0.1 rad. Don't `batch_static` the tufts.
+  Debug: `tall_grass {wind}`, engine `bend` (pushers, bend materials); `game_state.state.grass` (tufts, patches, bent,
+  max_bend, near [[dist m, lean rad]..] = the shader's lean recomputed from the walkers, pushers, wake, sent, wind_pushers,
+  bend, writes = 0).
 - Fountain (`fountain.rs`, `PlayScreen::fountain`): consts `town::FOUNTAIN`, `FOUNTAIN_IN`, `FOUNTAIN_WATER`, `BOWL_R`,
-  `BOWL_WATER`, `NOZZLE_TOP` (studs); the stone in `north.rs` `fountain`. Particles are spawned with fixed seeds (`emitter`):
-  `ctx.spawn_particles` takes its seed from `ctx.rng` and would shift every random roll after it (the wild encounters the
-  tests rely on). Emitters are off while the square's band is not drawn (`set_visible`). `game_state.state.fountain`.
+  `BOWL_WATER`, `NOZZLE_TOP` (studs); the stone in `north.rs` `fountain`. Particles are spawned with fixed seeds (`emitter`,
+  `ctx.spawn_particles_seeded`) on the square's band layer (`ParticleEmitter::layer`): cameras without that band (village,
+  rooms, dive, battle table) do not draw them, nothing switches them on/off; `set_visible` only stops the ripple rings. `game_state.state.fountain`.
   The village pond already was engine water on a grid: left as it was.
 - Camera close-ups anywhere (debug): `look {at: [x, y, z] studs, yaw, w, h, tilt}`, `look {}` back (uses `talk::CamZoom`).
 - Rooms: the home stairs are real steps with one box collider each (engine 3edabf4 climbs them; `Town::ramps` is gone);
@@ -243,20 +247,37 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - `life.rs`: `Life` is the engine-free simulation (its own LCG, seed 4242, as Kaigen; run in `PlayScreen::fixed_update` via
   `Life::step(&mut GameSave, &LifeIn, dt)`), it queues sounds in `Life::sfx` / `fish_splash` and sets `dirty` when the save
   changed (`PlayScreen::life_frame` plays them, marks the save). `LifeView` owns the entities (meshes made once:
-  `TownAssets::life`), `sync` places them every fixed step, `frame` sets the lamps' glow and the rain loop's volume (the loop
-  plays on `Bus::Ambience`; the engine has no per-voice volume). Pip's figure reads `pip`, `pip_yaw`, `pip_speed`, `pip_pose`.
+  `TownAssets::life`), `sync` places them every fixed step, `frame` sets the lamps' glow and the rain loop's volume (its own
+  voice on `Bus::Ambience`, see the last hooks). Pip's figure reads `pip`, `pip_yaw`, `pip_speed`, `pip_pose`.
 - Targets: `talk::FEED_TARGET`, `SIT_TARGET`, `CHEST_TARGET` (`Use::Feed | Sit | Chest`); E at a hidden Pip finds him
   (`use_target`), the prompt says "Found you, Pip!", his marker is hidden while he hides.
 - `figure.rs`: `Figure::pose` (`Pose::Sit | Dance | ArmsUp | Crouch | Wave`), `spin`, `air`, `head_want` (Kaigen fig_animate).
 - Villagers: `fixed_update` drops the part of your move wish that points into a villager within 0.76 m (`npc_stops`).
 - `swipe.rs` (phones, `GameSave::touch_mode` 0): the stick is off (`set_stick_enabled(false)`), `Swipe::touch` reads
-  `ctx.input.touch` every frame, `Swipe::step` walks / dodges in the fixed step (rays start outside your capsule).
+  `ctx.input.touch` every frame, `Swipe::step` walks / dodges in the fixed step (rays ignore your capsule: `raycast_excluding`).
 - `debugpanel.rs`: shown while the engine's debug mode is on (`ctx.debug_mode.on()`, the ` key; the engine consumes that key)
   or the menu's "Debug panel" row; `debug_pick {x, y | copy | menu}`.
 - Debug: `life {rain, wet, chest, chest_at, seek, seek_left, tag, ball, dance, sit, fish, golden, to_fly, to_firefly, to_pip}`;
   `game_state.state.life` (golden, ducks, crumbs, fish_jump, butterflies, fireflies(_shown), ball, goals, chest, rain(_level),
   drops, wet, puddles, splashes, day, sitting, dancing, seek_*, hidden, tag_wins, pip_pose), `debug_panel`, `swipe`,
   `npc_stops`, `respawns`, `day`, `day_length`, `fog_density`, `hero_pose`, npcs[].head / pose; `screen.weather`.
+
+## Hooks for later parts (GPU grass / particle layers / room z-fighting / engine 79aba87 slice)
+- Particles: put every emitter on a render layer (`ParticleEmitter::layer`, like `MeshRenderer::layer`): outdoor ones on
+  `town::layer_at(x, z)`, the battle's bursts (`arena::burst`) on `arena::LAYER`. Particles only step in fixed steps, so a
+  screen that pauses the simulation below it freezes them: `BattleScreen::pauses_below` is false (the village gets no
+  fixed_update meanwhile and just stands).
+- Z-fighting: rooms.txt expects `zfight {center, radius}` == 0 pairs in all four rooms. Bricks (`Town::brick`) jitter their size
+  in steps of 0.012 studs (2.3 mm per face, the check's eps is 2 mm): two touching bricks with the same jitter index can still
+  share a face; thin decals (rugs, mats, steps) need ~0.03 studs of their own height offset. Studs have no bottom disc and
+  are 0.01 studs lower than `STUD_H` (plates laid at `y + STUD_H` clear them). The minifig leg glTFs' hip cylinders and hips end
+  2 mm short of x = 0 (they reached into each other). The lab computer's keyboard plate and the flowerpot's red flower were
+  nudged in their glTFs. The hidden Deck-o-Matic sign also moves 2 m down (`zfight` does not know layers).
+  Outdoors the full check still reports ~21k pairs, nearly all inside the glTF props (trees, bushes): not looked at.
+- Rain loop (`LifeView::frame`): its own voice's volume follows `rain_level` (`ctx.audio.set_voice_volume`, 0.15 s ramps) and
+  fades out when dry, indoors or under a battle (`LifeView::stop(ctx, fade)`); `Bus::Ambience` stays at 1.
+  `game_state.state.rain_volume` (None = not playing).
+- Rays from inside the hero (swipe walking's `Swipe::free`, the debug picker) use `physics.raycast_excluding(.., &[hero])`.
 
 ## Not ported / differences from Kaigen
 - The debug panel's toggle: Kaigen used ` itself; here the engine owns ` (its debug mode, which the panel follows) and phones get

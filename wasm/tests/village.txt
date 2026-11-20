@@ -97,17 +97,20 @@ frames 3
 expect game_state.state.life.chests == 1
 expect game_state.state.toast contains Treasure! You found
 wait_for game_state.state.life.chest.live == false 6000
-# ---- rain: drops, haze, the loop on the ambience bus; inside it stops ----
+# ---- rain: drops, haze, the rain loop (its voice's volume follows the rain); inside it fades out ----
 call life {"rain": true, "wet": 1}
 frames 10
 expect game_state.state.life.drops > 120
 expect game_state.state.fog_density > 0.1
 expect game_state.state.life.rain_level == 1
+# the loop's own voice follows the rain (engine voice volume, not the whole ambience bus)
+expect game_state.state.rain_volume ~= 0.35
 screenshot shots/village-rain.png
 call enter {"room": "Home"}
 frames 40
 expect game_state.state.life.drops == 0
 expect game_state.state.life.rain_level == 0
+expect game_state.state.rain_volume == null
 call teleport {"x": 205, "z": -3}
 frames 5
 key KeyE

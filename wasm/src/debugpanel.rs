@@ -75,18 +75,8 @@ impl DebugPanel {
     pub fn pick(&mut self, ctx: &mut Ctx, css: Vec2, hero: Option<Entity>, spheres: &[(String, Vec3, f32)], on_road: impl Fn(f32, f32) -> bool) {
         let Some((o, d)) = ctx.screen_ray(css) else { return };
         let d = d.normalize_or_zero();
-        let mut hit = None;
-        let mut from = o;
-        for _ in 0..3 {
-            match ctx.physics.raycast(from, d, 200.0) {
-                Some(h) if h.entity.is_some() && h.entity == hero => from = h.point + d * 0.05,
-                Some(h) => {
-                    hit = Some(h);
-                    break;
-                }
-                None => break,
-            }
-        }
+        let skip: Vec<Entity> = hero.into_iter().collect();
+        let hit = ctx.physics.raycast_excluding(o, d, 200.0, &skip);
         let mut hit_p = hit.as_ref().map(|h| h.point);
         if hit_p.is_none() && d.y < -1e-3 {
             hit_p = Some(o + d * (-o.y / d.y)); // the baseplate

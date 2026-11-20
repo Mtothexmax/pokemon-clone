@@ -1104,7 +1104,7 @@ impl Screen<Data> for PlayScreen {
         for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"] {
             ctx.ui.set(slot, "");
         }
-        ctx.audio.set_bus_volume(Bus::Ambience, 0.0); // (the rain is outside)
+        self.life_view.stop(ctx, 0.4); // (the rain is outside; it plays again once the village is back)
         self.swipe.stop();
         for n in &mut self.npcs {
             let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
@@ -1134,8 +1134,7 @@ impl Screen<Data> for PlayScreen {
         data.cards.deck_open = false;
         self.dive.abort(ctx);
         ctx.renderer.set_pushers(&[]);
-        self.life_view.stop(ctx);
-        ctx.audio.set_bus_volume(Bus::Ambience, 1.0);
+        self.life_view.stop(ctx, 0.0);
         ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
         ctx.input.touch.set_stick_enabled(true);
         for slot in ["dive", "dive_fx", "help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"] {
@@ -1162,7 +1161,7 @@ impl Screen<Data> for PlayScreen {
             let feet = self.hero_pos(ctx).map(|h| h.0);
             if self.busy || self.fight || self.life.sitting || !self.swipe_mode || axis.length() > 0.05 {
                 self.swipe.stop();
-            } else if let Some(wd) = feet.and_then(|f| self.swipe.step(ctx, f, self.clock, self.area)) {
+            } else if let Some(wd) = feet.and_then(|f| self.swipe.step(ctx, f, self.hero, self.clock, self.area)) {
                 axis = Vec2::new(wd.x, -wd.y);
             } else {
                 self.swipe.stop();
@@ -2007,6 +2006,7 @@ impl Screen<Data> for PlayScreen {
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
             "busy": self.busy,
             "life": self.life.describe(g),
+            "rain_volume": self.life_view.rain_volume(ctx),
             "debug_panel": self.dbg.describe(),
             "swipe": {"mode": self.swipe_mode, "on": self.swipe.on, "dir": [self.swipe.dir.x, self.swipe.dir.y], "started": self.swipe.started, "dodging": self.swipe.dodging},
             "npc_stops": self.npc_stops,
