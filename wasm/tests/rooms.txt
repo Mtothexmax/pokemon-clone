@@ -46,9 +46,9 @@ expect game_state.state.hero.x ~= 210.6
 expect game_state.state.camera_layers == 5
 expect game_state.state.room_lights_on == 3
 # Mom (in the kitchen) has the "!" now that you are in her room
-expect game_state.state.npcs.3.id == "mom"
-expect game_state.state.npcs.3.marker == "!"
-expect game_state.state.npcs.4.marker == ""
+expect game_state.state.npcs.5.id == "mom"
+expect game_state.state.npcs.5.marker == "!"
+expect game_state.state.npcs.6.marker == ""
 # ... and up the stairs again (walkable steps)
 frames 40
 down KeyW

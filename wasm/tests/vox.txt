@@ -19,7 +19,7 @@ expect ui.slots.vox_pill == ""
 # ---- Titanoak at its Voxelmon stage walks with you ----
 call flags {"has_deck": true}
 call cards {"give": ["titanoak", "pebbit", "flicker"], "level": {"titanoak": 4}}
-call flags {"voxelmon": 32}
+call flags {"voxelmon": 32, "gate_open": true}
 call teleport {"x": 0, "z": -20}
 frames 30
 expect game_state.state.vox.me.id == "titanoak"

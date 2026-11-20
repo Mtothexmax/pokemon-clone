@@ -36,8 +36,10 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Lab quest: diving suit, deck machine "missing part", pond dive into the cave (swim in 3D, darker with depth,
       seaweed, glowing plants, collectibles, marine snow, part deep down), deck built on return (dive.rs, cave.rs;
       tests dive.txt, dive_touch.txt)
-- [ ] Route 1 north and Stonecrest
-- [ ] Hide and seek with Pip (then he battles), night pill, gate, debug panel
+- [x] Route 1 north and Stonecrest: the gate (Prof. Quill steps aside after the Voxelmon), the trail, the creek and
+      bridge, three more grass patches with wild fights, the forest, Stonecrest (roads, six houses, fountain, castle,
+      Marla, Sir Bricksworth), the two signs, area titles, walls; band layers + forest LODs (north.rs; test north.txt)
+- [ ] Hide and seek with Pip (then he battles), night pill, debug panel (the gate is done: Route 1 part)
 
 ## Hooks for later parts (sound / dialog / life slice)
 - Save: add fields to `save::GameSave` (serde defaults), call `data.save.mark()`; quest flags are already there.
@@ -178,3 +180,30 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   suit_shown, cave_tris, solids, near_core), `sink`, `pond_cd`, `climb_outs`, `save {has_suit, has_part, dive_found}`.
   HUD slots `dive` (tint, edge, pill, hint, Surface button = action `dive_surface`, fade) and `dive_fx` (helmet bubbles).
 - The hide-and-seek / debug-panel part: the Kaigen debug panel's "dive" entries map to the `dive` command above.
+
+## Hooks for later parts (Route 1 / Stonecrest slice)
+- `north.rs` (`Town::build_north`, Kaigen `st_north.c`): everything north of the village plate (z < -47 studs). Consts in
+  `town.rs`: `NORTH_PLATE`, `CREEK`, `BRIDGE`, `TRAIL`, `GRASSES` (all four built; `vox::in_grass` finds the patch, the fight
+  stays in it), `ROADS[7..]` (Stonecrest's streets, `Town::road(i)`), `zone_at(z)` / `ZONE_NAMES` (0 Brickhollow, 1 Route 1,
+  2 Stonecrest, three.js `zoneLabel`), `on_road`.
+- Render layers: the north is cut into bands (`town::NORTH_BANDS`: layers 6, 7, 9, 10; the village stays on 1). `layer_at(x, z)`
+  gives the layer of anything outside (chunks, studs, props, buildings, NPC figures use it). The play camera draws
+  `1 | town::bands_near(z, 30, 40)` (`PlayScreen::outdoor_zone`, every frame) and `town::all_bands()` while the camera looks far
+  (a close-up at a face or sign, a fight). New things north must go on `layer_at` too, or they show everywhere / nowhere.
+  Layers 8 (cave), 31 (hidden), 2..5 (rooms) as before; 11+ are free.
+- Forest LODs: `Prop::lod` > 0 loads the glTF with `GltfOpts { auto_lod: true, lod_distance }` (only the trees behind the route's
+  and the town's walls, `FOREST_LOD` 0.2); everything in the village stays at full detail (`lods_village == 0` in town.txt).
+- The gate: `PlayScreen::gate` (Kaigen app_update): while `!gate_open` walking into the gap (z -25.3..-27.5, |x| < 5) moves you
+  back to z -22.6 and opens `DialogId::Gate` (not during a fight or while busy); `DialogAction::OpenGate` sets `gate_open`,
+  then Prof. Quill walks to `town::GATE_PROF_OPEN` (`gate_walk`, fixed step); her talk spot `talk::GATE_TARGET` follows.
+  Tests that teleport into patch 0 with a Voxelmon set `gate_open: true` (a fight's step back can lead into the gap).
+- NPCs: `town::NPCS` has `knight` (Sir Bricksworth, on the square's plate: y 0.4 via `on_road`) and `baker` (Marla), npcs
+  indices 3 and 4 (the room villagers moved to 5..7). Their lines are `DialogId::Knight` / `Baker` (unvoiced, as three.js),
+  targets 22 / 23; the signs are readables 5 (route sign, `north.glb`) and 6 (town sign, `stonecrest.glb`), targets 20 / 21,
+  with `sign_board` close-ups. The houses' doors lead nowhere yet (no rooms); Pip's hide and seek can use `town::GRASSES` and
+  the forest scatter for spots.
+- Titles: walking between zones shows "Route 1" / "Welcome to Stonecrest!" / "Back in Brickhollow"; the help line's heading is
+  the zone (`PlayScreen::help`).
+- Debug: `game_state.state` `zone`, `bands` (the outdoor layer mask drawn), `gate_stops`, `lods_village`; `save_reset` puts
+  Prof. Quill back at once. The LEGO clouds (`Town::cloud`, y 32 studs over z -20..-70) sit below the camera's height on Route 1
+  and show as pale slabs / shadows over the route's south part (as in three.js and Kaigen; move them if that bothers).

@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, HashMap};
 
 #[path = "rooms.rs"]
 pub mod rooms;
+#[path = "north.rs"]
+mod north;
 
 /// Metres per stud: the minifig (4.9 studs) is then 1.86 m.
 pub const STUD: f32 = 0.38;
@@ -86,6 +88,60 @@ pub const GRASSES: [Rect; 4] = [
 
 pub const POND: Rect = Rect::new(-12.0, -4.0, 15.0, 22.0);
 
+// ---- Route 1 north and Stonecrest (the three.js round 2: town.ts buildNorth, Kaigen st_north.c) ----
+/// The ground plate of the route and the town (the village's plate ends at z -47).
+pub const NORTH_PLATE: Rect = Rect::new(-46.0, 56.0, -194.0, -47.0);
+/// The creek across the route; only the bridge crosses it.
+pub const CREEK: Rect = Rect::new(-46.0, 56.0, -75.0, -71.0);
+pub const BRIDGE: Rect = Rect::new(-3.4, 3.4, -76.2, -69.8);
+/// The dirt trail from the first patch of grass to the town.
+pub const TRAIL: Rect = Rect::new(-2.5, 2.5, -111.0, -42.0);
+/// Stonecrest begins north of here, Route 1 north of -27 (three.js `zoneLabel`).
+pub const STONECREST_Z: f32 = -111.0;
+pub const ROUTE_Z: f32 = -27.0;
+/// The zone you are in outside: 0 Brickhollow, 1 Route 1, 2 Stonecrest.
+pub fn zone_at(z: f32) -> usize {
+    if z < STONECREST_Z {
+        2
+    } else if z < ROUTE_Z {
+        1
+    } else {
+        0
+    }
+}
+pub const ZONE_NAMES: [&str; 3] = ["Brickhollow", "Route 1", "Stonecrest"];
+
+/// Render layers of the land north of the village, in bands of z (studs, south edge first): only the bands
+/// near you are drawn (`bands_near`), the village's own layer stops at the plate's edge (z -47).
+pub const NORTH_BANDS: [(f32, f32, u8); 4] = [(-79.0, -47.0, 6), (-111.0, -79.0, 7), (-143.0, -111.0, 9), (-210.0, -143.0, 10)];
+pub const NORTH_EDGE: f32 = -47.0;
+/// The render layer of something outside at (x, z) studs (the rooms far east keep theirs: groups).
+pub fn layer_at(x: f32, z: f32) -> u8 {
+    if x >= 150.0 || z >= NORTH_EDGE {
+        return rooms::VILLAGE_LAYER;
+    }
+    NORTH_BANDS.iter().find(|b| z >= b.0).map(|b| b.2).unwrap_or(NORTH_BANDS[3].2)
+}
+/// The outdoor layers to draw with you at z (studs): every band within `north` studs ahead (north) and
+/// `south` behind (the top-down camera sees ~22 studs ahead and ~14 behind you; shadows reach further).
+pub fn bands_near(z: f32, north: f32, south: f32) -> u32 {
+    let (lo, hi) = (z - north, z + south);
+    let mut m = if hi >= NORTH_EDGE - 1.0 { 1u32 << rooms::VILLAGE_LAYER } else { 0 };
+    for b in NORTH_BANDS {
+        if b.1 >= lo && b.0 <= hi {
+            m |= 1 << b.2;
+        }
+    }
+    m
+}
+/// Every outdoor layer (the camera at your eyes looks far).
+pub fn all_bands() -> u32 {
+    NORTH_BANDS.iter().fold(1u32 << rooms::VILLAGE_LAYER, |m, b| m | (1 << b.2))
+}
+pub fn on_road(x: f32, z: f32) -> bool {
+    ROADS.iter().any(|r| r.contains(x, z))
+}
+
 /// A villager standing in the town (three.js `NPCS`): id, figure style folder, studs, yaw.
 pub struct NpcDef {
     pub id: &'static str,
@@ -96,12 +152,18 @@ pub struct NpcDef {
     pub rot: f32,
 }
 
-pub const NPCS: [NpcDef; 3] = [
+pub const NPCS: [NpcDef; 5] = [
     NpcDef { id: "rival", name: "Dex", style: "dex", x: 52.5, z: -3.4, rot: -std::f32::consts::FRAC_PI_2 },
     NpcDef { id: "kid", name: "Pip", style: "pip", x: -8.0, z: 13.2, rot: 0.0 },
     // Prof. Quill guarding the way north (until you have a Voxelmon)
     NpcDef { id: "gate-prof", name: "Prof. Hazel Quill", style: "quill", x: 0.0, z: -24.4, rot: 0.0 },
+    // Stonecrest: Sir Bricksworth on the square below the castle, Marla by the bakery
+    NpcDef { id: "knight", name: "Sir Bricksworth", style: "knight", x: 7.0, z: -146.2, rot: 0.0 },
+    NpcDef { id: "baker", name: "Marla", style: "baker", x: -8.0, z: -110.6, rot: 0.0 },
 ];
+/// Where Prof. Quill stands at the gap north: in the middle while it is closed, aside once it is open (studs, yaw).
+pub const GATE_PROF_CLOSED: [f32; 3] = [0.0, -24.4, 0.0];
+pub const GATE_PROF_OPEN: [f32; 3] = [-5.4, -24.2, 0.4];
 
 /// Deterministic random stream (the three.js version used Math.random; the layout only needs to look random).
 pub struct TownRng(u32);
@@ -120,6 +182,8 @@ pub struct Prop {
     pub rot: f32,
     /// -1 the village, else the room (`rooms::RoomId`) it stands in.
     pub area: i8,
+    /// > 0: automatic LODs, their switch distances times this (the forest beside Route 1); 0: full detail
+    pub lod: f32,
 }
 
 /// A static collider: rect in studs, height in metres (from the ground).
@@ -153,9 +217,9 @@ pub enum OccluderSpec {
 
 pub struct Town {
     rng: TownRng,
-    chunks: BTreeMap<(i32, i32), MeshBuilder>,
-    /// chunk the next geometry goes to (studs of the current thing's centre)
-    at: (i32, i32),
+    chunks: BTreeMap<(i32, i32, u8), MeshBuilder>,
+    /// chunk the next geometry goes to (of the current thing's centre) and its render layer
+    at: (i32, i32, u8),
     used: Vec<Rect>,
     pub solids: Vec<Solid>,
     pub props: Vec<Prop>,
@@ -169,6 +233,8 @@ pub struct Town {
     area: i8,
     /// Sloped colliders (the stairs): centre and half size (metres), turn about x (radians).
     pub ramps: Vec<(Vec3, Vec3, f32)>,
+    /// the LOD factor of the props placed now (`Prop::lod`)
+    prop_lod: f32,
 }
 
 fn part(hex: u32) -> String {
@@ -187,7 +253,7 @@ fn y_to(dir: Vec3) -> Quat {
 
 impl Town {
     fn new() -> Self {
-        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, ramps: vec![] }
+        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0, rooms::VILLAGE_LAYER), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, ramps: vec![], prop_lod: 0.0 }
     }
 
     fn rand(&mut self) -> f32 {
@@ -198,7 +264,7 @@ impl Town {
     }
 
     fn here(&mut self, x: f32, z: f32) {
-        self.at = ((x / CHUNK).floor() as i32, (z / CHUNK).floor() as i32);
+        self.at = ((x / CHUNK).floor() as i32, (z / CHUNK).floor() as i32, layer_at(x, z));
     }
 
     fn b(&mut self, hex: u32) -> &mut MeshBuilder {
@@ -301,7 +367,7 @@ impl Town {
     /// The strip in front of each readable sign board, where the camera stands for the close-up:
     /// nothing grows there.
     fn in_sign_view(x: f32, z: f32) -> bool {
-        let boards = [[5.9, 20.41, 0.0, 3.8], [5.0, -24.09, 0.0, 3.4], [-22.91, 8.9, std::f32::consts::FRAC_PI_2, 2.8], [13.0, 16.17, 0.0, 5.2]];
+        let boards = [[5.9, 20.41, 0.0, 3.8], [5.0, -24.09, 0.0, 3.4], [-22.91, 8.9, std::f32::consts::FRAC_PI_2, 2.8], [13.0, 16.17, 0.0, 5.2], [5.5, -48.99, 0.0, 3.4], [5.5, -108.39, 0.0, 3.4]];
         boards.iter().any(|b: &[f32; 4]| {
             let (dx, dz, yaw) = (x - b[0], z - b[1], b[2]);
             let along = dx * yaw.sin() + dz * yaw.cos();
@@ -315,7 +381,7 @@ impl Town {
         if !path.starts_with("assets/signs/") && y < 1.0 && Self::in_sign_view(x, z) {
             return;
         }
-        self.props.push(Prop { path: path.to_string(), pos: m(x, y, z), scale: s, rot, area: self.area });
+        self.props.push(Prop { path: path.to_string(), pos: m(x, y, z), scale: s, rot, area: self.area, lod: self.prop_lod });
     }
 
     fn petal(hex: u32) -> &'static str {
@@ -998,7 +1064,8 @@ impl Town {
 
         // ---- the villagers who stand still block their spot ----
         for n in &NPCS {
-            if n.id != "kid" {
+            // (Pip walks; Prof. Quill steps aside once the way north is open: her own capsule blocks)
+            if n.id != "kid" && n.id != "gate-prof" {
                 let (x, z) = (n.x, n.z);
                 self.block(x - 0.9, x + 0.9, z - 0.7, z + 0.7);
             }
@@ -1055,11 +1122,12 @@ impl Town {
             [3.6, 8.4, -29.6, -28.6],
             [-9.4, -8.4, -41.6, -28.6],
             [8.4, 9.4, -41.6, -28.6],
-            // (the route north is the next slice: closed for now)
-            [-8.4, 8.4, -42.6, -41.6],
         ] {
             self.block(w[0], w[1], w[2], w[3]);
         }
+
+        // ---- Route 1 north and Stonecrest (last: the village above keeps its random layout) ----
+        self.build_north();
     }
 }
 
@@ -1070,8 +1138,12 @@ pub struct TownAssets {
     pub materials: HashMap<u32, MaterialId>,
     pub stud: MeshId,
     pub ground: MaterialId,
+    /// the tan dirt trail of Route 1 (the baseplate's studs in tan)
+    pub trail: MaterialId,
     pub table: MaterialId,
     pub water: MaterialId,
+    /// the creek on Route 1 (coarser waves: a long strip)
+    pub creek: MaterialId,
 }
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
@@ -1123,11 +1195,13 @@ impl TownAssets {
         let stud = ctx.renderer.add_mesh("lego stud", &md);
         let (tex, nrm) = stud_maps(ctx);
         let ground = ctx.renderer.add_material(Material { name: "baseplate".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, ..lego(C_GREEN) });
+        let trail = ctx.renderer.add_material(Material { name: "trail".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, ..lego(0xc8a46a) });
         let table = ctx.renderer.add_material(Material { name: "table".into(), ..Material::color(0xe9eef2).rough(0.6) });
         // a small, murky village pond: low calm waves, little clarity
         let water = ctx.renderer.add_material(Material { name: "pond water".into(), wave_height: 0.015, wave_scale: 2.0, water_chop: 0.3, water_clarity: 0.8, water_foam: 0.0, water_vertex_spacing: 0.1, ..Material::water(0x1d4a5e, C_WATER) });
+        let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });
         let _ = AlphaMode::Opaque;
-        Self { materials: HashMap::new(), stud, ground, table, water }
+        Self { materials: HashMap::new(), stud, ground, trail, table, water, creek }
     }
 
     pub fn material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
@@ -1154,8 +1228,36 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
         let base = ctx.spawn_parts("baseplate", &parts, |_| g, Transform::default());
         ctx.set_layer(base, village);
         ctx.physics.add_static(ColliderBuilder::cuboid(52.0 * STUD, 0.4 * STUD, 38.0 * STUD), m(20.0, -0.4, -9.0));
-        let table = ctx.spawn_mesh("table", ctx.renderer.builtin.cube, assets.table, Transform::from_translation(m(20.0, -1.3, -9.0)).with_scale(m(400.0, 1.0, 400.0)));
+        // (the table under the village ends where the north plate begins: each band has its own piece)
+        let table = ctx.spawn_mesh("table", ctx.renderer.builtin.cube, assets.table, Transform::from_translation(m(20.0, -1.3, (NORTH_EDGE + 191.0) * 0.5)).with_scale(m(400.0, 1.0, 191.0 - NORTH_EDGE)));
         ctx.set_layer(table, village);
+        // ---- the north plate (Route 1 and Stonecrest), one piece per band, and the trail on it ----
+        let p = NORTH_PLATE;
+        for (i, (z0, z1, layer)) in NORTH_BANDS.into_iter().enumerate() {
+            let (pz0, pz1) = (z0.max(p.z0), z1.min(p.z1));
+            let mut mb = MeshBuilder::new().uv_world(1.0 / STUD);
+            mb.part("ground").cuboid(m(p.x0, -0.8, pz0), m(p.x1, 0.0, pz1));
+            let (tz0, tz1) = (z0.max(TRAIL.z0), z1.min(TRAIL.z1));
+            if tz1 > tz0 {
+                mb.part("trail").cuboid(m(TRAIL.x0, 0.0, tz0), m(TRAIL.x1, 0.04, tz1));
+            }
+            let parts = mb.finish();
+            let (g, tr) = (assets.ground, assets.trail);
+            let e = ctx.spawn_parts(&format!("north plate {i}"), &parts, |n| if n == "trail" { tr } else { g }, Transform::default());
+            ctx.set_layer(e, layer);
+            let tz0 = if i == NORTH_BANDS.len() - 1 { -209.0 } else { z0 };
+            let t = ctx.spawn_mesh("table", ctx.renderer.builtin.cube, assets.table, Transform::from_translation(m(20.0, -1.3, (tz0 + z1) * 0.5)).with_scale(m(400.0, 1.0, z1 - tz0)));
+            ctx.set_layer(t, layer);
+        }
+        ctx.physics.add_static(ColliderBuilder::cuboid((p.x1 - p.x0) * 0.5 * STUD, 0.4 * STUD, (p.z1 - p.z0) * 0.5 * STUD), m((p.x0 + p.x1) * 0.5, -0.4, (p.z0 + p.z1) * 0.5));
+        // the creek's water (on the band of the bridge), in 8 square-ish pieces (a water surface is an n x n grid)
+        let c = CREEK;
+        let seg = (c.x1 - c.x0) / 8.0;
+        for k in 0..8 {
+            let x = c.x0 + seg * (k as f32 + 0.5);
+            let creek = ctx.spawn_water("creek water", assets.creek, Vec2::new(seg * STUD, (c.z1 - c.z0) * STUD), Transform::from_translation(m(x, 0.12, (c.z0 + c.z1) * 0.5)));
+            ctx.set_layer(creek, layer_at(0.0, (c.z0 + c.z1) * 0.5));
+        }
         // the pond's water surface
         let pond = ctx.spawn_water("pond water", assets.water, Vec2::new((POND.x1 - POND.x0) * STUD, (POND.z1 - POND.z0) * STUD), Transform::from_translation(m((POND.x0 + POND.x1) * 0.5, 0.25, (POND.z0 + POND.z1) * 0.5)));
         ctx.set_layer(pond, village);
@@ -1163,7 +1265,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
 
     // ---- the bricks, chunk by chunk, one part per colour ----
     let chunks = std::mem::take(&mut t.chunks);
-    for ((cx, cz), mb) in chunks {
+    for ((cx, cz, chunk_layer), mb) in chunks {
         stats.triangles += mb.triangle_count();
         let parts = mb.finish();
         stats.meshes += parts.len();
@@ -1174,8 +1276,8 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
                 (p.clone(), assets.material(ctx, hex))
             })
             .collect();
-        let e = ctx.spawn_parts(&format!("town chunk {cx},{cz}"), &parts, |p| mats[p], Transform::default());
-        ctx.set_layer(e, village);
+        let e = ctx.spawn_parts(&format!("town chunk {cx},{cz} (layer {chunk_layer})"), &parts, |p| mats[p], Transform::default());
+        ctx.set_layer(e, chunk_layer);
         stats.chunks += 1;
     }
 
@@ -1184,6 +1286,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
     let mut group_studs: Vec<Vec<Entity>> = vec![vec![]; t.groups.len()];
     let groups = std::mem::take(&mut t.groups);
     let mut roots = vec![];
+    let mut group_layer = vec![];
     for (i, mb) in groups.into_iter().enumerate() {
         stats.triangles += mb.triangle_count();
         let parts = mb.finish();
@@ -1201,7 +1304,10 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             .map(|(p, _)| (p.clone(), assets.material(ctx, u32::from_str_radix(&p[1..], 16).unwrap_or(0xffffff))))
             .collect();
         let root = ctx.spawn_parts(&format!("building {i}"), &parts, |p| mats[p], Transform::default());
-        ctx.set_layer(root, layer(t.group_area[i]));
+        // (a building outside: the band of its middle)
+        let gl = if t.group_area[i] < 0 { layer_at((min.x + max.x) * 0.5 / STUD, (min.z + max.z) * 0.5 / STUD) } else { layer(t.group_area[i]) };
+        group_layer.push(gl);
+        ctx.set_layer(root, gl);
         roots.push((root, min, max, t.group_area[i]));
     }
 
@@ -1209,7 +1315,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
     for (hex, p, g) in &t.studs {
         let mat = assets.material(ctx, *hex);
         let e = ctx.spawn_mesh("stud", assets.stud, mat, Transform::from_translation(*p));
-        ctx.set_layer(e, layer(g.map(|g| t.group_area[g]).unwrap_or(-1)));
+        ctx.set_layer(e, g.map(|g| group_layer[g]).unwrap_or_else(|| layer_at(p.x / STUD, p.z / STUD)));
         if let Some(g) = g {
             group_studs[*g].push(e);
         }
@@ -1225,8 +1331,9 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
 
     // ---- models (the trees can fade too) ----
     for p in &t.props {
-        let root = ctx.load_gltf(&p.path, Transform::from_translation(p.pos).with_rotation(Quat::from_rotation_y(p.rot)).with_scale(Vec3::splat(p.scale)));
-        ctx.set_layer(root, layer(p.area));
+        let t = Transform::from_translation(p.pos).with_rotation(Quat::from_rotation_y(p.rot)).with_scale(Vec3::splat(p.scale));
+        let root = if p.lod > 0.0 { ctx.load_gltf_with(&p.path, t, engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: p.lod }) } else { ctx.load_gltf(&p.path, t) };
+        ctx.set_layer(root, if p.area < 0 { layer_at(p.pos.x / STUD, p.pos.z / STUD) } else { layer(p.area) });
         if p.path.contains("tree") || p.path.contains("spruce") || p.path.contains("cypress") || p.path.contains("pine") || p.path.contains("castle") {
             occluders.push(OccluderSpec::Model { root });
         }

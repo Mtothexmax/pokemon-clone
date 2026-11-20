@@ -1,0 +1,231 @@
+# Route 1 north and Stonecrest (north.rs, Kaigen st_north.c): Prof. Quill holds the gap north until you have a
+# Voxelmon (walking into it turns you back and she talks; with a Voxelmon her dialogue opens the way and she steps
+# aside), the area titles (Route 1 / Welcome to Stonecrest! / Back in Brickhollow) and the help heading, the bridge
+# over the creek, the route's walls, a wild Voxelmon in a Route 1 patch, the signs, Marla and Sir Bricksworth.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/north.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 10
+# the land north is built on its own band layers; the village shows only its own
+expect game_state.state.town.props >= 700
+expect game_state.state.zone == "Brickhollow"
+expect game_state.state.bands == 2
+# ---- the gap is closed: Prof. Quill stands in the middle; walking past her turns you back and she talks ----
+expect game_state.state.npcs.2.id == "gate-prof"
+expect game_state.state.npcs.2.x ~= 0
+call teleport {"x": 2.6, "z": -21}
+frames 10
+down KeyW
+frames 90
+up KeyW
+frames 5
+expect game_state.state.gate_stops == 1
+expect game_state.state.dialog.id == "Gate"
+expect game_state.state.dialog.text contains Don't go out there
+expect game_state.state.talk_npc == "gate-prof"
+expect game_state.state.hero.z > -25
+key KeyE
+frames 5
+key KeyE
+frames 5
+key KeyE
+frames 30
+expect game_state.state.dialog == null
+expect game_state.state.save.gate_open == false
+# ---- with a deck but no Voxelmon: still closed ----
+call flags {"has_deck": true}
+call teleport {"x": -2.6, "z": -22}
+frames 5
+down KeyW
+frames 60
+up KeyW
+frames 5
+expect game_state.state.gate_stops == 2
+expect game_state.state.dialog.text contains Cards alone
+key KeyE
+frames 5
+key KeyE
+frames 5
+key KeyE
+frames 5
+key KeyE
+frames 30
+expect game_state.state.save.gate_open == false
+# ---- a Voxelmon: she opens the way and walks aside ----
+call cards {"give": ["titanoak"], "level": {"titanoak": 4}}
+call flags {"voxelmon": 32}
+call teleport {"x": 2.6, "z": -22}
+frames 5
+expect game_state.state.npcs.2.marker == "!"
+down KeyW
+frames 60
+up KeyW
+frames 5
+expect game_state.state.gate_stops == 3
+expect game_state.state.dialog.text contains A real Voxelmon
+key KeyE
+frames 5
+key KeyE
+frames 30
+expect game_state.state.save.gate_open == true
+expect game_state.state.toast contains Route 1 is open
+expect game_state.state.sound.last_sfx == "fanfare"
+frames 120
+expect game_state.state.npcs.2.x ~= -5.4
+expect game_state.state.npcs.2.z ~= -24.2
+# ---- through the gap: Route 1 (title, help heading, the route's band layer drawn) ----
+call teleport {"x": 0, "z": -22}
+frames 5
+down KeyW
+frames 100
+up KeyW
+frames 5
+expect game_state.state.gate_stops == 3
+expect game_state.state.hero.z < -27
+expect game_state.state.zone == "Route 1"
+expect game_state.state.title == "Route 1"
+expect ui.slots.help contains Route 1
+# ---- the route sign ----
+call teleport {"x": 5.5, "z": -47}
+frames 10
+expect game_state.state.nearby == "the route sign"
+key KeyE
+frames 40
+expect game_state.state.reading == 5
+down KeyS
+frames 5
+up KeyS
+frames 40
+expect game_state.state.reading == null
+# ---- the bridge: a deck you walk onto; the creek beside it blocks ----
+call teleport {"x": 0, "z": -67}
+frames 10
+down KeyW
+frames 80
+up KeyW
+frames 5
+expect game_state.state.hero.z < -76.5
+call teleport {"x": 8, "z": -67}
+frames 10
+down KeyW
+frames 80
+up KeyW
+frames 5
+expect game_state.state.hero.z > -70.6
+# ---- the route's walls: east at x 20 (the forest beyond) ----
+call teleport {"x": 17, "z": -66}
+frames 10
+down KeyD
+frames 80
+up KeyD
+frames 5
+expect game_state.state.hero.x < 20
+call teleport {"x": -17, "z": -66}
+frames 10
+down KeyA
+frames 80
+up KeyA
+frames 5
+expect game_state.state.hero.x > -20
+# ---- a wild Voxelmon in the patch beside the trail (patch 1: x -17..-4.5, z -64..-50) ----
+call vox {"rate": 1.0, "seed": 7}
+call teleport {"x": -10, "z": -52}
+frames 20
+down KeyS
+frames 40
+up KeyS
+frames 5
+expect game_state.state.fight == true
+expect game_state.state.vox.fights == 1
+expect game_state.state.sound.track == "wild"
+expect game_state.state.vox.center.1 < -50
+expect game_state.state.vox.center.1 > -64
+wait_for game_state.state.vox.phase == "Fight" 3000
+call vox {"run": true, "rate": 0.0}
+wait_for game_state.state.fight == false 5000
+# ---- Stonecrest: the town sign, Marla, the title ----
+call teleport {"x": 4, "z": -104}
+frames 10
+down KeyW
+frames 60
+up KeyW
+frames 5
+expect game_state.state.zone == "Stonecrest"
+expect game_state.state.title == "Welcome to Stonecrest!"
+expect ui.slots.help contains Stonecrest
+call teleport {"x": 5.5, "z": -106.5}
+frames 10
+expect game_state.state.nearby == "the town sign"
+call teleport {"x": -8, "z": -108.6}
+frames 10
+expect game_state.state.nearby == "Marla"
+key KeyE
+frames 40
+expect game_state.state.dialog.id == "Baker"
+expect game_state.state.dialog.speaker == "Marla"
+expect game_state.state.talk_npc == "baker"
+screenshot shots/north-marla.png
+key KeyE
+frames 5
+key KeyE
+frames 40
+expect game_state.state.dialog == null
+# ---- Sir Bricksworth on the square below the castle ----
+call teleport {"x": 7, "z": -143.5}
+frames 10
+expect game_state.state.nearby == "Sir Bricksworth"
+key KeyE
+frames 40
+expect game_state.state.dialog.speaker == "Sir Bricksworth"
+expect game_state.state.npcs.3.facing_you == true
+key KeyE
+frames 5
+key KeyE
+frames 5
+key KeyE
+frames 40
+expect game_state.state.dialog == null
+# ---- the map's edges: the castle, the walls around the town ----
+call teleport {"x": 0, "z": -146}
+frames 10
+down KeyW
+frames 60
+up KeyW
+frames 5
+expect game_state.state.hero.z > -149
+call teleport {"x": 44, "z": -180}
+frames 10
+down KeyD
+frames 60
+up KeyD
+frames 5
+expect game_state.state.hero.x < 48
+down KeyW
+frames 120
+up KeyW
+frames 5
+expect game_state.state.hero.z > -190
+call teleport {"x": -38, "z": -150}
+frames 10
+down KeyA
+frames 60
+up KeyA
+frames 5
+expect game_state.state.hero.x > -42
+expect game_state.state.bands > 1000
+screenshot shots/north-stonecrest.png
+# ---- back south: "Back in Brickhollow" ----
+call teleport {"x": 0, "z": -29}
+frames 10
+down KeyS
+frames 50
+up KeyS
+frames 5
+expect game_state.state.zone == "Brickhollow"
+expect game_state.state.title == "Back in Brickhollow"
+call save_reset

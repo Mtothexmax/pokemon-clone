@@ -12,7 +12,7 @@ call life {"freeze": true, "pip_home": true}
 resume
 call flags {"has_deck": true}
 call cards {"give": ["abyssquid", "pebbit"], "level": {"abyssquid": 4}}
-call flags {"voxelmon": 34}
+call flags {"voxelmon": 34, "gate_open": true}
 call teleport {"x": 0, "z": -30}
 frames 30
 # a touch: the touch HUD (Jump), the pill under the Deck button

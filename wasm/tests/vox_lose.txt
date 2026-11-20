@@ -11,7 +11,7 @@ call life {"freeze": true, "pip_home": true}
 resume
 call flags {"has_deck": true}
 call cards {"give": ["stormaw"], "level": {"stormaw": 4}}
-call flags {"voxelmon": 33}
+call flags {"voxelmon": 33, "gate_open": true}
 call teleport {"x": 0, "z": -32}
 frames 30
 expect game_state.state.vox.me.id == "stormaw"

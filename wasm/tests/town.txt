@@ -11,8 +11,10 @@ expect game_state.state.town.studs >= 900
 expect game_state.state.town.props >= 400
 expect game_state.state.town.colliders >= 130
 expect game_state.state.hero.grounded == true
-# the LEGO models are drawn at full detail (no auto-LOD: it misshaped the figures and popped while walking)
-expect game_state.state.lods_left == 0
+# the LEGO models are drawn at full detail (no auto-LOD: it misshaped the figures and popped while walking); only the
+# forest behind the walls of Route 1 and Stonecrest has LODs
+expect game_state.state.lods_village == 0
+expect game_state.state.lods_left > 0
 expect game_state.state.hero.x ~= -15
 expect game_state.state.hero.z ~= -2.5
 

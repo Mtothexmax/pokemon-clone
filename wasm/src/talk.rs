@@ -50,7 +50,7 @@ const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static st
 
 /// Everything you can do something with (Kaigen `world_target`): the villagers, the signs and the
 /// mailbox, the TVs, the piano, the computers, your bed. Pip's spot follows him.
-pub const TARGETS: [Target; 20] = [
+pub const TARGETS: [Target; 24] = [
     Target { kind: Use::Talk, x: 193.4, z: -2.8, verb: "Talk to", label: "Mom", dialog: DialogId::Mom, npc: "mom" },
     Target { kind: Use::Talk, x: 335.4, z: -1.2, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Prof, npc: "lab-prof" },
     Target { kind: Use::Talk, x: 52.5, z: -1.8, verb: "Talk to", label: "Dex", dialog: DialogId::Dex, npc: "rival" },
@@ -76,8 +76,15 @@ pub const TARGETS: [Target; 20] = [
     thing(Use::Lab, 343.2, 3.3, "Use", "the lab computer"),
     // the lab quest: the suit behind the bookshelves (Kaigen st_world.c case 15)
     thing(Use::Suit, 315.6, -7.2, "Take", "the old diving suit"),
+    // Route 1 north and Stonecrest (Kaigen st_world.c cases 17..20)
+    thing(Use::Read(5), 5.5, -48.0, "Read", "the route sign"),
+    thing(Use::Read(6), 5.5, -107.4, "Read", "the town sign"),
+    Target { kind: Use::Talk, x: 7.0, z: -144.8, verb: "Talk to", label: "Sir Bricksworth", dialog: DialogId::Knight, npc: "knight" },
+    Target { kind: Use::Talk, x: -8.0, z: -109.2, verb: "Talk to", label: "Marla", dialog: DialogId::Baker, npc: "baker" },
 ];
 pub const SUIT_TARGET: usize = 19;
+/// Prof. Quill at the gap: her spot moves aside once the way is open (`town::GATE_PROF_OPEN`).
+pub const GATE_TARGET: usize = 4;
 pub const PIP_TARGET: usize = 6;
 /// Reach (studs): 4.2 for everyone, 6 for Pip (he stops walking within 6).
 pub fn reach(i: usize) -> f32 {
@@ -106,11 +113,13 @@ pub fn readable(i: usize) -> Readable {
         1 => Readable { title: "ROUTE 1", lines: &["Tall grass ahead!", "Wild Brick Beasts love to hide in it. Keep your deck ready."], note: None, bg: wood, fg: brown },
         2 => Readable { title: "GARDEN", lines: &["Please do not step on the flowers."], note: Some("Pip, that means YOU."), bg: "#e4cd9e", fg: brown },
         3 => Readable { title: "QUILL LAB", lines: &["Brick Beast research since 1978.", "Opening hours: whenever the Professor remembers to unlock the door."], note: None, bg: paper, fg: "#1e5aa8" },
+        5 => Readable { title: "STONECREST \u{25b2}", lines: &["Route 1 goes on through the forest.", "Mind the creek, use the bridge!"], note: None, bg: wood, fg: brown },
+        6 => Readable { title: "STONECREST", lines: &["\"The town below the old castle.\"", "Bakery \u{b7} Inn \u{b7} Market \u{b7} Smith"], note: None, bg: paper, fg: "#6c6e68" },
         _ => Readable { title: "MAILBOX", lines: &["A postcard: \"Welcome home! Drop by the lab when you are ready.\"", "- Prof. Quill"], note: None, bg: paper, fg: ink },
     }
 }
 
-/// The painted board of readables 0..3 (metres; the camera flies to it), as the town places the signs.
+/// The painted board of readables 0..3, 5, 6 (metres; the camera flies to it), as the town places the signs.
 pub fn sign_board(i: usize) -> Option<Board> {
     let b = |x: f32, y: f32, z: f32, yaw: f32, w: f32, h: f32| Some(Board { c: Vec3::new(x, y, z) * STUD, yaw, w, h, max_dist: 0.0, tilt: 0.0 });
     match i {
@@ -118,6 +127,8 @@ pub fn sign_board(i: usize) -> Option<Board> {
         1 => b(5.0, 2.2, -24.09, 0.0, 3.4, 1.8),
         2 => b(-22.91, 2.1, 8.9, std::f32::consts::FRAC_PI_2, 2.8, 1.5),
         3 => b(13.0, 5.75, 16.17, 0.0, 5.2, 1.9),
+        5 => b(5.5, 2.2, -48.99, 0.0, 3.4, 1.8),
+        6 => b(5.5, 2.2, -108.39, 0.0, 3.4, 1.8),
         _ => None,
     }
 }

@@ -141,6 +141,15 @@ pub struct PlayScreen {
     surface_fade: f32,
     /// times the pond sent you back to the bank (no suit; tests)
     climb_outs: u32,
+    // ---- Route 1 north and Stonecrest (north.rs) ----
+    /// the outdoor zone you are in (`town::zone_at`: 0 Brickhollow, 1 Route 1, 2 Stonecrest)
+    zone: usize,
+    /// the outdoor band layers the camera draws (`town::bands_near`)
+    bands: u32,
+    /// where Prof. Quill at the gap walks to (studs x, z, yaw): aside once the way is open
+    gate_to: Option<[f32; 3]>,
+    /// times the closed gap sent you back (tests)
+    gate_stops: u32,
 }
 
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
@@ -151,8 +160,9 @@ const DIVE_HIDES: [&str; 13] = ["help", "touch", "goal", "prompt", "menubtn", "s
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
-const TOUCH_HELP: &str = "<div class='panel'><b>Brickhollow</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
-const KEYS_HELP: &str = "<div class='panel'><b>Brickhollow</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
+/// (the heading is the zone you are in: Kaigen `g_hud_place`)
+const TOUCH_HELP: &str = "<div class='panel'><b>{place}</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
+const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
@@ -211,6 +221,104 @@ pub const STYLE: &str = "<style>
 </style>";
 
 impl PlayScreen {
+    /// The help line (keys or touch) under the zone's name (Brickhollow / Route 1 / Stonecrest).
+    fn help(&self) -> String {
+        let place = if self.area.is_some() { "Brickhollow" } else { town::ZONE_NAMES[self.zone] };
+        (if self.touch_ui { TOUCH_HELP } else { KEYS_HELP }).replace("{place}", place)
+    }
+
+    /// Outside: the zone you walk into gets its title (three.js `zoneLabel` toast, Kaigen `world_doors`), the help
+    /// line its name; the camera draws the band layers near you (all of them while it looks far: a close-up or a fight).
+    fn outdoor_zone(&mut self, ctx: &mut Ctx) {
+        if self.area.is_some() {
+            return;
+        }
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let z = p.z / STUD;
+        let zone = town::zone_at(z);
+        if zone != self.zone {
+            self.zone = zone;
+            self.title = ["Back in Brickhollow", "Route 1", "Welcome to Stonecrest!"][zone];
+            self.title_t = 3.5;
+            if !self.help_hidden {
+                ctx.ui.set("help", &self.help());
+            }
+        }
+        let bands = if self.zoom.active || self.fight || self.vox.cam_on { town::all_bands() } else { town::bands_near(z, 30.0, 40.0) };
+        if bands != self.bands {
+            self.bands = bands;
+            if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut Camera>(c).ok()) {
+                c.layers = 1 | bands;
+            }
+        }
+    }
+
+    /// The gap north (Kaigen app_update): Prof. Quill stands in it until you have shown her a Voxelmon
+    /// (`gate_open`); walking into it then turns you back to her and she talks. Once open she walks aside.
+    fn gate(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        if !data.save.loaded {
+            return;
+        }
+        let open = data.save.data.gate_open;
+        let want = if open { town::GATE_PROF_OPEN } else { town::GATE_PROF_CLOSED };
+        if self.gate_to.is_none() {
+            // (the first frame: she simply stands where the save says)
+            if let Some(i) = self.npc_index("gate-prof") {
+                self.npcs[i].yaw = want[2];
+                if let Ok(mut t) = ctx.world.get::<&mut Transform>(self.npcs[i].fig.root) {
+                    t.translation = town::m(want[0], 0.0, want[1]);
+                    t.rotation = Quat::from_rotation_y(want[2]);
+                }
+            }
+        }
+        self.gate_to = Some(want);
+        // (not in a fight: stepping back from one in the first patch may lead into the gap)
+        if open || self.busy || self.fight || self.area.is_some() || self.door.is_some() {
+            return;
+        }
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let (x, z) = (p.x / STUD, p.z / STUD);
+        if z < -25.3 && z > -27.5 && x.abs() < 5.0 {
+            self.teleport(ctx, x, -22.6);
+            if let Some(mut cc) = self.hero.and_then(|h| ctx.world.get::<&mut CharacterController>(h).ok()) {
+                cc.yaw = 0.0;
+            }
+            self.gate_stops += 1;
+            self.talk(ctx, data, talk::GATE_TARGET);
+        }
+    }
+
+    /// Prof. Quill walks to her spot at the gap (fixed step, with the walk cycle).
+    fn gate_walk(&mut self, ctx: &mut Ctx, dt: f32) {
+        let (Some(to), Some(i)) = (self.gate_to, self.npc_index("gate-prof")) else { return };
+        if self.dlg.is_open() && self.talk_npc == Some(i) {
+            return; // (she talks first)
+        }
+        let Some(q) = self.npc_pos(ctx, i) else { return };
+        let (cur, goal) = (Vec2::new(q.x, q.z) / STUD, Vec2::new(to[0], to[1]));
+        let d = goal - cur;
+        let n = &mut self.npcs[i];
+        if d.length() < 0.05 {
+            if (life::wrap(to[2] - n.yaw)).abs() > 0.01 {
+                n.yaw += life::wrap(to[2] - n.yaw) * (dt * 6.0).min(1.0);
+                if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
+                    t.rotation = Quat::from_rotation_y(n.yaw);
+                }
+            }
+            n.fig.animate(ctx, dt, false, 1.0);
+            return;
+        }
+        let step = (4.0 * dt).min(d.length());
+        let at = cur + d.normalize() * step;
+        let want = d.x.atan2(d.y);
+        n.yaw += life::wrap(want - n.yaw) * (dt * 10.0).min(1.0);
+        if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
+            t.translation = town::m(at.x, 0.0, at.y);
+            t.rotation = Quat::from_rotation_y(n.yaw);
+        }
+        n.fig.animate(ctx, dt, true, 0.8);
+    }
+
     /// A card face from command args {id, level, big, unknown, back, power}.
     fn face_arg(a: &Value) -> Option<crate::cardface::Face> {
         use crate::cardface::Face;
@@ -285,15 +393,21 @@ impl PlayScreen {
         }
         let first = self.shown_area.is_none();
         self.shown_area = Some(self.area);
+        if self.area.is_none() {
+            let z = self.hero_pos(ctx).map(|(p, _)| p.z / STUD).unwrap_or(0.0);
+            self.zone = town::zone_at(z);
+            self.bands = town::bands_near(z, 30.0, 40.0);
+        }
+        let layers = if self.area.is_some() { 1 | (1 << rooms::layer_of(self.area)) } else { 1 | self.bands };
         if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut Camera>(c).ok()) {
-            c.layers = 1 | (1 << rooms::layer_of(self.area));
+            c.layers = layers;
         }
         for (r, e, k) in &self.room_lights {
             if let Ok(mut l) = ctx.world.get::<&mut PointLight>(*e) {
                 l.intensity = if Some(*r) == self.area { 9.0 * k } else { 0.0 };
             }
         }
-        self.title = self.area.map(|r| rooms::room_def(r).label).unwrap_or("Brickhollow");
+        self.title = self.area.map(|r| rooms::room_def(r).label).unwrap_or(town::ZONE_NAMES[self.zone]);
         self.title_t = if first && self.area.is_none() { 0.0 } else { 3.5 };
     }
 
@@ -362,7 +476,13 @@ impl PlayScreen {
             if i == talk::SUIT_TARGET && !dive::suit_here(save) {
                 continue;
             }
-            let (tx, tz) = if i == talk::PIP_TARGET { (self.life.pip.x, self.life.pip.y) } else { (t.x, t.z) };
+            let (tx, tz) = if i == talk::PIP_TARGET {
+                (self.life.pip.x, self.life.pip.y)
+            } else if i == talk::GATE_TARGET && save.gate_open {
+                (town::GATE_PROF_OPEN[0], t.z)
+            } else {
+                (t.x, t.z)
+            };
             let r = talk::reach(i);
             let d = (tx - x).powi(2) + (tz - z).powi(2);
             if d < r * r && d < best_d {
@@ -632,7 +752,7 @@ impl PlayScreen {
         self.pond_cd = 1.5;
         self.surface_fade = SURFACE_FADE;
         self.help_hidden = false;
-        ctx.ui.set("help", if self.touch_ui { TOUCH_HELP } else { KEYS_HELP });
+        ctx.ui.set("help", &self.help());
         data.settings.applied = None;
     }
 
@@ -774,13 +894,13 @@ impl Screen<Data> for PlayScreen {
         // the villagers: outside, then in the rooms (Mom, Lumi, the Professor in her lab)
         let all: Vec<(&str, &str, f32, f32, f32, f32)> = town::NPCS
             .iter()
-            .map(|n| (n.id, n.style, n.x, 0.0, n.z, n.rot))
+            .map(|n| (n.id, n.style, n.x, if town::on_road(n.x, n.z) { 0.4 } else { 0.0 }, n.z, n.rot))
             .chain(rooms::ROOM_NPCS.iter().map(|n| (n.0, n.1, n.2, rooms::FLOOR, n.3, n.4)))
             .collect();
         for (id, style, x, y, z, rot) in all {
             let f = Figure::spawn(ctx, style, Transform::from_translation(town::m(x, y, z)).with_rotation(Quat::from_rotation_y(rot)), None);
             let area = rooms::area_at(x, z);
-            ctx.set_layer(f.root, rooms::layer_of(area));
+            ctx.set_layer(f.root, if area.is_some() { rooms::layer_of(area) } else { town::layer_at(x, z) });
             // a kinematic capsule (as big as the hero's) so you bump into people instead of walking through them;
             // the figure's root is at its feet, so the capsule is lifted by its half height
             let (hh, r) = (0.62, 0.32);
@@ -830,7 +950,7 @@ impl Screen<Data> for PlayScreen {
         self.camera = Some(ctx.world.spawn((Transform::from_translation(town::m(START[0], 0.0, START[1]) + off), camera, cam)));
         self.area = None;
         self.show_area(ctx);
-        ctx.ui.set("help", KEYS_HELP);
+        ctx.ui.set("help", &self.help());
         self.vox.init(ctx);
         self.dive.init(ctx, data.town.as_mut().unwrap());
     }
@@ -847,7 +967,7 @@ impl Screen<Data> for PlayScreen {
     }
 
     fn resume(&mut self, ctx: &mut Ctx, data: &mut Data) {
-        ctx.ui.set("help", if self.touch_ui { TOUCH_HELP } else { KEYS_HELP });
+        ctx.ui.set("help", &self.help());
         self.shown_area = None;
         self.show_area(ctx);
         if let Some(out) = data.battle_out.take() {
@@ -926,6 +1046,7 @@ impl Screen<Data> for PlayScreen {
             self.fig = Some(f);
         }
 
+        self.gate_walk(ctx, dt);
         // ---- village life: Pip walks his loop; whoever you talk to turns to you ----
         let me = self.hero_pos(ctx).map(|(p, _)| Vec2::new(p.x, p.z) / STUD).unwrap_or_default();
         let kid = self.npc_index("kid");
@@ -959,7 +1080,7 @@ impl Screen<Data> for PlayScreen {
         // phones: once a finger touched the screen, swap the keyboard hints for touch hints and buttons
         if ctx.input.touch.touch_device && !self.touch_ui {
             self.touch_ui = true;
-            ctx.ui.set("help", TOUCH_HELP);
+            ctx.ui.set("help", &self.help());
             data.settings.touch = true; // Auto: the phone profile
         }
         data.sound.update(ctx, dt);
@@ -1090,6 +1211,8 @@ impl Screen<Data> for PlayScreen {
             }
         }
         self.show_area(ctx);
+        self.outdoor_zone(ctx);
+        self.gate(ctx, data);
         self.indoor_light(ctx, dt);
         self.title_t = (self.title_t - dt).max(0.0);
         let ready = data.save.data.has_deck;
@@ -1170,7 +1293,7 @@ impl Screen<Data> for PlayScreen {
         // a fight: the help line would sit under the skill tiles
         if self.fight != self.help_hidden {
             self.help_hidden = self.fight;
-            ctx.ui.set("help", if self.fight { "" } else if self.touch_ui { TOUCH_HELP } else { KEYS_HELP });
+            ctx.ui.set("help", &if self.fight { String::new() } else { self.help() });
         }
         if cards_busy || self.scr.is_open() {
             Vox::clear_hud(ctx);
@@ -1240,6 +1363,7 @@ impl Screen<Data> for PlayScreen {
             }
             "save_reset" => {
                 data.save.reset(ctx);
+                self.gate_to = None; // (Prof. Quill back where the new save says, at once)
                 // (a test's new game: no intro on the next load either; `intro` starts it)
                 data.save.data.intro_seen = true;
                 data.save.flush(ctx);
@@ -1446,6 +1570,9 @@ impl Screen<Data> for PlayScreen {
             "door": self.door.map(|d| (d.0 * 100.0).round() / 100.0),
             "doors_used": self.doors_used,
             "title": if self.title_t > 0.0 { Some(self.title) } else { None },
+            "zone": town::ZONE_NAMES[self.zone],
+            "bands": self.bands,
+            "gate_stops": self.gate_stops,
             "indoor": (self.indoor * 100.0).round() / 100.0,
             "camera_layers": self.camera.and_then(|c| ctx.world.get::<&Camera>(c).ok().map(|c| c.layers)),
             "room_lights_on": self.room_lights.iter().filter(|(_, e, _)| ctx.world.get::<&PointLight>(*e).map(|l| l.intensity > 0.0).unwrap_or(false)).count(),
@@ -1466,6 +1593,8 @@ impl Screen<Data> for PlayScreen {
             "night": (ctx.renderer.sky.night * 100.0).round() / 100.0,
             "lamps": self.lamps.iter().filter_map(|l| ctx.world.get::<&PointLight>(*l).ok().map(|p| (p.intensity * 100.0).round() / 100.0)).collect::<Vec<_>>(),
             "lods_left": ctx.world.query::<&Lod>().iter().count(),
+            // (LODs only on the forest beside Route 1 and around Stonecrest: none in the village)
+            "lods_village": ctx.world.query::<(&Lod, &GlobalTransform)>().iter().filter(|(_, g)| g.0.w_axis.z > town::NORTH_EDGE * STUD).count(),
             "dialog": dlg,
             "dialog_lines_shown": self.dlg.lines_shown,
             "last_dialog": self.dlg.last_closed.map(|(d, a)| json!({"id": format!("{d:?}"), "action": format!("{a:?}")})),
