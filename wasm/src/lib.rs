@@ -17,7 +17,7 @@ use wasm_bindgen::prelude::*;
 pub fn main() {
     // no MSAA, FXAA in the composite: at dpr 2 the village looks the same as with 4x MSAA and renders
     // ~30 % faster on desktop (much more on phones). `?msaa=4` in the URL brings MSAA back
-    engine::app::run_with(
+    engine::run_with(
         ScreenStack::new(Data::default(), Box::new(Title))
             .register("title", || Box::new(Title))
             .register("play", || Box::new(PlayScreen::default())),
@@ -69,6 +69,9 @@ fn setup_look(ctx: &mut Ctx) {
     // desktop: the default 11 ms budget held the resolution at 0.5-0.65 (GPU ~9 ms); 14 ms still fits a
     // 60 Hz frame and renders sharper. Phones get their own budget (phone_quality)
     s.frame_budget_ms = 14.0;
+    // the sun moves 1 degree before the shadows follow (default 0.5): every step re-renders all
+    // cascades, at a 6-minute day that was once a second
+    s.shadow_step_deg = 1.0;
     // the day/night cycle of the original: 6 minutes per day, starting in the morning. The engine
     // places the sun and moon and lights the scene; the sky and fog keep the original's flat colours
     // (day_colours, every frame)
