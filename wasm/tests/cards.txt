@@ -1,0 +1,147 @@
+# Cards: Prof. Quill's starter gift as foil packs to tear open, the deck screen (C / the Deck button): the
+# collection with "???" for missing cards, the deck marked green, pick / remove / double-click to add,
+# an upgrade with EXP (the moment), the save keeps it; card faces as PNG urls and as a 3D texture.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/cards.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 10
+# ---- no deck yet: no Deck button, C does nothing ----
+expect game_state.state.cards.owned == 0
+expect ui.slots.deck_btn == ""
+key KeyC
+frames 5
+expect game_state.state.cards.deck_open == false
+# ---- the Prof's gift: her dialogue ends with GiveStarter ----
+call flags {"quest_part": true, "has_suit": true, "has_part": true}
+call talk {"dialog": "Prof"}
+frames 20
+expect game_state.state.dialog.lines == 4
+key KeyE
+frames 20
+key KeyE
+frames 20
+key KeyE
+frames 20
+key KeyE
+frames 20
+expect game_state.state.dialog == null
+expect game_state.state.cards.rewards.cards == ["titanoak", "thundrake", "emberhorn"]
+expect game_state.state.save.has_deck == true
+expect game_state.state.cards.owned == 18
+expect game_state.state.cards.deck.11 == "titanoak"
+expect game_state.state.busy == true
+expect game_state.state.machine == "ready"
+wait_for ui.slots.packs contains blob: 5000
+expect ui.slots.packs contains RARE
+screenshot shots/cards-packs.png
+# tap one pack: the strip rips, the card pops out (a rare one: the fanfare)
+action pack:0
+frames 40
+expect game_state.state.cards.rewards.revealed == 1
+expect game_state.state.sound.last_sfx == "fanfare"
+# Enter: the rest one after another
+key Enter
+frames 80
+expect game_state.state.cards.rewards.revealed == 3
+expect ui.slots.packs contains Awesome!
+screenshot shots/cards-packs-open.png
+action pack_ok
+frames 10
+expect game_state.state.cards.rewards == null
+expect game_state.state.dialog.id == "ProfAfter"
+key Escape
+frames 10
+expect game_state.state.dialog == null
+expect game_state.state.menu.open == false
+# ---- the Deck button and C open the deck screen ----
+expect ui.slots.deck_btn contains 18
+key KeyC
+frames 5
+expect game_state.state.cards.deck_open == true
+expect game_state.state.busy == true
+expect ui.slots.deck_btn == ""
+expect ui.slots.menubtn == ""
+expect ui.slots.deck_head contains 18 / 34 collected
+expect ui.slots.deck_head contains Deck 12 / 12
+wait_for game_state.state.cards.faces.urls >= 34 5000
+frames 5
+expect ui.slots.deck_coll contains blob:
+expect ui.slots.deck_marks contains bc1::before
+expect ui.slots.deck_strip contains slot:11
+# walking is held
+down KeyD
+frames 20
+up KeyD
+expect game_state.state.hero.speed < 0.5
+# pick Flicker (in the deck) and take it out
+action coll:1
+frames 3
+expect game_state.state.cards.pick == "flicker"
+expect ui.slots.deck_side contains Remove from deck
+action deck_remove
+frames 3
+expect game_state.state.cards.deck.1 == "drizzlet"
+expect ui.slots.deck_head contains Deck 11 / 12
+# a card you do not have cannot be picked
+action coll:9
+frames 3
+expect game_state.state.cards.pick == "flicker"
+# a double click puts Pebbit into the deck
+action coll:0
+frames 3
+action coll:0
+frames 3
+expect game_state.state.cards.deck.11 == "pebbit"
+expect game_state.state.cards.adds == 1
+expect ui.slots.deck_marks contains bc0::before
+screenshot shots/cards-deck.png
+# ---- an upgrade: 15 EXP for Bronze, the moment plays, a key goes back ----
+expect ui.slots.deck_side contains you have 0
+call cards {"exp": 20}
+frames 3
+action deck_upgrade
+frames 3
+expect game_state.state.cards.upgrade.to == 1
+expect game_state.state.cards.exp == 5
+expect game_state.state.cards.levels.pebbit == 1
+wait_for ui.slots.upgrade contains Bronze! 3000
+frames 140
+screenshot shots/cards-upgrade.png
+key Enter
+frames 5
+expect game_state.state.cards.upgrade == null
+expect game_state.state.cards.deck_open == true
+# C closes; the Deck button opens; Esc closes (not the menu)
+key KeyC
+frames 5
+expect game_state.state.cards.deck_open == false
+action deck
+frames 5
+expect game_state.state.cards.deck_open == true
+key Escape
+frames 5
+expect game_state.state.cards.deck_open == false
+expect game_state.state.menu.open == false
+expect game_state.state.busy == false
+# ---- card faces: a texture for 3D cards (the battle part) ----
+call card_face {"id": "thundrake", "level": 3, "big": true, "texture": true}
+expect game_state.state.cards.faces.textures >= 1
+call card_preview {"id": "thundrake", "level": 3}
+frames 20
+screenshot shots/cards-3d.png
+call card_preview {"clear": true}
+# ---- the save keeps the collection, the deck and the stages ----
+frames 60
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+frames 5
+expect game_state.state.cards.owned == 18
+expect game_state.state.cards.deck.11 == "pebbit"
+expect game_state.state.cards.levels.pebbit == 1
+call save_reset

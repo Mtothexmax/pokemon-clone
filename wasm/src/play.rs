@@ -1,6 +1,7 @@
 //! The play screen: the village, you, the villagers, talking, the HUD (goal, prompt, toast, markers,
 //! the ☰ menu) and the touch buttons.
 
+use crate::cards;
 use crate::dialog::{dialog_for, DialogAction, DialogId, DialogState};
 use crate::figure::Figure;
 use crate::life::{self, Life};
@@ -113,12 +114,14 @@ pub struct PlayScreen {
     reading: Option<usize>,
     /// naps taken (tests)
     sleeps: u32,
+    /// 3D cards of the `card_preview` command
+    previews: Vec<Entity>,
 }
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
 const TOUCH_HELP: &str = "<div class='panel'><b>Brickhollow</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
-const KEYS_HELP: &str = "<div class='panel'><b>Brickhollow</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
+const KEYS_HELP: &str = "<div class='panel'><b>Brickhollow</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
@@ -177,6 +180,26 @@ pub const STYLE: &str = "<style>
 </style>";
 
 impl PlayScreen {
+    /// A card face from command args {id, level, big, unknown, back, power}.
+    fn face_arg(a: &Value) -> Option<crate::cardface::Face> {
+        use crate::cardface::Face;
+        if a["back"].as_bool() == Some(true) {
+            return Some(Face::back());
+        }
+        let c = cards::by_id(a["id"].as_str()?)?;
+        let mut f = Face::new(c, a["level"].as_u64().unwrap_or(0).min(4) as u8);
+        if a["big"].as_bool() == Some(true) {
+            f = f.big();
+        }
+        if a["unknown"].as_bool() == Some(true) {
+            f = f.unknown();
+        }
+        if let Some(p) = a["power"].as_i64() {
+            f = f.power(p as i32);
+        }
+        Some(f)
+    }
+
     fn hero_pos(&self, ctx: &Ctx) -> Option<(Vec3, f32)> {
         let h = self.hero?;
         let t = ctx.world.get::<&Transform>(h).ok()?.translation;
@@ -401,6 +424,7 @@ impl PlayScreen {
                 data.save.mark();
             }
             DialogAction::Sleep => self.sleep(ctx, data),
+            DialogAction::GiveStarter => self.give_starter(ctx, data),
             DialogAction::DexScared => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::DexScared, s)),
             DialogAction::BattlePip if s.seek_played == 0 && s.seek_wins == 0 => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::PipNotYet, s)),
             // battles, hide and seek, tag, sleeping, the starter cards: their parts handle these
@@ -411,9 +435,29 @@ impl PlayScreen {
         }
     }
 
+    /// Prof. Quill's gift (Kaigen `cg_dialog_action` ACT_GIVE_STARTER): the 18 starter cards and a deck of 12,
+    /// three of them shown as foil packs to tear open; her "after" dialogue follows.
+    fn give_starter(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        if data.save.data.has_deck {
+            return;
+        }
+        cards::give_starter(&mut data.save.data);
+        data.save.mark();
+        data.sound.sfx(ctx, Sfx::Fanfare, 1.0, 0.8);
+        data.cards.show_rewards(
+            "You received your starter collection! 18 cards, and a deck of 12 (C)",
+            &[cards::TITANOAK, cards::THUNDRAKE, cards::EMBERHORN],
+            Some(DialogId::ProfAfter),
+        );
+    }
+
     /// The touch buttons: Use only in reach of someone or in a dialog (Kaigen touch button 0).
-    fn touch_buttons(&self, ctx: &mut Ctx) {
+    fn touch_buttons(&self, ctx: &mut Ctx, cards_busy: bool) {
         if !self.touch_ui {
+            return;
+        }
+        if cards_busy {
+            ctx.ui.set("touch", "");
             return;
         }
         let use_btn = if self.dlg.is_open() || self.reading.is_some() || (self.nearby.is_some() && !self.busy) { "<button data-action='use'>Use</button> " } else { "" };
@@ -607,7 +651,8 @@ impl Screen<Data> for PlayScreen {
         let s = &mut ctx.renderer.settings;
         (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity) = self.base_light;
         self.scr.close(ctx, &mut data.sound);
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign"] {
+        data.cards.deck_open = false;
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade"] {
             ctx.ui.set(slot, "");
         }
     }
@@ -696,9 +741,11 @@ impl Screen<Data> for PlayScreen {
         }
         data.sound.update(ctx, dt);
         let actions = ctx.ui.take_actions();
+        // the card screens (deck, packs) own the keys while they are open
+        let cards_before = data.cards.busy();
         // Esc: the dialog's (it closes it), else the menu
-        // (a screen and a sign's text close with Esc themselves)
-        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none();
+        // (a screen, a sign's text and the card screens close with Esc themselves)
+        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !cards_before;
         if ctx.input.key_pressed("Escape") && esc_free {
             data.settings.toggle();
         }
@@ -716,10 +763,19 @@ impl Screen<Data> for PlayScreen {
         let menu = data.settings.open;
         let pos = self.hero_pos(ctx);
 
+        // ---- the cards: the deck screen (C / the Deck button), the foil packs, the upgrade moment ----
+        let world_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !menu && self.door.is_none();
+        let out = data.cards.update(ctx, &mut data.save, &mut data.sound, &actions, world_free, dt);
+        if let Some(d) = out.after {
+            self.dlg.open(ctx, &mut data.sound, dialog_for(d, &data.save.data));
+        }
+        let cards_busy = cards_before || data.cards.busy();
+        let actions: Vec<String> = if cards_busy { vec![] } else { actions };
+
         // ---- talking ----
-        let use_key = (ctx.input.key_pressed("KeyE") || use_tap) && !menu;
+        let use_key = (ctx.input.key_pressed("KeyE") || use_tap) && !menu && !cards_busy;
         if self.dlg.is_open() {
-            let advance = use_key || ((ctx.input.key_pressed("Space") || ctx.input.key_pressed("Enter")) && !menu);
+            let advance = use_key || ((ctx.input.key_pressed("Space") || ctx.input.key_pressed("Enter")) && !menu && !cards_busy);
             let clicks: Vec<String> = if menu { vec![] } else { actions.clone() };
             if let Some(act) = self.dlg.update(ctx, &mut data.sound, advance, &clicks) {
                 if ctx.input.key("Space") {
@@ -731,7 +787,7 @@ impl Screen<Data> for PlayScreen {
             let clicks: Vec<String> = if menu { vec![] } else { actions.clone() };
             self.scr.update(ctx, &mut data.sound, &data.save.data, &clicks, !menu, dt);
         } else if let Some((p, _)) = pos {
-            self.nearby = if menu { None } else { self.pick_target(p) };
+            self.nearby = if menu || cards_busy { None } else { self.pick_target(p) };
             // a sign's text closes when you walk, press Esc or are no longer at it
             if let Some(r) = self.reading {
                 let at = self.nearby.map(|i| TARGETS[i].kind) == Some(Use::Read(r));
@@ -747,7 +803,7 @@ impl Screen<Data> for PlayScreen {
             self.talk_npc = None;
             self.face_yaw = None;
         }
-        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some();
+        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy();
 
         // ---- a new game wakes up in your room upstairs, with a thought about the day ----
         self.play_t += dt;
@@ -828,8 +884,16 @@ impl Screen<Data> for PlayScreen {
         self.dlg.draw(ctx, self.touch_ui, night);
         self.scr.draw(ctx, &data.save.data, self.zoom.t, self.touch_ui);
         self.draw_sign(ctx);
-        data.settings.draw(ctx, &data.save.data, &data.sound);
-        self.touch_buttons(ctx);
+        let cards_busy = data.cards.busy();
+        if cards_busy {
+            ctx.ui.set("menubtn", "");
+            ctx.ui.set("settings", "");
+        } else {
+            data.settings.draw(ctx, &data.save.data, &data.sound);
+        }
+        let hud = !self.dlg.is_open() && !self.scr.is_open() && !self.zoom.active;
+        data.cards.draw(ctx, &data.save, &mut data.faces, hud, self.touch_ui);
+        self.touch_buttons(ctx, cards_busy);
         Trans::None
     }
 
@@ -844,6 +908,9 @@ impl Screen<Data> for PlayScreen {
             ("enter", "Go into a room as through its door (fade, teleport). args: {room: 'Home'|'Dex'|'Lab'|'Bedroom'}"),
             ("flags", "Set save fields (quest flags, menu). args: any GameSave field, e.g. {has_deck: true, rival_wins: 1, gfx: 0, music_level: 2}"),
             ("play_sfx", "Play a synthesized effect. args: {name: blip|coin|fanfare|alert|quack|kick|splash|piano|pop, pitch?: 1}"),
+            ("cards", "Cards and the save. args: {starter?: true (Prof. Quill's gift with its packs), give?: ['pebbit'|..] | 'all', exp?: n (adds), level?: {id: stage}, deck?: ['id'..], rewards?: ['id'..] (foil packs, shown only), open?: bool (deck screen), pick?: 'id'}"),
+            ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
+            ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
         ]
     }
 
@@ -923,6 +990,80 @@ impl Screen<Data> for PlayScreen {
                     }
                     Err(e) => Some(Err(e.to_string())),
                 }
+            }
+            "cards" => {
+                if a["starter"].as_bool() == Some(true) {
+                    data.save.data.has_deck = false;
+                    self.give_starter(ctx, data);
+                }
+                let s = &mut data.save.data;
+                let ids = |v: &Value| -> Vec<usize> { v.as_array().map(|l| l.iter().filter_map(|x| x.as_str().and_then(cards::by_id)).collect()).unwrap_or_default() };
+                if a["give"].as_str() == Some("all") {
+                    for c in 0..cards::CARD_POOL {
+                        cards::give_card(s, c);
+                    }
+                } else {
+                    for c in ids(&a["give"]) {
+                        cards::give_card(s, c);
+                    }
+                }
+                if let Some(e) = a["exp"].as_u64() {
+                    s.exp += e as u32;
+                }
+                if let Some(m) = a["level"].as_object() {
+                    s.card_level.resize(cards::CARD_COUNT, 0);
+                    for (k, v) in m {
+                        if let Some(c) = cards::by_id(k) {
+                            s.card_level[c] = v.as_u64().unwrap_or(0).min(4) as u8;
+                        }
+                    }
+                }
+                if a["deck"].is_array() {
+                    s.deck = ids(&a["deck"]).into_iter().take(cards::DECK_SIZE).map(|c| c as u8).collect();
+                }
+                data.save.mark();
+                if a["rewards"].is_array() {
+                    data.cards.show_rewards("Test packs", &ids(&a["rewards"]), None);
+                }
+                if let Some(o) = a["open"].as_bool() {
+                    if o {
+                        data.cards.open_deck(&mut data.sound, ctx);
+                    } else {
+                        data.cards.deck_open = false;
+                    }
+                }
+                if let Some(p) = a["pick"].as_str() {
+                    data.cards.pick = cards::by_id(p);
+                }
+                Some(Ok(data.cards.describe(&data.save, &data.faces)))
+            }
+            "card_face" => {
+                let f = Self::face_arg(a)?;
+                let url = data.faces.url(f);
+                let tex = if a["texture"].as_bool() == Some(true) { data.faces.texture(ctx, f).map(|t| t.0) } else { None };
+                Some(Ok(json!({"face": f, "url": url, "texture": tex, "w": crate::cardface::FACE_W, "h": crate::cardface::FACE_H})))
+            }
+            "card_preview" => {
+                for e in self.previews.drain(..) {
+                    ctx.despawn(e);
+                }
+                if a["clear"].as_bool() == Some(true) {
+                    return Some(Ok(json!({"cleared": true})));
+                }
+                let mut f = Self::face_arg(a)?;
+                if a["big"].is_null() && !f.back {
+                    f.big = true;
+                }
+                let tex = data.faces.texture(ctx, f)?;
+                let mat = ctx.renderer.add_material(Material { texture: Some(tex), double_sided: true, ..Material::color(0xffffff).cutout(0.5) });
+                let (p, _) = self.hero_pos(ctx)?;
+                let quad = ctx.renderer.builtin.quad;
+                // standing a little in front of you (towards the camera), tilted back like a card on a stand
+                let t = Transform::from_translation(p + Vec3::new(0.0, 1.2, 1.4)).with_rotation(Quat::from_rotation_x(-0.5)).with_scale(Vec3::new(1.0, 1.4, 1.0));
+                let e = ctx.spawn_mesh("card_preview", quad, mat, t);
+                ctx.set_layer(e, rooms::layer_of(self.area));
+                self.previews.push(e);
+                Some(Ok(json!({"texture": tex.0, "entity": e.id()})))
             }
             "play_sfx" => {
                 let n = a["name"].as_str()?;
@@ -1020,6 +1161,7 @@ impl Screen<Data> for PlayScreen {
                 "voice": data.sound.voice_url_now(), "last_voice": data.sound.last_voice, "voices_started": data.sound.voices_started,
                 "last_sfx": data.sound.last_sfx, "sfx_played": data.sound.sfx_played,
             },
+            "cards": data.cards.describe(&data.save, &data.faces),
             "save": {"plays": g.plays, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
         })
     }

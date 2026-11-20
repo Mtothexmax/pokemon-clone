@@ -4,6 +4,9 @@
 
 #![recursion_limit = "256"]
 
+mod cardface;
+mod cards;
+mod deck;
 mod dialog;
 mod fade;
 mod figure;
@@ -44,6 +47,10 @@ pub(crate) struct Data {
     pub settings: Settings,
     loaded: bool,
     pub town: Option<TownAssets>,
+    /// the card faces (canvas -> textures / PNG urls), kept for every screen
+    pub faces: cardface::CardFaces,
+    /// the deck screen, the foil packs, the upgrade moment
+    pub cards: deck::CardUi,
 }
 
 impl Data {
@@ -54,6 +61,8 @@ impl Data {
             self.sound.init(ctx);
             ctx.ui.set("style", play::STYLE);
             ctx.ui.set("style_screens", screens::STYLE);
+            ctx.ui.set("style_cards", deck::STYLE);
+            self.cards = deck::CardUi::new();
         }
         // the village theme (the browser starts it on the first key or tap)
         self.sound.music(ctx, Track::Home);

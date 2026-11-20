@@ -17,7 +17,7 @@ use crate::sound::Sound;
 use engine::prelude::*;
 
 /// Brick Beast cards in the game (the Professor counts them).
-pub const CARD_POOL: u32 = 34;
+pub const CARD_POOL: u32 = crate::cards::CARD_POOL as u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DialogAction {

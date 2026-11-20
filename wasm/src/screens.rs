@@ -10,8 +10,8 @@
 //! animations and clicks are not disturbed), `scr_live` (subtitles, the terminal's lines; no pointer)
 //! and `scr_pos` (a style slot that places both over the screen every frame).
 //!
-//! Hooks: the card names (Beasts app chips, the terminal's specimens) come with the cards part
-//! (`SPECIMENS` stands in); butterflies (Stats) with the life part.
+//! The Beasts app shows the collection and the newest owned beasts as name chips, the lab terminal analyses
+//! a random card of the pool (cards.rs). Hooks: butterflies (Stats) come with the life part.
 
 use crate::save::GameSave;
 use crate::sound::{Sfx, Sound};
@@ -86,8 +86,6 @@ const PIANO_LABELS: [&str; PIANO_WHITE] = ["A", "S", "D", "F", "G", "H", "J", "K
 /// BrickOS apps: label, icon, colour.
 const APPS: [(&str, &str, &str); 5] = [("Home", "brick", "#1b2a34"), ("Messages", "mail", "#3d9bff"), ("Stats", "chart", "#27b05a"), ("Beasts", "beast", "#f2a705"), ("Stickers", "sticker", "#e0457b")];
 
-/// Stand-ins for the card data of the cards part: specimens the lab terminal analyses.
-const SPECIMENS: [&str; 12] = ["brickling", "glimmerling", "sparkmole", "tidalotl", "mosscub", "cinderpup", "pebbit", "zapling", "drizzlet", "sproutle", "echowl", "quickhop"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Cls {
@@ -317,17 +315,21 @@ impl Screens {
     fn term_script(&mut self, g: &GameSave) {
         self.queue.clear();
         self.queue_i = 0;
-        let sp = SPECIMENS[self.rand() as usize % SPECIMENS.len()];
+        let d = crate::cards::card(self.rand() as usize % crate::cards::CARD_POOL);
         let gene: String = (0..24).map(|_| ['B', 'R', 'I', 'C', 'K'][self.rand() as usize % 5]).collect();
         let hex: Vec<String> = (0..2).map(|_| (0..8).map(|_| format!("{:02x}", self.rand() & 255)).collect::<Vec<_>>().join(" ")).collect();
-        let (cost, power) = (1 + self.rand() % 6, 1 + self.rand() % 9);
-        let kinds = ["on reveal", "ongoing", "activate", "end of turn", "game start", "vanilla"];
-        let kind = kinds[self.rand() as usize % kinds.len()];
+        let kind = match d.kind {
+            crate::cards::Kind::Reveal => "on reveal",
+            crate::cards::Kind::Ongoing => "ongoing",
+            crate::cards::Kind::Activate => "activate",
+            crate::cards::Kind::EndTurn => "end of turn",
+            crate::cards::Kind::Start => "game start",
+            crate::cards::Kind::None => "vanilla",
+        };
         let mut q = |s: String, c: Cls, cmd: bool| self.queue.push((s, c, cmd));
-        q(format!("./analyze --specimen {sp}"), Cls::Cmd, true);
-        let name = format!("{}{}", sp[..1].to_uppercase(), &sp[1..]);
-        q(format!("loading sample {name}.brk ..."), Cls::Dim, false);
-        q(format!("  cost {cost} | power {power} | {kind}"), Cls::Plain, false);
+        q(format!("./analyze --specimen {}", d.id), Cls::Cmd, true);
+        q(format!("loading sample {}.brk ...", d.name), Cls::Dim, false);
+        q(format!("  cost {} | power {} | {kind}", d.cost, d.power), Cls::Plain, false);
         q(format!("  genome  {gene}"), Cls::Gene, false);
         let r = (self.rand() & 0xff_ffff) as f32 / 16_777_216.0;
         let r2 = (self.rand() & 0xff_ffff) as f32 / 16_777_216.0;
@@ -513,7 +515,7 @@ impl Screens {
 
 /// Cards owned (the collection's bits).
 fn owned(g: &GameSave) -> u32 {
-    (g.collection & ((1u64 << crate::dialog::CARD_POOL) - 1)).count_ones()
+    crate::cards::owned_count(g)
 }
 
 /// An icon of the art set (`assets/screens/ic_*.svg`) in a colour.
@@ -781,8 +783,15 @@ fn pc_html(app: usize, g: &GameSave, fact: u32, narrow: bool) -> String {
                 "Shiny Voxelmon are rare. Prof. Quill has seen exactly one. Maybe.",
             ];
             let p = (own as f32 / crate::dialog::CARD_POOL as f32).max(0.02) * 100.0;
+            // the beasts you own, newest card numbers first, as name chips (Kaigen: five)
+            let chips: String = (0..crate::cards::CARD_POOL)
+                .rev()
+                .filter(|&c| crate::cards::owns(g, c))
+                .take(5)
+                .map(|c| format!("<span class='pc-chip'>{}</span>", crate::cards::card(c).name))
+                .collect();
             format!(
-                "<div class='pc-sheet'><div class='pc-coll'>Collection <b>{own}/{}</b></div><div class='pc-prog'><div style='width:{p:.0}%'></div></div><div class='pc-fact'>{}<span>{}</span></div></div>",
+                "<div class='pc-sheet'><div class='pc-coll'>Collection <b>{own}/{}</b></div><div class='pc-prog'><div style='width:{p:.0}%'></div></div><div class='pc-chips'>{chips}</div><div class='pc-fact'>{}<span>{}</span></div></div>",
                 crate::dialog::CARD_POOL,
                 icon("sticker", 1.2, "#f2a705"),
                 facts[fact as usize % 5]
@@ -906,6 +915,7 @@ pub const STYLE: &str = "<style>
 .pc-coll{font-size:1.3em;font-weight:700}.pc-coll b{color:#1655b0}
 .pc-prog{height:.8em;border-radius:1em;background:#e3e7eb;overflow:hidden}.pc-prog div{height:100%;border-radius:1em;background:linear-gradient(90deg,#3d9bff,#27b05a);animation:pc-grow .6s ease-out}
 @keyframes pc-grow{from{width:0}}
+.pc-chips{display:flex;gap:.3em;overflow:hidden;white-space:nowrap}.pc-chip{background:#fff3c4;color:#8a5a00;font-weight:700;font-size:.75em;border-radius:1em;padding:2px .45em}
 .pc-fact{display:flex;gap:.5em;align-items:center;padding:.5em;border-radius:.5em;background:#fff8e1;border:1px solid #f2d27a}
 .pc-stks{display:grid;gap:.4em}
 .pc-stk{display:flex;flex-direction:column;align-items:center;gap:2px;padding:.35em;border-radius:.5em;background:#eef1f4;border:2px solid #d5dae0;text-align:center;animation:pc-pop .3s ease-out both;transform:rotate(var(--r))}

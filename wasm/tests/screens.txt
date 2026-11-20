@@ -93,6 +93,7 @@ expect ui.slots.scr == ""
 expect game_state.state.busy == false
 
 # ---- your PC (upstairs): BrickOS apps by click and by the number keys ----
+call cards {"give": ["pebbit", "titanoak"]}
 call enter {"room": "Bedroom"}
 wait_for game_state.state.area == "Bedroom" 3000
 frames 20
@@ -114,6 +115,12 @@ key Digit2
 frames 5
 expect game_state.state.screen.app == "Stats"
 screenshot shots/screens-pc.png
+# Beasts: the collection count and your beasts as name chips (newest card first)
+action pc_app:3
+frames 10
+expect game_state.state.screen.app == "Beasts"
+expect ui.slots.scr contains <span class='pc-chip'>Titanoak</span><span class='pc-chip'>Pebbit</span>
+expect ui.slots.scr contains <b>2/34</b>
 action scr_close
 frames 40
 expect game_state.state.screen.kind == null
@@ -172,6 +179,8 @@ frames 70
 expect game_state.state.screen.kind == "Lab"
 wait_for game_state.state.screen.term_lines > 4 8000
 expect ui.slots.scr_live contains "quill@lab:~$"
+# it analyses a real card of the pool (cards.rs): "loading sample <Name>.brk"
+wait_for ui.slots.scr_live contains .brk ... 8000
 screenshot shots/screens-lab.png
 key KeyE
 frames 40
