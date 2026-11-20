@@ -1,0 +1,99 @@
+# Dialogues with voices: E talks to whoever is in reach, the camera goes to your eyes and looks at them, you and
+# they turn to each other, Space / E go on, choices are picked with A/D + E, the camera comes back.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/dialog.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+# ---- Dex (standing south of his house, facing west): E talks, voiced ----
+call teleport {"x": 52.5, "z": 0.5}
+frames 20
+expect game_state.state.nearby == "Dex"
+expect game_state.state.npcs.0.facing_you == false
+expect game_state.state.npcs.0.marker == "…"
+key KeyE
+frames 50
+expect game_state.state.dialog.id == "Dex"
+expect game_state.state.dialog.line == 0
+expect game_state.state.talk_npc == "rival"
+expect game_state.state.busy == true
+expect game_state.state.sound.last_sfx == "blip"
+wait_for game_state.state.sound.last_voice == "assets/voices/14add442.ogg" 5000
+# the camera is at your eyes (about 4 studs up, by you), not 38 studs above
+expect game_state.state.talk_cam == 1
+expect game_state.state.camera.1 < 6
+expect game_state.state.npcs.0.marker == ""
+# you turned north to him, he turned south to you
+expect game_state.state.hero.yaw > -0.1
+expect game_state.state.hero.yaw < 0.1
+expect game_state.state.npcs.0.facing_you == true
+screenshot shots/dialog-dex.png
+# walking keys do nothing while talking
+down KeyS
+frames 20
+up KeyS
+expect game_state.state.hero.z ~= 0.5
+# Space: the next line (and its voice), then the end. The Space that closed it does not jump
+key Space
+frames 10
+expect game_state.state.dialog.line == 1
+wait_for game_state.state.sound.last_voice == "assets/voices/88739c53.ogg" 5000
+key Space
+frames 10
+expect game_state.state.dialog == null
+expect game_state.state.last_dialog.id == "Dex"
+expect game_state.state.hero.jumps == 0
+# the camera flies back up
+frames 60
+expect game_state.state.talk_cam == 0
+expect game_state.state.camera.1 > 30
+expect game_state.state.busy == false
+
+# ---- Pip (back at the start of his loop): his last line has two choices ----
+call teleport {"x": -8, "z": 9}
+frames 20
+expect game_state.state.nearby == "Pip"
+expect game_state.state.npcs.1.marker == "!"
+action use
+frames 30
+expect game_state.state.dialog.id == "Pip"
+expect game_state.state.talk_npc == "kid"
+# he looks north at you
+expect game_state.state.npcs.1.facing_you == true
+key Space
+frames 5
+key KeyE
+frames 5
+action dlg_next
+frames 5
+expect game_state.state.dialog.line == 3
+expect game_state.state.dialog.choices.0 == "Play hide and seek"
+screenshot shots/dialog-pip-choices.png
+key KeyD
+frames 5
+expect game_state.state.dialog.hover == 1
+key KeyE
+frames 10
+expect game_state.state.dialog == null
+expect game_state.state.last_dialog.action == "Tag"
+expect game_state.state.pending_action == "Tag"
+# talked to: his "!" becomes "…"
+frames 60
+expect game_state.state.npcs.1.marker == "…"
+
+# ---- Prof. Quill at the gap north: her warning, Esc closes ----
+call teleport {"x": 0, "z": -20}
+frames 20
+expect game_state.state.nearby == "Prof. Quill"
+key KeyE
+frames 10
+expect game_state.state.dialog.id == "Gate"
+expect game_state.state.dialog.voice == "c77df687"
+key Escape
+frames 10
+expect game_state.state.dialog == null
+expect game_state.state.menu.open == false
+call life {"freeze": false}

@@ -27,3 +27,32 @@ action jump
 frames 20
 expect game_state.state.hero.jumps == 1
 screenshot shots/touch-jump.png
+# the Use button shows only in reach of someone: it talks, then goes on in the dialog (Dex: two lines)
+expect ui.slots.touch contains >Jump<
+call teleport {"x": 52.5, "z": 0.5}
+frames 20
+expect ui.slots.touch contains >Use<
+action use
+frames 20
+expect game_state.state.dialog.id == "Dex"
+expect ui.slots.dialog contains tap to continue
+wait_for game_state.state.talk_cam == 1 3000
+screenshot shots/touch-dialog.png
+action use
+frames 5
+expect game_state.state.dialog.line == 1
+action use
+frames 5
+expect game_state.state.dialog == null
+call teleport {"x": -10, "z": 0.5}
+frames 20
+expect ui.slots.touch contains >Jump<
+expect game_state.state.nearby == null
+# the ☰ button opens the menu on phones too, and closes it
+action menu
+frames 3
+expect game_state.state.menu.open == true
+expect ui.slots.settings contains Voices
+action menu_close
+frames 3
+expect game_state.state.menu.open == false

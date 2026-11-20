@@ -1,0 +1,33 @@
+# Village life: Pip walks his loop around the pond, stops and looks at you when you come within 6 studs,
+# walks on when you leave. The goal pill shows the quest step.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/life.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": false, "pip_home": true}
+call teleport {"x": 30, "z": 0}
+resume
+# he walks (3.2 studs/s, with short pauses at the corners)
+frames 300
+expect game_state.state.pip.x > -7.5
+expect game_state.state.npcs.1.x > -7.5
+# walking up to him: he stops and turns to you
+call life {"pip_home": true}
+call teleport {"x": -8, "z": 9}
+frames 60
+expect game_state.state.pip.speed == 0
+expect game_state.state.pip.x ~= -8
+expect game_state.state.npcs.1.facing_you == true
+screenshot shots/life-pip.png
+# you leave: he walks on
+call teleport {"x": 30, "z": 0}
+frames 300
+expect game_state.state.pip.x > -7.5
+# the goal pill (a new game: the Professor)
+expect ui.slots.goal contains Visit Prof. Quill
+call flags {"has_deck": true}
+frames 3
+expect ui.slots.goal contains Beat Dex
+call save_reset

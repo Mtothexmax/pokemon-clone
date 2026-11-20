@@ -1,0 +1,86 @@
+# Sound and the ☰ menu: the village theme plays, synthesized effects, Esc / the ☰ button open the menu (it holds
+# you in place), Voices on/off, the music level, Graphics Auto/High/Medium/Low, the choices survive a reload (save),
+# and the menu leads back to the title screen.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/menu.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+resume
+frames 10
+# the village theme, streamed, at the normal level (the Kaigen 0.15)
+expect game_state.state.sound.track == "home"
+expect audio.music.current == "assets/music/home.ogg"
+expect game_state.state.sound.music_volume ~= 0.15
+# a synthesized effect (no file)
+call play_sfx {"name": "coin"}
+frames 2
+expect game_state.state.sound.last_sfx == "coin"
+expect audio.history.-1.sound == "coin"
+# ---- Esc opens the menu, it holds you in place ----
+expect game_state.state.menu.open == false
+key Escape
+frames 5
+expect game_state.state.menu.open == true
+expect game_state.state.busy == true
+call teleport {"x": -10, "z": 0.5}
+down KeyD
+frames 30
+up KeyD
+expect game_state.state.hero.x ~= -10
+screenshot shots/menu.png
+# ---- music level: off, then quiet ----
+action set_music:0
+frames 3
+expect game_state.state.menu.music_level == 0
+expect game_state.state.sound.music_volume == 0
+action set_music:1
+frames 3
+expect game_state.state.sound.music_volume ~= 0.08
+# ---- graphics: Low (the phone profile), High, back to Auto ----
+action set_gfx:3
+frames 3
+expect game_state.state.menu.gfx == "Low"
+expect game_state.state.menu.shadow_cascades == 2
+action set_gfx:1
+frames 3
+expect game_state.state.menu.step == 0
+expect game_state.state.menu.shadow_cascades == 4
+action set_gfx:0
+frames 3
+expect game_state.state.menu.gfx == "Auto"
+# ---- voices off: talking to Dex starts no voice line ----
+action set_voices
+frames 3
+expect game_state.state.menu.voices == false
+# the ☰ button closes it
+action menu
+frames 3
+expect game_state.state.menu.open == false
+call teleport {"x": 52.5, "z": 0.5}
+frames 20
+key KeyE
+frames 20
+expect game_state.state.dialog.id == "Dex"
+expect game_state.state.sound.voices_started == 0
+expect game_state.state.sound.voice == null
+key Escape
+frames 5
+# ---- the save keeps the choices (written half a second after a change) ----
+frames 60
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+frames 5
+expect game_state.state.menu.voices == false
+expect game_state.state.menu.music_level == 1
+expect game_state.state.sound.music_volume ~= 0.08
+# ---- the menu's last row: the title screen ----
+action menu
+frames 3
+action menu_title
+frames 5
+expect game_state.screen == "title"
+screen play
+call save_reset
