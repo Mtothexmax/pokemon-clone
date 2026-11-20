@@ -17,8 +17,8 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 
 ## Status
 - [x] Village (town.rs), minifigs, NPCs standing, collision, touch stick, day/night sky, phone profile
-- [x] Sound: music (home, wild fight), voices, effects; settings menu (voices, music, graphics); save
-      (sound.rs, settings.rs, save.rs; battle tracks still to convert, see sound.rs; tests menu.txt, touch.txt)
+- [x] Sound: music (home, wild fight, battle intro / fight / victory / defeat), voices, effects; settings menu
+      (voices, music, graphics); save (sound.rs, settings.rs, save.rs; tests menu.txt, touch.txt)
 - [x] Dialogues with voices, village life (NPC routines, facing who you talk to), goal pill / markers
       (dialog.rs, talk.rs, life.rs, play.rs; Pip's hide and seek / tag / football, the ducks, ball, weather etc.
       of st_life.c come with their parts; tests dialog.txt, life.txt)
@@ -27,7 +27,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
       Deck-o-Matic showing MISSING PART (rooms.rs, screens.rs, talk.rs; tests rooms.txt, screens.txt)
 - [x] Cards and Voxelmon data, starter gift, foil packs, deck screen (collection, deck), upgrades with the upgrade
       moment, card faces as PNG / 3D texture (cards.rs, cardface.rs, deck.rs; tests cards.txt, screens.txt)
-- [ ] Card battle in 3D (cards are 3D objects lowered onto a 3D playing field) vs Dex, Lumi, Pip
+- [x] Card battle in 3D vs Dex, Lumi, Pip: rules (battle.rs), the table / slab cards / tiles / effects / HUD
+      (arena.rs, table.rs), brick transition, battle music + taunts, rewards (tests battle.txt, battle_dex.txt,
+      battle_touch.txt)
 - [ ] Wild Voxelmon fights in the tall grass, skills, upgrades, own music, no touch Jump/Use in fights
 - [ ] Lab quest: diving suit, deck machine "missing part", pond dive into the cave (swim in 3D, darker with depth,
       seaweed, glowing plants, collectibles, marine snow, part deep down), deck built on return
@@ -103,3 +105,35 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   upgrade, rewards {cards, tear, revealed}, faces {drawn, urls, textures}).
 - Step 0: voices play on `Bus::Voice` (menu Voices = that bus's volume); Graphics High stores MSAA 4 for the next
   start (`engine::set_msaa_pref`), other choices clear it (`menu.msaa_pref` in game_state).
+
+## Hooks for later parts (card battle slice)
+- Start a battle like the dialogues do: `arena::start_transition(ctx, data, BattleKind::Pip)` from the play screen
+  (`PlayScreen::start_battle`): the bricks slide in with the intro fanfare and at `arena::TRANS_BOARD` the play screen
+  pushes `BattleScreen` (scene "battle"; the village stays loaded below, its camera's `Camera` is taken off while
+  the battle shows and put back on pop). When it pops, `PlayScreen::resume` -> `battle_done` pays out (studs, EXP,
+  `cards::reward_card` packs, `rival_wins` / `pip_wins`) and opens the after-dialogue (`DexWon`, `PipLost`, ...).
+- Hide and seek -> Pip's battle: `DialogAction::BattlePip` already starts it once `seek_played` or `seek_wins` is set
+  (else `PipNotYet`). The hide-and-seek part only has to count its rounds into the save (`seek_played += 1`, a win
+  `seek_wins += 1`) and then either let Pip's dialogue offer "Card battle!" or call `start_battle(ctx, data,
+  BattleKind::Pip)` itself at the end of a round (Kaigen: Pip asks for a battle after hide and seek). Pip's deck is
+  `DECK_PIP` with +1 Power on every card (`BattleScreen::build`).
+- Wild Voxelmon fights (the Voxelmon part) can reuse `BattleKind::Wild` (forest backdrop, "*snarl*" taunts, no
+  voice) or keep their own screen; `battle::Battle` is engine-free (`Battle::new(kind, name, my_deck, ai_deck,
+  seed)`, `update(dt)`, `stage`, `end_turn`, `plan(side)`), shiny battles would add the Kaigen `shiny` flag.
+- Music: `data.sound.music(ctx, Track::Intro)` hands over to `Track::Fight` after 10.8 s (`Data::track_music`), the
+  battle plays `Victory` / `Defeat`, `battle_done` goes back `Home`. `data.cg_seed` is the card game's generator
+  (battle seeds, reward cards).
+- 3D pieces in `data.art` (`table::TableArt`): `slab` card / tile meshes, `face_mat(tex)`, `number(style, v)` (atlas
+  badge quads), the location tile textures (`zone_tex`, `hidden_tex`), the backdrops. Board layout and camera fit:
+  `arena::Lay` (`portrait` = phone held upright: columns 1.2 m, steeper camera).
+- Debug: play screen `battle {kind: rival|practice|pip, seed?, instant?, start?: false}`, game_state
+  `battle_transition`, `battles`, `save {studs, exp, wins, losses, rival_wins, pip_wins}`; battle screen
+  `battle_play {card|hand, zone}`, `battle_end_turn`, `battle_auto {end}`, `battle_ui {action}`,
+  `battle_inspect {card|zone|close}`, `battle_speed {x}`, `battle_cheat {power, foe}`, `battle_continue`;
+  `game_state.state.battle` = phase, turn, energy(_left), stakes, first, result, hand [{id, cost, playable, screen}],
+  locations [{id, revealed, power [you, foe], winner, mine / theirs [{id, power, revealed, staged, y, flip, anim}],
+  screen}], selected, inspect, dragging, drag_over, taunt, banner, flips, lands, balls, shatters, confetti, camera,
+  layout, track, voice, last_sfx. HUD actions: `bt_end`, `bt_undo`, `bt_snap`, `bt_retreat`, `bt_log`, `bt_play:z`,
+  `bt_take_back`, `bt_activate`, `bt_cancel_act`, `bt_close`, `bt_continue`.
+- Tests: drive cards with touch input (`input {touch}`), not the mouse: the real mouse over the debug window moves the
+  pointer between frames.
