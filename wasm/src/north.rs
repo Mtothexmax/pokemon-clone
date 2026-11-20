@@ -44,13 +44,28 @@ impl Town {
         self.block(x - 0.5, x + 0.5, z - 0.7, z + 0.3);
     }
 
-    /// The fountain on the square (buildFountain): a stone basin with water, a pillar, a bowl and the spout.
+    /// The fountain on the square (buildFountain): a hollow stone basin with a tiled floor, a pillar, a bowl on top
+    /// with its nozzle. The water, the jet, the falling streams, splashes and ripples are `fountain.rs`.
     fn fountain(&mut self, x: f32, z: f32) {
-        self.cyl(C_GRAY, x, 0.4, z, 3.2, 3.0, 1.0, 28);
-        self.cyl(C_WATER, x, 1.32, z, 2.6, 2.6, 0.12, 28);
-        self.cyl(C_GRAY, x, 1.1, z, 0.6, 0.45, 2.6, 16);
-        self.cyl(C_GRAY, x, 3.55, z, 0.6, 1.3, 0.5, 20);
-        self.cyl(0xbfe6ff, x, 3.9, z, 0.35, 0.18, 1.4, 12);
+        let ring = |r0: f32, r1: f32, r2: f32, h: f32| [Vec2::new(r0, 0.0), Vec2::new(r1, 0.0), Vec2::new(r2, h), Vec2::new(r0, h), Vec2::new(r0, 0.0)];
+        // the basin's wall and its lighter rim (studs -> metres in the lathe)
+        let s = |v: [Vec2; 5]| v.map(|p| p * STUD);
+        self.here(x, z);
+        self.b(C_GRAY).with(Mat4::from_translation(m(x, 0.4, z)), |b| {
+            b.lathe(&s(ring(FOUNTAIN_IN, 3.2, 3.05, 1.0)), 28);
+        });
+        self.b(0xc4c8cb).with(Mat4::from_translation(m(x, 1.4, z)), |b| {
+            b.lathe(&s(ring(FOUNTAIN_IN - 0.08, 3.25, 3.25, 0.3)), 28);
+        });
+        // the floor inside: sand-blue tiles the water tints
+        self.cyl(0x5b86a6, x, 0.4, z, FOUNTAIN_IN + 0.02, FOUNTAIN_IN + 0.02, 0.35, 28);
+        self.cyl(C_GRAY, x, 0.75, z, 0.6, 0.45, 2.8, 16);
+        // the bowl: hollow, the water in it overflows its rim
+        self.b(C_GRAY).with(Mat4::from_translation(m(x, 3.55, z)), |b| {
+            b.lathe(&[Vec2::new(0.0, 0.0), Vec2::new(0.6, 0.0), Vec2::new(BOWL_R, 0.5), Vec2::new(BOWL_R - 0.14, 0.5), Vec2::new(0.55, 0.25), Vec2::new(0.0, 0.25)].map(|p| p * STUD), 20);
+        });
+        // the nozzle in the middle of the bowl
+        self.cyl(C_DARK_GRAY, x, 3.75, z, 0.28, 0.2, 0.75, 10);
         self.block(x - 3.3, x + 3.3, z - 3.3, z + 3.3);
     }
 
@@ -207,7 +222,7 @@ impl Town {
             let path = format!("assets/signs/house_{sign}.glb");
             self.group(|t| t.house(x, z, w, d, roof, wall, door, C_RED, &path));
         }
-        self.fountain(0.0, -140.0);
+        self.fountain(FOUNTAIN[0], FOUNTAIN[1]);
         {
             // the castle (the three.js "lego city" voxel model), turned by 90 degrees
             let (cx, cz, sc) = (0.0, -166.0, 1.6);

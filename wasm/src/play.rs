@@ -152,6 +152,10 @@ pub struct PlayScreen {
     gate_stops: u32,
     /// the tall grass tufts bending and swaying (grass.rs)
     grass: crate::grass::Grass,
+    /// a debug close-up (`look`): the camera eases to this board
+    look: Option<talk::Board>,
+    /// Stonecrest's fountain: its water, jet, streams, spray and ripples (fountain.rs)
+    fountain: crate::fountain::Fountain,
 }
 
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
@@ -872,6 +876,7 @@ impl Screen<Data> for PlayScreen {
         ctx.gltf_defaults.auto_lod = false;
         let (solids, stats, occluders, tufts) = town::build(ctx, data.town.as_mut().unwrap());
         self.grass = crate::grass::Grass::new(tufts);
+        self.fountain = crate::fountain::Fountain::spawn(ctx);
         self.life.blocks = solids.iter().map(|s| s.r).collect();
         self.fader = crate::fade::Fader::new(occluders);
         self.stats = stats;
@@ -1251,7 +1256,7 @@ impl Screen<Data> for PlayScreen {
             (true, Some(i), Some((p, _))) => self.npc_pos(ctx, i).map(|q| talk::face_board(q, p)),
             (true, None, _) => self.talk_board,
             _ if self.scr.is_open() => self.scr.board,
-            _ => self.reading.and_then(talk::sign_board),
+            _ => self.reading.and_then(talk::sign_board).or(self.look),
         };
         if let Some(cam) = self.camera {
             self.zoom.update(ctx, cam, board, dt);
@@ -1290,6 +1295,9 @@ impl Screen<Data> for PlayScreen {
             let me = self.hero_pos(ctx).map(|h| h.0);
             self.grass.update(ctx, me, dt);
         }
+        let layers = self.camera.and_then(|c| ctx.world.get::<&Camera>(c).ok().map(|c| c.layers)).unwrap_or(0);
+        self.fountain.set_visible(ctx, layers, self.area.is_none());
+        self.fountain.update(ctx, dt);
 
         // ---- the save: the clock every 20 s (the day goes on where you left it) ----
         self.clock_t += dt;
@@ -1343,6 +1351,7 @@ impl Screen<Data> for PlayScreen {
             ("cards", "Cards and the save. args: {starter?: true (Prof. Quill's gift with its packs), give?: ['pebbit'|..] | 'all', exp?: n (adds), level?: {id: stage}, deck?: ['id'..], rewards?: ['id'..] (foil packs, shown only), open?: bool (deck screen), pick?: 'id'}"),
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
             ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
+            ("look", "Debug close-up: the camera eases to look at a spot like a sign close-up. args: {at: [x, y, z] studs, yaw?: 0 (the side it is seen from, 0 = south), w?: 8, h?: 6 (studs in view), tilt?: 0.5 (radians above)}; {} = back"),
             ("tall_grass", "The tall grass tufts (grass.rs). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
@@ -1489,6 +1498,14 @@ impl Screen<Data> for PlayScreen {
                     self.start_battle(ctx, data, kind);
                 }
                 Some(Ok(json!({"battle": kind})))
+            }
+            "look" => {
+                self.look = a.get("at").and_then(|v| v.as_array()).map(|v| {
+                    let f = |i: usize| v.get(i).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
+                    let g = |k: &str, d: f64| a.get(k).and_then(|x| x.as_f64()).unwrap_or(d) as f32;
+                    talk::Board { c: town::m(f(0), f(1), f(2)), yaw: g("yaw", 0.0), w: g("w", 8.0), h: g("h", 6.0), max_dist: 0.0, tilt: g("tilt", 0.5) }
+                });
+                return Some(Ok(json!({"look": self.look.is_some()})));
             }
             "tall_grass" => {
                 if let Some(w) = a.get("wind").and_then(|v| v.as_f64()) {
@@ -1641,6 +1658,7 @@ impl Screen<Data> for PlayScreen {
             "climb_outs": self.climb_outs,
             "vox": self.vox.describe(ctx),
             "grass": self.grass.describe(self.hero_pos(ctx).map(|h| h.0)),
+            "fountain": self.fountain.describe(ctx),
             "stick": ctx.input.touch.stick_enabled(),
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),

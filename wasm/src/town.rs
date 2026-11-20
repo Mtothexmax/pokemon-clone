@@ -86,6 +86,15 @@ pub const GRASSES: [Rect; 4] = [
     Rect::new(-16.0, -4.5, -106.0, -94.0),
 ];
 
+/// The fountain on Stonecrest's square (studs): centre, the basin's inner radius, its water level, the bowl on top
+/// (rim radius, water level), the nozzle's top.
+pub const FOUNTAIN: [f32; 2] = [0.0, -140.0];
+pub const FOUNTAIN_IN: f32 = 2.7;
+pub const FOUNTAIN_WATER: f32 = 1.28;
+pub const BOWL_R: f32 = 1.3;
+pub const BOWL_WATER: f32 = 4.0;
+pub const NOZZLE_TOP: f32 = 4.5;
+
 pub const POND: Rect = Rect::new(-12.0, -4.0, 15.0, 22.0);
 
 // ---- Route 1 north and Stonecrest (the three.js round 2: town.ts buildNorth, Kaigen st_north.c) ----

@@ -14,6 +14,7 @@ mod dialog;
 mod dive;
 mod fade;
 mod figure;
+mod fountain;
 mod grass;
 mod life;
 mod play;

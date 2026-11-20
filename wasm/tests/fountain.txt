@@ -1,0 +1,39 @@
+# Stonecrest's fountain (fountain.rs): engine water in the hollow basin and the bowl, the jet, six falling streams,
+# droplets and spray (particles) and ripple rings where they land; all of it rests while the square is not drawn.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/fountain.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+call save_reset
+call time {"hours": 15}
+call life {"freeze": true, "pip_home": true}
+call flags {"gate_open": true}
+resume
+frames 30
+# ---- in the village the square is not drawn: nothing moves there ----
+expect game_state.state.fountain.built == true
+expect game_state.state.fountain.visible == false
+expect game_state.state.fountain.emitting == 0
+# ---- on the square: the water runs ----
+call teleport {"x": 4, "z": -131}
+frames 90
+expect game_state.state.fountain.visible == true
+expect game_state.state.fountain.emitters == 13
+expect game_state.state.fountain.emitting == 13
+expect game_state.state.fountain.rings == 14
+expect game_state.state.fountain.ring_opacity > 0
+expect particles.emitters.length >= 13
+expect stats.render.particles > 60
+expect stats.render.transparent > 10
+call look {"at": [0, 1.8, -140], "w": 6, "h": 4, "tilt": 0.6, "yaw": 0.3}
+frames 60
+pause
+screenshot shots/fountain.png
+resume
+call look {}
+frames 40
+# ---- back south: it rests again ----
+call teleport {"x": 0, "z": 10}
+frames 30
+expect game_state.state.fountain.visible == false
+expect game_state.state.fountain.emitting == 0
