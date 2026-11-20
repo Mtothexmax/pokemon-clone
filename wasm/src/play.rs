@@ -173,6 +173,8 @@ pub struct PlayScreen {
     npc_stops: u32,
     /// the save's golden studs (for the debug picker)
     golden_seen: u32,
+    /// R / falls (tests)
+    respawns: u32,
 }
 
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
@@ -186,7 +188,7 @@ const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "s
 /// (the heading is the zone you are in: Kaigen `g_hud_place`)
 const TOUCH_HELP: &str = "<div class='panel'><b>{place}</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
 const SWIPE_HELP: &str = "<div class='panel'><b>{place}</b><br>swipe: walk that way &middot; tap: stop &middot; two fingers: zoom</div>";
-const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
+const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
@@ -1228,6 +1230,7 @@ impl Screen<Data> for PlayScreen {
         if let Some(mut f) = self.fig.take() {
             f.pose = if self.life.sitting { Pose::Sit } else if self.life.dancing { Pose::Dance } else { Pose::Normal };
             f.spin = if self.life.dancing { f.spin + dt * 2.6 } else { 0.0 };
+            f.air = self.hero.and_then(|h| ctx.world.get::<&CharacterController>(h).ok().map(|c| !c.grounded)).unwrap_or(false) && !self.life.sitting;
             f.animate(ctx, dt, self.speed > 0.3, if run { 1.6 } else { 1.0 });
             self.fig = Some(f);
         }
@@ -1286,16 +1289,19 @@ impl Screen<Data> for PlayScreen {
             }
             n.fig.animate(ctx, dt, sp > 0.1, (sp / life::PIP_WALK * 0.6).clamp(0.6, 1.6));
         }
-        // dancing: the villagers within 10 studs dance along (arms up); they stand still otherwise
+        // the villagers: within 7 m they turn their head to you (Kaigen fig_animate); dancing, those within 10 studs
+        // dance along (arms up)
         for i in 0..self.npcs.len() {
-            if Some(i) == kid || self.npcs[i].id == "gate-prof" {
-                continue;
-            }
-            let close = self.npc_pos(ctx, i).map(|q| (q / STUD - feet).length() < 10.0).unwrap_or(false);
-            let pose = if dancing && close { Pose::ArmsUp } else { Pose::Normal };
+            let Some(q) = self.npc_pos(ctx, i) else { continue };
+            let d = feet * STUD - q;
+            let near = Vec2::new(d.x, d.z).length() < 7.0 && self.npcs[i].area == self.area;
             let n = &mut self.npcs[i];
-            if pose != Pose::Normal || n.fig.pose != Pose::Normal {
-                n.fig.pose = pose;
+            n.fig.head_want = if near && (Some(i) != kid || self.life.pip_speed < 0.1) { life::wrap(d.x.atan2(d.z) - n.yaw) } else { 0.0 };
+            if Some(i) == kid || n.id == "gate-prof" {
+                continue; // (animated above / by their walk)
+            }
+            if near || n.fig.head_turned() || n.fig.pose != Pose::Normal || (dancing && (q / STUD - feet).length() < 10.0) {
+                n.fig.pose = if dancing && (q / STUD - feet).length() < 10.0 { Pose::ArmsUp } else { Pose::Normal };
                 n.fig.animate(ctx, dt, false, 1.0);
             }
         }
@@ -1412,6 +1418,14 @@ impl Screen<Data> for PlayScreen {
             self.face_yaw = None;
         }
         self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some() || self.life.fade;
+        // ---- R (or a fall off the world) puts you back at the start (Kaigen GAME_SPAWN, R respawn) ----
+        let fell = self.hero_pos(ctx).is_some_and(|(p, _)| p.y < -20.0);
+        if (ctx.input.key_pressed("KeyR") && !self.busy && !self.fight) || (fell && !self.dive.on && self.sink_t <= 0.0) {
+            self.life.sit(&mut data.save.data, false);
+            ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+            self.move_to(ctx, START[0], START[1], std::f32::consts::PI);
+            self.respawns += 1;
+        }
         // ---- the bench: any move gets you up; Q dances (moving stops it) ----
         let moving = ctx.input.move_axis().length() > 0.2 || self.swipe.on;
         if self.life.sitting && moving && !self.busy {
@@ -1924,7 +1938,7 @@ impl Screen<Data> for PlayScreen {
                 let me = self.hero_pos(ctx).map(|h| h.0).unwrap_or_default();
                 let to = Vec2::new(me.x - p.x, me.z - p.z).normalize_or_zero();
                 let facing_you = Vec2::new(n.yaw.sin(), n.yaw.cos()).dot(to) > 0.95;
-                json!({"id": n.id, "x": r(p.x), "z": r(p.z), "yaw": (n.yaw * 100.0).round() / 100.0, "facing_you": facing_you, "marker": n.marker_html})
+                json!({"id": n.id, "x": r(p.x), "z": r(p.z), "yaw": (n.yaw * 100.0).round() / 100.0, "facing_you": facing_you, "marker": n.marker_html, "head": (n.fig.head_yaw() * 100.0).round() / 100.0, "pose": n.fig.pose})
             })
             .collect();
         let dlg = self.dlg.d.as_ref().map(|d| {
@@ -1990,6 +2004,7 @@ impl Screen<Data> for PlayScreen {
             "debug_panel": self.dbg.describe(),
             "swipe": {"mode": self.swipe_mode, "on": self.swipe.on, "dir": [self.swipe.dir.x, self.swipe.dir.y], "started": self.swipe.started, "dodging": self.swipe.dodging},
             "npc_stops": self.npc_stops,
+            "respawns": self.respawns,
             "day": self.day,
             "day_length": ctx.renderer.settings.day_length_minutes,
             "fog_density": (ctx.renderer.settings.fog_density * 1000.0).round() / 1000.0,

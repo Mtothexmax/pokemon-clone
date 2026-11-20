@@ -148,5 +148,19 @@ down KeyD
 frames 5
 up KeyD
 expect game_state.state.life.dancing == false
+# ---- villagers look at you (their head turns within 7 m) ----
+call teleport {"x": 46, "z": 2}
+frames 60
+expect game_state.state.npcs.0.id == "rival"
+expect game_state.state.npcs.0.head > 0.3
+call teleport {"x": 30, "z": 10}
+frames 90
+expect game_state.state.npcs.0.head ~= 0
+# ---- R: back at the start ----
+key KeyR
+frames 5
+expect game_state.state.respawns == 1
+expect game_state.state.hero.x ~= -15
+expect game_state.state.hero.z ~= -2.5
 call life {"freeze": false}
 call save_reset

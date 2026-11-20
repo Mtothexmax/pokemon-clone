@@ -42,7 +42,11 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Tall grass that moves (grass.rs: tufts bend away from you / villagers / Voxelmon, damped spring back, wind sway;
       test grass.txt), Stonecrest's fountain water (fountain.rs: engine water in a hollow basin + bowl, jet, falling
       streams, droplets, spray, ripple rings; test fountain.txt)
-- [ ] Hide and seek with Pip (then he battles), night pill, debug panel (the gate is done: Route 1 part)
+- [x] Village life and the last Kaigen pieces (life.rs: golden studs, ducks + feeding, fish, butterflies, fireflies, the ball
+      and the goal, the treasure chest, rain + puddles + TV rain, glowing lamps, the park bench, dancing, Pip's hide and seek
+      (then his card battle), tag and football; figure poses, head turns, jump pose; R respawn; swipe walking (swipe.rs, menu
+      Swipe / Stick); the debug panel (debugpanel.rs); the goal only outside; the night pill was already there; the castle's
+      colours; tests village.txt, seek.txt, swipe.txt, debug_panel.txt, goal.txt, npc_block.txt)
 
 ## Hooks for later parts (sound / dialog / life slice)
 - Save: add fields to `save::GameSave` (serde defaults), call `data.save.mark()`; quest flags are already there.
@@ -234,3 +238,35 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   sky outside is untouched); the dive owns both while `dive.on` and gives them back in `Dive::stop`; the play screen's exit
   resets them to 1.
 - The creek is one `spawn_water` strip (engine 1c65e8e tessellates each axis).
+
+## Hooks for later parts (village life / last pieces slice)
+- `life.rs`: `Life` is the engine-free simulation (its own LCG, seed 4242, as Kaigen; run in `PlayScreen::fixed_update` via
+  `Life::step(&mut GameSave, &LifeIn, dt)`), it queues sounds in `Life::sfx` / `fish_splash` and sets `dirty` when the save
+  changed (`PlayScreen::life_frame` plays them, marks the save). `LifeView` owns the entities (meshes made once:
+  `TownAssets::life`), `sync` places them every fixed step, `frame` sets the lamps' glow and the rain loop's volume (the loop
+  plays on `Bus::Ambience`; the engine has no per-voice volume). Pip's figure reads `pip`, `pip_yaw`, `pip_speed`, `pip_pose`.
+- Targets: `talk::FEED_TARGET`, `SIT_TARGET`, `CHEST_TARGET` (`Use::Feed | Sit | Chest`); E at a hidden Pip finds him
+  (`use_target`), the prompt says "Found you, Pip!", his marker is hidden while he hides.
+- `figure.rs`: `Figure::pose` (`Pose::Sit | Dance | ArmsUp | Crouch | Wave`), `spin`, `air`, `head_want` (Kaigen fig_animate).
+- Villagers: `fixed_update` drops the part of your move wish that points into a villager within 0.76 m (`npc_stops`).
+- `swipe.rs` (phones, `GameSave::touch_mode` 0): the stick is off (`set_stick_enabled(false)`), `Swipe::touch` reads
+  `ctx.input.touch` every frame, `Swipe::step` walks / dodges in the fixed step (rays start outside your capsule).
+- `debugpanel.rs`: shown while the engine's debug mode is on (`ctx.debug_mode.on()`, the ` key; the engine consumes that key)
+  or the menu's "Debug panel" row; `debug_pick {x, y | copy | menu}`.
+- Debug: `life {rain, wet, chest, chest_at, seek, seek_left, tag, ball, dance, sit, fish, golden, to_fly, to_firefly, to_pip}`;
+  `game_state.state.life` (golden, ducks, crumbs, fish_jump, butterflies, fireflies(_shown), ball, goals, chest, rain(_level),
+  drops, wet, puddles, splashes, day, sitting, dancing, seek_*, hidden, tag_wins, pip_pose), `debug_panel`, `swipe`,
+  `npc_stops`, `respawns`, `day`, `day_length`, `fog_density`, `hero_pose`, npcs[].head / pose; `screen.weather`.
+
+## Not ported / differences from Kaigen
+- The debug panel's toggle: Kaigen used ` itself; here the engine owns ` (its debug mode, which the panel follows) and phones get
+  a menu row. The picker names models by their glTF file and roads / the baseplate; Kaigen's per-building tag registry
+  (`town_tag`, "Dex's house", "The old castle") does not exist in this town builder.
+- Pip hiding has no marker over his head (Kaigen kept drawing it, which gave him away).
+- Tag on phones: Kaigen's tag needs Shift (no run on touch); here the stick pushed far also sprints (swipe walking cannot run).
+- The goal pill hides in the rooms and while talking (as Kaigen); the studs pill sits under the menu button (wide) or under the
+  goal (narrow), Kaigen's rows.
+- The castle (`castle.glb`): its stone colours are now the values the three.js version effectively showed (its vertex colours
+  were used as linear), lighter than the dark sRGB-decoded greys Kaigen and this port had.
+- Right-mouse camera look / Kaigen's editor (F1, F5) are not part of this port (the camera keeps the three.js fixed view);
+  Kaigen's dev keys F2/F3/F6..F9 are debug commands here (`dive {at}`, `flags`, `vox {force}`, `cards {exp}`, `battle`, `cards {rewards}`).
