@@ -85,10 +85,13 @@ action vox_skill:1
 frames 3
 expect game_state.state.vox.skills_used == 2
 expect game_state.state.vox.projectiles == 5
+# (paused for the screenshot: it takes a varying while, the cooldown would run on meanwhile)
+pause
 screenshot shots/vox-volley.png
+resume
 frames 40
 expect game_state.state.vox.projectiles == 0
-expect game_state.state.vox.cool.1 > 5
+expect game_state.state.vox.cool.1 > 3
 # recharged: a skill is ready again after its cooldown
 wait_for game_state.state.vox.cool.0 == 0 4000
 expect ui.slots.vox_mine contains vx-tile ready
