@@ -4,11 +4,12 @@
 //! and the "!" / "…" markers over the villagers' heads (Kaigen `cg_quest_draw`, `cg_markers_draw`).
 //!
 //! Hooks for later parts:
-//! * [`TARGETS`] lists every talk spot (studs) with its [`DialogId`]; the rooms part adds the indoor
-//!   villagers to `PlayScreen::npcs` (their target spots are already here), Stonecrest adds the knight
-//!   and the baker. Pip's spot follows him (`Life::pip`).
+//! * [`TARGETS`] lists everything you can use (studs) with what it does ([`Use`]: talk with its
+//!   [`DialogId`], read a sign, the TV, the piano, the computers, the bed); `PlayScreen::use_target`
+//!   dispatches. Stonecrest adds the knight, the baker and its signs, the lab quest the diving suit
+//!   (a `Use` variant + its spot at 315.6, -7.2). Pip's spot follows him (`Life::pip`).
 //! * [`goal_text`] is the quest line from the save flags. [`CamZoom`] eases the camera to any board
-//!   ([`Board`]: a sign, a TV screen, a face) and back — the sign close-ups can use it.
+//!   ([`Board`]: a sign, a TV screen, a face; `tilt` for screens leaning back) and back.
 
 #![allow(dead_code)] // hooks for later parts (see the module doc)
 

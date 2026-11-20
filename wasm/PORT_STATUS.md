@@ -22,8 +22,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Dialogues with voices, village life (NPC routines, facing who you talk to), goal pill / markers
       (dialog.rs, talk.rs, life.rs, play.rs; Pip's hide and seek / tag / football, the ducks, ball, weather etc.
       of st_life.c come with their parts; tests dialog.txt, life.txt)
-- [ ] Rooms / interiors with doors (studded furniture, warm light), TV and computer screens, piano, mailbox,
-      sign close-ups
+- [x] Rooms / interiors with doors (studded furniture, warm light), TV and computer screens, piano, mailbox,
+      sign close-ups; the bedroom start with the intro thought, Mom / Lumi / the lab Prof inside, the
+      Deck-o-Matic showing MISSING PART (rooms.rs, screens.rs, talk.rs; tests rooms.txt, screens.txt)
 - [ ] Cards and Voxelmon data, starter gift, foil packs, deck screen (collection, deck)
 - [ ] Card battle in 3D (cards are 3D objects lowered onto a 3D playing field) vs Dex, Lumi, Pip
 - [ ] Wild Voxelmon fights in the tall grass, skills, upgrades, own music, no touch Jump/Use in fights
@@ -42,3 +43,28 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Camera close-ups (signs, TV): `talk::CamZoom` + `talk::Board`.
 - Pip: `life::PipMode` (Hiding / Flee / Football stubs), `Life::toast`, `Life::blocks` (town colliders).
 - Debug commands: `talk`, `life {freeze, pip_home}`, `flags {..GameSave fields}`, `save_reset`, `play_sfx`.
+
+## Hooks for later parts (rooms / screens slice)
+- Rooms: `town::rooms` (`RoomId`, `room_def`, `area_at`, `door_at`, `ROOM_NPCS`, `MACHINE_SCREEN`). Each area has
+  its own render layer (`layer_of`; 0 = the hero, `HIDDEN_LAYER` = drawn by no camera); `PlayScreen::area` is the
+  room you are in, `show_area` switches the camera's layers, the ceiling lights and the area title. Things built
+  into a room: `Town::rooms_build` (a group per room, `Town::area` tags props). New outdoor zones (Route 1,
+  Stonecrest) can set the title in `show_area` (Kaigen `town_zone`; for now always "Brickhollow" outside).
+- Moving the player anywhere (a cave, a gate): `PlayScreen::move_to(x, z, yaw)` snaps the camera; a faded
+  move: set `PlayScreen::door = Some((0.0, to, yaw))` (debug command `enter {room}` does that).
+- Card battles from dialogs: Dex (BattleRival), Lumi (BattlePractice), Pip (BattlePip) still arrive in
+  `PlayScreen::dialog_action` -> `pending_action`; Mom / Lumi / the Prof stand in their rooms (`npcs` ids
+  `mom`, `lumi`, `lab-prof`), the camera already looks at whom you talk to indoors.
+- Lab quest: the Deck-o-Matic's screen follows `has_deck` (`machine_missing.glb` / `machine_ready.glb`, swapped by
+  layer in `update`); the Prof's `QuestPart` / `GiveStarter` actions are in `dialog_action`. The diving suit is
+  not built yet: Kaigen stands it at (314.2, 0.4, -9.4) studs, yaw 0.6, in the lab corner behind the bookshelves,
+  with a target "Take the old diving suit" at (315.6, -7.2) while `!has_suit && !has_deck` (add a `talk::Use`
+  variant and a case in `use_target`; set `has_suit`, fanfare, toast "Prof. Quill's old diving suit! ...").
+- Screens (`screens.rs`): the Beasts app shows the count only and the lab terminal analyses stand-in specimens
+  (`SPECIMENS`, random cost / power) until the cards part brings the card data (Kaigen `card_def`, owned card
+  name chips); Stats shows butterflies = 0 until the life part has them; the TV weather gets rain (`weather` 2)
+  from the life part's weather. `Sound::voice_active` tells whether a voice line still plays.
+- Sleep: `PlayScreen::sleep` (bed, `DialogAction::Sleep`); the Voxelmon part restores its HP there (Kaigen).
+- Debug: `intro` (new game's wake-up), `enter {room}`; `save_reset` now leaves `intro_seen` true (tests start in
+  the village); `game_state.state` has `area`, `door`, `title`, `indoor`, `camera_layers`, `room_lights_on`,
+  `machine`, `hero_hidden`, `screen {kind, channel, line, app, notes, term_lines}`, `reading`, `sleeps`.
