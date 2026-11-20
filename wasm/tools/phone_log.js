@@ -27,6 +27,7 @@
   let frames = 0;
   const tick = () => { frames++; requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
+  let lastSkipped = null;
   setInterval(() => {
     let r = null;
     try {
@@ -34,7 +35,11 @@
       const v = s?.result ?? s;
       r = v?.render ? { draws: v.render.draw_calls, tris: v.render.triangles, scale: v.render.render_scale, size: v.render.size ?? v.render.resolution, gpu_ms: v.render.gpu_ms?.frame, lat_ms: v.render.gpu_latency_ms, in_flight: v.render.frames_in_flight, skipped: v.render.frames_skipped } : null;
     } catch {}
-    send('fps', { fps: +(frames / 5).toFixed(1), screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
+    // frames the engine actually rendered: animation frames minus the ones its frame limiter skipped
+    const sk = r?.skipped;
+    const drawn = sk != null && lastSkipped != null ? +((frames - (sk - lastSkipped)) / 5).toFixed(1) : null;
+    lastSkipped = sk ?? lastSkipped;
+    send('fps', { fps: +(frames / 5).toFixed(1), drawn, screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
     frames = 0;
   }, 5000);
   // smoothness: once in play, record the hero's drawn position for 120 frames, then send the samples
