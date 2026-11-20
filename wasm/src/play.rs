@@ -6,7 +6,8 @@ use crate::figure::Figure;
 use crate::life::{self, Life};
 use crate::settings::{self, MenuOut};
 use crate::sound::{self, Sfx};
-use crate::talk::{self, CamZoom, TARGETS};
+use crate::screens::{ScreenKind, Screens};
+use crate::talk::{self, CamZoom, Use, TARGETS};
 use crate::town::rooms::{self, RoomId};
 use crate::town::{self, TownAssets, TownStats, STUD};
 use crate::{day_colours, setup_look, Data, Title};
@@ -105,6 +106,13 @@ pub struct PlayScreen {
     play_t: f32,
     /// your figure is hidden (the camera is where you stand: a close-up)
     hero_hidden: bool,
+    // ---- things to look at ----
+    /// the TV, the piano, a computer (screens.rs)
+    scr: Screens,
+    /// a sign's text is open (the readable; boards 0..3 bring the camera to them)
+    reading: Option<usize>,
+    /// naps taken (tests)
+    sleeps: u32,
 }
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
@@ -157,6 +165,11 @@ pub const STYLE: &str = "<style>
 #ui [data-slot=title]{position:fixed;left:0;right:0;top:112px;display:flex;justify-content:center;pointer-events:none}
 .bh-title{background:rgba(16,18,24,.66);color:#fff;border-radius:8px;padding:8px 18px;font-size:22px}
 .bh-fade{position:fixed;inset:0;background:#000;pointer-events:none;z-index:30}
+#ui [data-slot=sign]{position:fixed;left:0;right:0;bottom:28px;top:0;display:flex;justify-content:center;align-items:flex-end;pointer-events:none}
+#ui [data-slot=sign]:empty{display:none}
+.bh-sign{align-self:center;width:min(480px,calc(100vw - 24px));box-sizing:border-box;border:4px solid;border-radius:10px;padding:20px 18px 18px;display:flex;flex-direction:column;gap:10px;text-align:center}
+.bh-sign-t{font-size:30px;font-weight:800}.bh-sign hr{width:100%;height:3px;border:0;margin:0}
+.bh-sign-l{font-size:18px}.bh-sign-n{font-size:16px;font-style:italic}.bh-sign-c{font-size:13px;opacity:.6}
 #ui [data-slot=toast]{position:fixed;left:0;right:0;top:70px;display:flex;justify-content:center}
 .bh-toast{background:rgba(250,250,246,.95);color:#1b2a34;border:2px solid #1b2a34;border-radius:10px;padding:8px 16px;font-size:18px}
 #ui .world-label.bh-mark{background:rgba(250,250,246,.88);color:#1b2a34;border:2px solid #1b2a34;padding:0;width:28px;height:18px;line-height:14px;text-align:center;font-weight:700;font-size:14px;border-radius:10px}
@@ -317,7 +330,7 @@ impl PlayScreen {
             best = 0.0;
             if t.dialog == DialogId::Machine {
                 let [mx, my, mz] = rooms::MACHINE_SCREEN;
-                self.talk_board = Some(talk::Board { c: town::m(mx, my - 1.2, mz), yaw: 0.0, w: 4.4, h: 5.2, max_dist: 0.0 });
+                self.talk_board = Some(talk::Board { c: town::m(mx, my - 1.2, mz), yaw: 0.0, w: 4.4, h: 5.2, max_dist: 0.0, tilt: 0.0 });
             }
         }
         for i in 0..self.npcs.len() {
@@ -338,6 +351,40 @@ impl PlayScreen {
         self.dlg.open(ctx, &mut data.sound, dialog_for(t.dialog, &data.save.data));
     }
 
+    /// E / Use at a target (Kaigen `world_pick` + the T_* cases of app_update).
+    fn use_target(&mut self, ctx: &mut Ctx, data: &mut Data, i: usize) {
+        let t = &TARGETS[i];
+        let weather = if ctx.renderer.sky.night > 0.5 { 1 } else { 0 }; // (rain comes with the weather of the life part)
+        let seed = (ctx.time.frame as u32).wrapping_mul(2654435761) | 1;
+        match t.kind {
+            Use::Talk => return self.talk(ctx, data, i),
+            Use::Read(r) => {
+                // a sign opens and closes its text (the camera flies to a board)
+                self.reading = if self.reading == Some(r) { None } else { Some(r) };
+            }
+            Use::Tv => self.scr.open(ctx, &mut data.sound, ScreenKind::Tv, t.x, t.z, weather, seed),
+            Use::Piano => self.scr.open(ctx, &mut data.sound, ScreenKind::Piano, t.x, t.z, weather, seed),
+            Use::Pc => self.scr.open(ctx, &mut data.sound, ScreenKind::Pc, t.x, t.z, weather, seed),
+            Use::Lab => self.scr.open(ctx, &mut data.sound, ScreenKind::Lab, t.x, t.z, weather, seed),
+            Use::Sleep => self.sleep(ctx, data),
+        }
+        data.sound.sfx(ctx, Sfx::Blip, 1.2, 0.4);
+    }
+
+    /// Your bed (Kaigen `life_sleep`): at night you sleep until the morning, by day a nap until the evening.
+    fn sleep(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        let h = ctx.renderer.settings.time_of_day;
+        let tod = ((h - 6.0) / 24.0).rem_euclid(1.0);
+        let night = tod > 0.55 || tod < 0.05;
+        let to: f32 = if night { 0.1 } else { 0.56 };
+        ctx.renderer.settings.time_of_day = (6.0 + to * 24.0).rem_euclid(24.0);
+        data.save.data.time_of_day = ctx.renderer.settings.time_of_day;
+        data.save.mark();
+        data.sound.sfx(ctx, Sfx::Blip, 1.0, 0.8);
+        self.life.toast(if night { "Zzz\u{2026} Good morning, Brickhollow!" } else { "Zzz\u{2026} A cosy nap until the evening." });
+        self.sleeps += 1;
+    }
+
     /// What a closed dialog chose (Kaigen: starting_template.c + `cg_dialog_action`).
     fn dialog_action(&mut self, ctx: &mut Ctx, data: &mut Data, act: DialogAction) {
         let s = &mut data.save.data;
@@ -353,6 +400,7 @@ impl PlayScreen {
                 s.quest_part = true; // now find the suit (lab quest part)
                 data.save.mark();
             }
+            DialogAction::Sleep => self.sleep(ctx, data),
             DialogAction::DexScared => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::DexScared, s)),
             DialogAction::BattlePip if s.seek_played == 0 && s.seek_wins == 0 => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::PipNotYet, s)),
             // battles, hide and seek, tag, sleeping, the starter cards: their parts handle these
@@ -368,8 +416,31 @@ impl PlayScreen {
         if !self.touch_ui {
             return;
         }
-        let use_btn = if self.dlg.is_open() || (self.nearby.is_some() && !self.busy) { "<button data-action='use'>Use</button> " } else { "" };
+        let use_btn = if self.dlg.is_open() || self.reading.is_some() || (self.nearby.is_some() && !self.busy) { "<button data-action='use'>Use</button> " } else { "" };
         ctx.ui.set("touch", &format!("<div class='touch-buttons'>{use_btn}<button data-action='jump'>Jump</button></div>"));
+    }
+
+    /// A sign's text (Kaigen `world_draw`): at a board only a hint (the camera shows the board), else a card.
+    fn draw_sign(&self, ctx: &mut Ctx) {
+        let html = match self.reading {
+            None => String::new(),
+            Some(r) if talk::sign_board(r).is_some() => {
+                format!("<div class='bh-prompt{}'><span>{}</span></div>", if self.touch_ui { " touch" } else { "" }, if self.touch_ui { "tap Use or walk to close" } else { "E or walk to close" })
+            }
+            Some(r) => {
+                let rd = talk::readable(r);
+                let lines: String = rd.lines.iter().map(|l| format!("<div class='bh-sign-l'>{}</div>", l.replace('&', "&amp;").replace('<', "&lt;"))).collect();
+                let note = rd.note.map(|n| format!("<div class='bh-sign-n'>{n}</div>")).unwrap_or_default();
+                format!(
+                    "<div class='bh-sign' style='background:{bg};color:{fg};border-color:{fg}'><div class='bh-sign-t'>{}</div><hr style='background:{fg}'>{lines}{note}<div class='bh-sign-c'>{}</div></div>",
+                    rd.title,
+                    if self.touch_ui { "(tap Use to close)" } else { "(E to close)" },
+                    bg = rd.bg,
+                    fg = rd.fg
+                )
+            }
+        };
+        ctx.ui.set("sign", &html);
     }
 
     /// The goal pill, the talk prompt, the toast and the markers over the villagers.
@@ -535,7 +606,8 @@ impl Screen<Data> for PlayScreen {
         data.settings.open = false;
         let s = &mut ctx.renderer.settings;
         (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity) = self.base_light;
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade"] {
+        self.scr.close(ctx, &mut data.sound);
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign"] {
             ctx.ui.set(slot, "");
         }
     }
@@ -625,7 +697,9 @@ impl Screen<Data> for PlayScreen {
         data.sound.update(ctx, dt);
         let actions = ctx.ui.take_actions();
         // Esc: the dialog's (it closes it), else the menu
-        if ctx.input.key_pressed("Escape") && !self.dlg.is_open() {
+        // (a screen and a sign's text close with Esc themselves)
+        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none();
+        if ctx.input.key_pressed("Escape") && esc_free {
             data.settings.toggle();
         }
         let mut use_tap = false;
@@ -653,17 +727,27 @@ impl Screen<Data> for PlayScreen {
                 }
                 self.dialog_action(ctx, data, act);
             }
+        } else if self.scr.is_open() {
+            let clicks: Vec<String> = if menu { vec![] } else { actions.clone() };
+            self.scr.update(ctx, &mut data.sound, &data.save.data, &clicks, !menu, dt);
         } else if let Some((p, _)) = pos {
             self.nearby = if menu { None } else { self.pick_target(p) };
+            // a sign's text closes when you walk, press Esc or are no longer at it
+            if let Some(r) = self.reading {
+                let at = self.nearby.map(|i| TARGETS[i].kind) == Some(Use::Read(r));
+                if !at || ctx.input.move_axis().length() > 0.3 || ctx.input.key_pressed("Escape") {
+                    self.reading = None;
+                }
+            }
             if let (true, Some(t)) = (use_key, self.nearby) {
-                self.talk(ctx, data, t);
+                self.use_target(ctx, data, t);
             }
         }
         if !self.dlg.is_open() {
             self.talk_npc = None;
             self.face_yaw = None;
         }
-        self.busy = self.dlg.is_open() || menu || self.door.is_some();
+        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some();
 
         // ---- a new game wakes up in your room upstairs, with a thought about the day ----
         self.play_t += dt;
@@ -701,7 +785,8 @@ impl Screen<Data> for PlayScreen {
         let board = match (self.dlg.is_open(), self.talk_npc, pos) {
             (true, Some(i), Some((p, _))) => self.npc_pos(ctx, i).map(|q| talk::face_board(q, p)),
             (true, None, _) => self.talk_board,
-            _ => None,
+            _ if self.scr.is_open() => self.scr.board,
+            _ => self.reading.and_then(talk::sign_board),
         };
         if let Some(cam) = self.camera {
             self.zoom.update(ctx, cam, board, dt);
@@ -741,6 +826,8 @@ impl Screen<Data> for PlayScreen {
         // ---- HUD ----
         self.draw_hud(ctx, data, night);
         self.dlg.draw(ctx, self.touch_ui, night);
+        self.scr.draw(ctx, &data.save.data, self.zoom.t, self.touch_ui);
+        self.draw_sign(ctx);
         data.settings.draw(ctx, &data.save.data, &data.sound);
         self.touch_buttons(ctx);
         Trans::None
@@ -783,7 +870,7 @@ impl Screen<Data> for PlayScreen {
                 let p = self.hero_pos(ctx)?.0;
                 match self.pick_target(p) {
                     Some(t) => {
-                        self.talk(ctx, data, t);
+                        self.use_target(ctx, data, t);
                         Some(Ok(json!({"talk": TARGETS[t].label})))
                     }
                     None => Some(Err("nobody in reach".into())),
@@ -897,6 +984,9 @@ impl Screen<Data> for PlayScreen {
             "room_lights_on": self.room_lights.iter().filter(|(_, e, _)| ctx.world.get::<&PointLight>(*e).map(|l| l.intensity > 0.0).unwrap_or(false)).count(),
             "machine": self.machine_ready.map(|r| if r { "ready" } else { "missing" }),
             "hero_hidden": self.hero_hidden,
+            "screen": self.scr.describe(),
+            "reading": self.reading,
+            "sleeps": self.sleeps,
             "sun": (ctx.renderer.settings.sun_intensity * 100.0).round() / 100.0,
             "camera": cam,
             "town": self.stats,

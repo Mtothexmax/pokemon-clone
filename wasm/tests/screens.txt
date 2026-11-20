@@ -1,0 +1,178 @@
+# Things to look at: the sign close-ups (the camera flies to the board), the mailbox card, the TV (four
+# channels, voiced lines with subtitles), Lumi's piano, your PC (BrickOS), the lab terminal, your bed.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/screens.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+
+# ---- the village sign: E reads it, the camera flies to its board; walking closes it ----
+call teleport {"x": 5.9, "z": 23}
+frames 30
+expect game_state.state.nearby == "the village sign"
+key KeyE
+frames 60
+expect game_state.state.reading == 0
+expect game_state.state.talk_cam == 1
+expect game_state.state.hero_hidden == true
+expect game_state.state.busy == true
+screenshot shots/screens-sign.png
+down KeyS
+frames 3
+up KeyS
+frames 60
+expect game_state.state.reading == null
+expect game_state.state.talk_cam == 0
+expect game_state.state.hero_hidden == false
+# E opens and E closes too
+key KeyE
+frames 10
+expect game_state.state.reading == 0
+key KeyE
+frames 10
+expect game_state.state.reading == null
+# the touch Use button too
+action use
+frames 10
+expect game_state.state.reading == 0
+action use
+frames 10
+expect game_state.state.reading == null
+
+# ---- the mailbox: a card in the middle, Esc closes ----
+call teleport {"x": -18.2, "z": -1.4}
+frames 30
+expect game_state.state.nearby == "the mailbox"
+key KeyE
+frames 10
+expect game_state.state.reading == 4
+expect ui.slots.sign contains "MAILBOX"
+key Escape
+frames 10
+expect game_state.state.reading == null
+expect game_state.state.menu.open == false
+
+# ---- the TV at home: BBN, voiced, subtitles; D switches the channel; E turns it off ----
+call enter {"room": "Home"}
+wait_for game_state.state.area == "Home" 3000
+frames 20
+call teleport {"x": 205, "z": -3.4}
+frames 20
+expect game_state.state.nearby == "TV"
+key KeyE
+frames 80
+expect game_state.state.screen.kind == "Tv"
+expect game_state.state.screen.shown == true
+expect game_state.state.screen.channel == "BBN News"
+expect game_state.state.talk_cam == 1
+expect ui.slots.scr contains "tv-ticker"
+wait_for game_state.state.sound.last_voice == "assets/voices/0c57cbfe.ogg" 5000
+wait_for ui.slots.scr_live contains "Rex Studwell" 3000
+screenshot shots/screens-tv.png
+# the next line comes when the voice is over
+wait_for game_state.state.screen.line == 1 15000
+wait_for game_state.state.sound.last_voice == "assets/voices/b92a25ec.ogg" 5000
+key KeyD
+frames 20
+expect game_state.state.screen.channel == "Weather"
+wait_for game_state.state.sound.last_voice == "assets/voices/b511c369.ogg" 5000
+action tv_next
+frames 10
+expect game_state.state.screen.channel == "Cartoons"
+action tv_prev
+frames 10
+expect game_state.state.screen.channel == "Weather"
+key KeyE
+frames 60
+expect game_state.state.screen.kind == null
+expect game_state.state.talk_cam == 0
+expect ui.slots.scr == ""
+expect game_state.state.busy == false
+
+# ---- your PC (upstairs): BrickOS apps by click and by the number keys ----
+call enter {"room": "Bedroom"}
+wait_for game_state.state.area == "Bedroom" 3000
+frames 20
+call teleport {"x": 201.4, "z": 37}
+frames 20
+expect game_state.state.nearby == "your PC"
+key KeyE
+frames 70
+expect game_state.state.screen.kind == "Pc"
+expect ui.slots.scr contains "Welcome back, trainer!"
+action pc_app:1
+frames 10
+expect game_state.state.screen.app == "Messages"
+expect ui.slots.scr contains "Come to the lab when you wake up"
+key Backspace
+frames 5
+expect game_state.state.screen.app == "Home"
+key Digit2
+frames 5
+expect game_state.state.screen.app == "Stats"
+screenshot shots/screens-pc.png
+action scr_close
+frames 40
+expect game_state.state.screen.kind == null
+
+# ---- your bed: a nap until the evening ----
+call teleport {"x": 196.2, "z": 38.8}
+frames 20
+expect game_state.state.nearby == "your bed"
+key KeyE
+frames 5
+expect game_state.state.sleeps == 1
+expect game_state.state.time > 19
+expect game_state.state.toast == "Zzz… A cosy nap until the evening."
+key KeyE
+frames 5
+expect game_state.state.time < 9
+call time {"hours": 12}
+
+# ---- Lumi's piano: keys and clicks play notes ----
+call enter {"room": "Dex"}
+wait_for game_state.state.area == "Dex" 3000
+frames 20
+call teleport {"x": 251, "z": -3.4}
+frames 20
+expect game_state.state.nearby == "the piano"
+key KeyE
+frames 10
+expect game_state.state.screen.kind == "Piano"
+key KeyA
+frames 3
+expect game_state.state.screen.notes == 1
+expect game_state.state.sound.last_sfx == "piano"
+action piano:12
+frames 3
+expect game_state.state.screen.notes == 2
+# W walks no more while playing (it is a black key)
+key KeyW
+frames 3
+expect game_state.state.screen.notes == 3
+expect game_state.state.hero.z ~= -3.4
+screenshot shots/screens-piano.png
+key Escape
+frames 10
+expect game_state.state.screen.kind == null
+expect game_state.state.menu.open == false
+
+# ---- the lab computer: the terminal types by itself ----
+call enter {"room": "Lab"}
+wait_for game_state.state.area == "Lab" 3000
+frames 20
+call teleport {"x": 343.2, "z": 1.4}
+frames 20
+expect game_state.state.nearby == "the lab computer"
+key KeyE
+frames 70
+expect game_state.state.screen.kind == "Lab"
+wait_for game_state.state.screen.term_lines > 4 8000
+expect ui.slots.scr_live contains "quill@lab:~$"
+screenshot shots/screens-lab.png
+key KeyE
+frames 40
+expect game_state.state.screen.kind == null

@@ -338,6 +338,15 @@ impl Sound {
         }
     }
 
+    /// A voice line is loading or playing (the TV waits for it before the next line).
+    pub fn voice_active(&self, ctx: &Ctx) -> bool {
+        match &self.voice {
+            Some((_, None, _, _)) => true,
+            Some((_, Some(v), _, _)) => ctx.audio.is_playing(*v),
+            None => false,
+        }
+    }
+
     /// The voice line being played or waiting (url).
     pub fn voice_url_now(&self) -> Option<&str> {
         self.voice.as_ref().map(|v| v.2.as_str())

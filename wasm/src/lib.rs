@@ -10,6 +10,7 @@ mod figure;
 mod life;
 mod play;
 mod save;
+mod screens;
 mod settings;
 mod sound;
 mod talk;
@@ -52,6 +53,7 @@ impl Data {
             self.save.load(ctx);
             self.sound.init(ctx);
             ctx.ui.set("style", play::STYLE);
+            ctx.ui.set("style_screens", screens::STYLE);
         }
         // the village theme (the browser starts it on the first key or tap)
         self.sound.music(ctx, Track::Home);

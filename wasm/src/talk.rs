@@ -19,6 +19,7 @@ use engine::prelude::*;
 
 /// A talk spot (studs): who you talk to there. `npc` = the villager's id in `PlayScreen::npcs`.
 pub struct Target {
+    pub kind: Use,
     pub x: f32,
     pub z: f32,
     pub verb: &'static str,
@@ -27,25 +28,91 @@ pub struct Target {
     pub npc: &'static str,
 }
 
-/// Talk spots (Kaigen `world_target`). Indoor ones (x > 150) wait for the rooms part.
-pub const TARGETS: [Target; 7] = [
-    Target { x: 193.4, z: -2.8, verb: "Talk to", label: "Mom", dialog: DialogId::Mom, npc: "mom" },
-    Target { x: 335.4, z: -1.2, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Prof, npc: "lab-prof" },
-    Target { x: 52.5, z: -1.8, verb: "Talk to", label: "Dex", dialog: DialogId::Dex, npc: "rival" },
-    Target { x: 256.1, z: 2.0, verb: "Talk to", label: "Lumi", dialog: DialogId::Lumi, npc: "lumi" },
+/// What a target does (Kaigen `TargetKind`): talk (its `dialog`), read a sign (`readable`), watch the TV,
+/// play the piano, use a computer, sleep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Use {
+    Talk,
+    Read(usize),
+    Tv,
+    Piano,
+    Pc,
+    Lab,
+    Sleep,
+}
+
+const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static str) -> Target {
+    Target { kind, x, z, verb, label, dialog: DialogId::IntroKeys, npc: "" }
+}
+
+/// Everything you can do something with (Kaigen `world_target`): the villagers, the signs and the
+/// mailbox, the TVs, the piano, the computers, your bed. Pip's spot follows him.
+pub const TARGETS: [Target; 19] = [
+    Target { kind: Use::Talk, x: 193.4, z: -2.8, verb: "Talk to", label: "Mom", dialog: DialogId::Mom, npc: "mom" },
+    Target { kind: Use::Talk, x: 335.4, z: -1.2, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Prof, npc: "lab-prof" },
+    Target { kind: Use::Talk, x: 52.5, z: -1.8, verb: "Talk to", label: "Dex", dialog: DialogId::Dex, npc: "rival" },
+    Target { kind: Use::Talk, x: 256.1, z: 2.0, verb: "Talk to", label: "Lumi", dialog: DialogId::Lumi, npc: "lumi" },
     // Prof. Quill at the gap north (Kaigen g_gate_prof_x: 0 while the way is closed)
-    Target { x: 0.0, z: -22.6, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Gate, npc: "gate-prof" },
-    Target { x: 341.6, z: -6.4, verb: "Look at", label: "the Deck-o-Matic", dialog: DialogId::Machine, npc: "" },
+    Target { kind: Use::Talk, x: 0.0, z: -22.6, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Gate, npc: "gate-prof" },
+    Target { kind: Use::Talk, x: 341.6, z: -6.4, verb: "Look at", label: "the Deck-o-Matic", dialog: DialogId::Machine, npc: "" },
     // Pip: moved to where he is every frame
-    Target { x: -8.0, z: 13.2, verb: "Talk to", label: "Pip", dialog: DialogId::Pip, npc: "kid" },
+    Target { kind: Use::Talk, x: -8.0, z: 13.2, verb: "Talk to", label: "Pip", dialog: DialogId::Pip, npc: "kid" },
+    // the signs with a board (the camera flies to it) and the mailbox (a card in the middle)
+    thing(Use::Read(0), 5.9, 21.8, "Read", "the village sign"),
+    thing(Use::Read(1), 5.0, -22.8, "Read", "the route sign"),
+    thing(Use::Read(2), -21.4, 8.9, "Read", "the garden sign"),
+    thing(Use::Read(3), 13.0, 18.6, "Read", "the lab sign"),
+    thing(Use::Read(4), -18.2, -2.4, "Read", "the mailbox"),
+    // in the rooms
+    thing(Use::Tv, 205.0, -4.6, "Watch", "TV"),
+    thing(Use::Tv, 269.0, -4.4, "Watch", "TV"),
+    thing(Use::Piano, 251.0, -4.4, "Play", "the piano"),
+    thing(Use::Pc, 201.4, 36.6, "Use", "your PC"),
+    thing(Use::Sleep, 196.2, 38.6, "Sleep in", "your bed"),
+    thing(Use::Lab, 343.2, -2.2, "Use", "the lab computer"),
+    thing(Use::Lab, 343.2, 3.3, "Use", "the lab computer"),
 ];
 pub const PIP_TARGET: usize = 6;
 /// Reach (studs): 4.2 for everyone, 6 for Pip (he stops walking within 6).
 pub fn reach(i: usize) -> f32 {
     if i == PIP_TARGET {
         crate::life::PIP_TALK
-    } else {
+    } else if TARGETS[i].kind == Use::Talk {
         4.2
+    } else {
+        3.6
+    }
+}
+
+/// A sign's text (Kaigen `readable`): title, lines, a note, background and ink colours.
+pub struct Readable {
+    pub title: &'static str,
+    pub lines: &'static [&'static str],
+    pub note: Option<&'static str>,
+    pub bg: &'static str,
+    pub fg: &'static str,
+}
+
+pub fn readable(i: usize) -> Readable {
+    let (paper, ink, wood, brown) = ("#f4f4f4", "#1b2a34", "#fff6c8", "#6b3f1d");
+    match i {
+        0 => Readable { title: "BRICKHOLLOW", lines: &["\"A village where every brick has a story.\"", "Population: 6 minifigs, lots of Beasts, countless studs."], note: None, bg: paper, fg: ink },
+        1 => Readable { title: "ROUTE 1", lines: &["Tall grass ahead!", "Wild Brick Beasts love to hide in it. Keep your deck ready."], note: None, bg: wood, fg: brown },
+        2 => Readable { title: "GARDEN", lines: &["Please do not step on the flowers."], note: Some("Pip, that means YOU."), bg: "#e4cd9e", fg: brown },
+        3 => Readable { title: "QUILL LAB", lines: &["Brick Beast research since 1978.", "Opening hours: whenever the Professor remembers to unlock the door."], note: None, bg: paper, fg: "#1e5aa8" },
+        _ => Readable { title: "MAILBOX", lines: &["A postcard: \"Welcome home! Drop by the lab when you are ready.\"", "- Prof. Quill"], note: None, bg: paper, fg: ink },
+    }
+}
+
+/// The painted board of readables 0..3 (metres; the camera flies to it), as the town places the signs.
+pub fn sign_board(i: usize) -> Option<Board> {
+    let b = |x: f32, y: f32, z: f32, yaw: f32, w: f32, h: f32| Some(Board { c: Vec3::new(x, y, z) * STUD, yaw, w, h, max_dist: 0.0, tilt: 0.0 });
+    match i {
+        0 => b(5.9, 2.3, 20.41, 0.0, 3.8, 2.0),
+        1 => b(5.0, 2.2, -24.09, 0.0, 3.4, 1.8),
+        2 => b(-22.91, 2.1, 8.9, std::f32::consts::FRAC_PI_2, 2.8, 1.5),
+        3 => b(13.0, 5.75, 16.17, 0.0, 5.2, 1.9),
+        _ => None,
     }
 }
 
@@ -95,6 +162,8 @@ pub struct Board {
     pub w: f32,
     pub h: f32,
     pub max_dist: f32,
+    /// leaning back (radians; the lab computers' screens): the camera looks down at it
+    pub tilt: f32,
 }
 
 /// Eases the camera from where the orbit camera has it to a [`Board`] and back (0.6 s, smoothstep).
@@ -149,7 +218,7 @@ impl CamZoom {
         if bd.max_dist > 0.0 {
             dist = dist.min(bd.max_dist);
         }
-        let normal = Vec3::new(bd.yaw.sin(), 0.0, bd.yaw.cos());
+        let normal = Vec3::new(bd.yaw.sin() * bd.tilt.cos(), bd.tilt.sin(), bd.yaw.cos() * bd.tilt.cos());
         let to = Transform::from_translation(bd.c + normal * dist).looking_at(bd.c, Vec3::Y);
         let k = self.t * self.t * (3.0 - 2.0 * self.t);
         if let Ok(mut t) = ctx.world.get::<&mut Transform>(cam) {
@@ -166,5 +235,5 @@ impl CamZoom {
 pub fn face_board(npc: Vec3, me: Vec3) -> Board {
     let to_me = Vec2::new(me.x - npc.x, me.z - npc.z);
     let yaw = if to_me.length() > 0.01 { to_me.x.atan2(to_me.y) } else { 0.0 };
-    Board { c: npc + Vec3::Y * 4.0 * STUD, yaw, w: 4.6, h: 5.6, max_dist: (to_me.length() - 0.15).max(1.3) }
+    Board { c: npc + Vec3::Y * 4.0 * STUD, yaw, w: 4.6, h: 5.6, max_dist: (to_me.length() - 0.15).max(1.3), tilt: 0.0 }
 }
