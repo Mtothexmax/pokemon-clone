@@ -9,7 +9,9 @@ mod battle;
 mod cardface;
 mod cards;
 mod deck;
+mod cave;
 mod dialog;
+mod dive;
 mod fade;
 mod figure;
 mod life;
@@ -99,6 +101,7 @@ impl Data {
             ctx.ui.set("style_cards", deck::STYLE);
             ctx.ui.set("style_battle", arena::STYLE);
             ctx.ui.set("style_vox", vox::STYLE);
+            ctx.ui.set("style_dive", dive::STYLE);
             self.cards = deck::CardUi::new();
         }
     }

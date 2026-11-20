@@ -1,0 +1,218 @@
+# The lab quest (Kaigen st_dive.c / st_cave.c): Prof. Quill's Deck-o-Matic misses its Stud Core; her old diving suit
+# stands hidden in a lab corner (find it, take it); the pond without the suit throws you back on the bank, with it you
+# sink into the flooded cave: swim down (the water darker and the fog thicker the deeper), collect a pearl, take the
+# Stud Core at the bottom of the trench, surface (button), and the machine prints your first deck.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/dive.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 5
+expect game_state.state.dive.built == true
+expect game_state.state.dive.on == false
+expect game_state.state.dive.lights_on == 0
+expect game_state.state.goal contains Visit Prof. Quill
+
+# ---- the lab: the machine shows MISSING PART, the suit stands in its corner ----
+call enter {"room": "Lab"}
+wait_for game_state.state.area == "Lab" 3000
+frames 20
+expect game_state.state.machine == "missing"
+expect game_state.state.dive.suit_shown == true
+call talk {"dialog": "Machine"}
+frames 5
+expect game_state.state.dialog.text contains MISSING PART
+key Space
+frames 5
+key Space
+frames 5
+expect game_state.state.dialog == null
+
+# ---- Prof. Quill: the Stud Core is gone, find my suit, dive for it ----
+call talk {"dialog": "Prof"}
+frames 5
+expect game_state.state.dialog.lines == 6
+expect game_state.state.dialog.speaker == "Prof. Hazel Quill"
+key Space
+frames 5
+key Space
+frames 5
+key Space
+frames 5
+expect game_state.state.dialog.text contains MISSING PART
+key Space
+frames 5
+key Space
+frames 5
+expect game_state.state.dialog.text contains diving suit
+key Space
+frames 5
+expect game_state.state.dialog == null
+expect game_state.state.last_dialog.action == "QuestPart"
+expect game_state.state.save.quest_part == true
+expect game_state.state.goal contains diving suit
+call talk {"dialog": "Prof"}
+frames 5
+expect game_state.state.dialog.text contains Found my diving suit yet
+key Space
+frames 5
+
+# ---- the pond without the suit: too deep, back on the bank ----
+call teleport {"x": -5, "z": 13.5}
+frames 30
+down KeyS
+frames 3
+key Space
+frames 30
+up KeyS
+frames 3
+expect game_state.state.climb_outs == 1
+expect game_state.state.toast contains You need Prof. Quill's diving suit
+expect game_state.state.dive.on == false
+expect game_state.state.sink == 0
+expect game_state.state.hero.z < 15
+
+# ---- the suit, behind the bookshelves: walk up and take it (E) ----
+call teleport {"x": 318, "z": -6.5}
+frames 150
+expect game_state.state.area == "Lab"
+expect game_state.state.nearby == "the old diving suit"
+expect ui.slots.prompt contains the old diving suit
+screenshot shots/dive-suit.png
+key KeyE
+frames 5
+expect game_state.state.save.has_suit == true
+expect game_state.state.toast contains old diving suit
+frames 3
+expect game_state.state.dive.suit_shown == false
+expect game_state.state.nearby != "the old diving suit"
+expect game_state.state.goal contains Dive into the pond
+call talk {"dialog": "Prof"}
+frames 5
+expect game_state.state.dialog.text contains The suit fits you
+key Space
+frames 5
+key Space
+frames 5
+
+# ---- the pond with the suit: splash, sink, the cave ----
+call teleport {"x": -5, "z": 13.5}
+frames 30
+down KeyS
+frames 3
+key Space
+wait_for game_state.state.sink > 0 3000
+up KeyS
+expect game_state.state.toast contains The suit takes you down
+wait_for game_state.state.dive.on == true 3000
+frames 2
+expect game_state.state.dive.cam_main == true
+expect game_state.state.dive.lights_on == 6
+expect game_state.state.stick == false
+expect ui.slots.goal == ""
+expect ui.slots.menubtn == ""
+expect ui.slots.dive contains Surface
+expect ui.slots.dive contains Find the Stud Core
+expect game_state.state.dive.fov >= 75
+wait_for game_state.state.dive.fade == 0 3000
+expect game_state.state.dive.depth < 0.1
+screenshot shots/dive-start.png
+
+# ---- swim down (W along the view, which looks down; Q straight down; Shift fast): darker, thicker fog ----
+down KeyW
+down KeyQ
+down ShiftLeft
+frames 150
+expect game_state.state.dive.fast == true
+up ShiftLeft
+up KeyQ
+up KeyW
+expect game_state.state.dive.depth > 0.25
+expect game_state.state.dive.fog > 0.07
+expect game_state.state.dive.ambient < 0.32
+expect game_state.state.dive.sun_scale < 0.25
+screenshot shots/dive-mid.png
+# the camera's view follows the mouse while a button is held
+call dive {"yaw": 0, "pitch": 0}
+call input {"button": 0}
+call input {"dx": 100, "dy": -40}
+frames 1
+call input {"button": 0, "down": false}
+expect game_state.state.dive.yaw < -0.25
+expect game_state.state.dive.pitch > 0.1
+
+# ---- a pearl by the stone whale tail: swim into it ----
+call dive {"at": [2, 4.5, -7], "yaw": 0, "pitch": 0}
+frames 2
+down KeyW
+wait_for game_state.state.dive.pearls_now == 1 4000
+up KeyW
+expect game_state.state.dive.pearls == 1
+expect game_state.state.save.studs == 5
+expect game_state.state.toast contains A glowing pearl! (1/8)
+expect game_state.state.sound.last_sfx == "coin"
+expect ui.slots.dive contains Pearls 1/8
+
+# ---- the bottom of the trench: the Stud Core ----
+call dive {"at": [0, -14, 26], "yaw": 3.14159, "pitch": -0.3}
+frames 2
+expect game_state.state.dive.depth > 0.85
+expect game_state.state.dive.fog > 0.13
+screenshot shots/dive-deep.png
+down KeyW
+wait_for game_state.state.save.has_part == true 4000
+up KeyW
+expect game_state.state.toast contains You found the Stud Core
+expect game_state.state.sound.last_sfx == "fanfare"
+expect ui.slots.dive contains Stud Core ✓
+expect game_state.state.goal contains Bring the Stud Core
+
+# ---- surface (the button): back on the pond's north bank, the village as before ----
+action dive_surface
+wait_for game_state.state.dive.on == false 3000
+frames 3
+expect game_state.state.hero.x ~= -5.5
+expect game_state.state.hero.z ~= 13.6
+expect game_state.state.dive.cam_main == null
+expect game_state.state.dive.lights_on == 0
+expect game_state.state.stick == true
+expect ui.slots.dive == ""
+expect game_state.state.dive.sun_scale == 1
+expect game_state.state.dive.ambient == 1
+expect game_state.state.dive.fog < 0.06
+expect ui.slots.goal contains Bring the Stud Core
+frames 40
+expect game_state.state.sink == 0
+expect game_state.state.dive.on == false
+screenshot shots/dive-back.png
+
+# ---- the Deck-o-Matic prints your first deck ----
+call talk {"dialog": "Machine"}
+frames 5
+expect game_state.state.dialog.text contains Stud Core detected
+key Space
+frames 5
+call enter {"room": "Lab"}
+wait_for game_state.state.area == "Lab" 3000
+frames 10
+call talk {"dialog": "Prof"}
+frames 5
+expect game_state.state.dialog.text contains The Stud Core! You really found it
+key Space
+frames 5
+expect game_state.state.dialog.text contains printing
+key Space
+frames 5
+key Space
+frames 5
+key Space
+frames 10
+expect game_state.state.last_dialog.action == "GiveStarter"
+expect game_state.state.save.has_deck == true
+expect game_state.state.cards.owned == 18
+expect game_state.state.machine == "ready"
+expect game_state.state.cards.rewards.cards == ["titanoak", "thundrake", "emberhorn"]
+call save_reset

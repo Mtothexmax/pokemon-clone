@@ -4,6 +4,7 @@
 use crate::arena::{self, BattleOut, BattleScreen};
 use crate::battle::{BattleKind, Outcome};
 use crate::cards;
+use crate::dive::{self, Dive};
 use crate::dialog::{dialog_for, DialogAction, DialogId, DialogState};
 use crate::figure::Figure;
 use crate::life::{self, Life};
@@ -130,7 +131,23 @@ pub struct PlayScreen {
     /// a fight in the tall grass holds you (you only step back to watch it)
     fight: bool,
     help_hidden: bool,
+    // ---- the lab quest's dive (dive.rs, cave.rs) ----
+    dive: Dive,
+    /// > 0: you jumped into the pond with the suit and sink in (seconds; then the dive)
+    sink_t: f32,
+    /// the pond does nothing for a moment after it threw you out / you came back up
+    pond_cd: f32,
+    /// back from the dive: the black fades out (seconds left)
+    surface_fade: f32,
+    /// times the pond sent you back to the bank (no suit; tests)
+    climb_outs: u32,
 }
+
+/// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
+const POND_EXIT: [f32; 2] = [-5.5, 13.6];
+const SURFACE_FADE: f32 = 0.5;
+/// The village HUD slots that go while you dive.
+const DIVE_HIDES: [&str; 13] = ["help", "touch", "goal", "prompt", "menubtn", "settings", "title", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "fade"];
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
@@ -337,11 +354,14 @@ impl PlayScreen {
     }
 
     /// The talk spot in reach (Kaigen `world_pick`): the nearest within its radius.
-    fn pick_target(&self, p: Vec3) -> Option<usize> {
+    fn pick_target(&self, p: Vec3, save: &crate::save::GameSave) -> Option<usize> {
         let (x, z) = (p.x / STUD, p.z / STUD);
         let mut best = None;
         let mut best_d = f32::MAX;
         for (i, t) in TARGETS.iter().enumerate() {
+            if i == talk::SUIT_TARGET && !dive::suit_here(save) {
+                continue;
+            }
             let (tx, tz) = if i == talk::PIP_TARGET { (self.life.pip.x, self.life.pip.y) } else { (t.x, t.z) };
             let r = talk::reach(i);
             let d = (tx - x).powi(2) + (tz - z).powi(2);
@@ -404,6 +424,13 @@ impl PlayScreen {
             Use::Pc => self.scr.open(ctx, &mut data.sound, ScreenKind::Pc, t.x, t.z, weather, seed),
             Use::Lab => self.scr.open(ctx, &mut data.sound, ScreenKind::Lab, t.x, t.z, weather, seed),
             Use::Sleep => self.sleep(ctx, data),
+            Use::Suit => {
+                let s = &mut data.save.data;
+                s.has_suit = true;
+                data.save.mark();
+                data.sound.sfx(ctx, Sfx::Fanfare, 1.0, 0.8);
+                self.life.toast("Prof. Quill's old diving suit! Now the pond can take you down.");
+            }
         }
         data.sound.sfx(ctx, Sfx::Blip, 1.2, 0.4);
     }
@@ -540,6 +567,75 @@ impl PlayScreen {
         );
     }
 
+    /// The pond (Kaigen app_update): jump onto the water. With the suit you sink in and the dive begins; without it
+    /// you climb back out on the bank you came from. Also the sinking itself.
+    fn pond(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) {
+        self.pond_cd = (self.pond_cd - dt).max(0.0);
+        self.surface_fade = (self.surface_fade - dt).max(0.0);
+        let Some(h) = self.hero else { return };
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let (x, y, z) = (p.x / STUD, p.y / STUD, p.z / STUD);
+        if self.sink_t > 0.0 {
+            // sinking: down through the water, then the cave
+            self.sink_t += dt;
+            let k = (self.sink_t / 0.9).min(1.0);
+            let off = ctx.world.get::<&CharacterController>(h).map(|c| c.foot_offset()).unwrap_or(0.85);
+            if let Ok(mut t) = ctx.world.get::<&mut Transform>(h) {
+                t.translation = town::m(x.clamp(-11.0, -5.0), 1.2 - k * 5.0, z.clamp(16.0, 21.0)) + Vec3::Y * off;
+            }
+            if let Ok(mut cc) = ctx.world.get::<&mut CharacterController>(h) {
+                cc.velocity = Vec3::ZERO;
+            }
+            if k >= 1.0 {
+                self.sink_t = 0.0;
+                // (behind the black) you wait on the north bank; the cave takes the screen
+                self.move_to(ctx, POND_EXIT[0], POND_EXIT[1], 0.0);
+                for slot in DIVE_HIDES {
+                    ctx.ui.set(slot, "");
+                }
+                data.settings.open = false;
+                Vox::clear_hud(ctx);
+                self.nearby = None;
+                for n in &mut self.npcs {
+                    let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
+                    n.marker_html.clear();
+                }
+                self.dive.start(ctx);
+                self.help_hidden = true;
+            }
+            return;
+        }
+        let in_pond = x > town::POND.x0 - 0.4 && x < town::POND.x1 + 0.4 && z > town::POND.z0 - 0.4 && z < town::POND.z1 + 0.4;
+        if self.busy || self.fight || self.dive.on || self.pond_cd > 0.0 || self.area.is_some() || !in_pond || y <= 0.4 {
+            return;
+        }
+        data.sound.sfx(ctx, Sfx::Splash, 0.9, 0.9);
+        if dive::can_dive(&data.save.data) {
+            self.sink_t = 1e-4;
+            self.life.toast("Splash! The suit takes you down...");
+        } else {
+            // too deep without the suit: back on the bank you came from
+            let (cx, cz) = (x.clamp(-12.0, -4.0), z.clamp(15.0, 22.0));
+            let d = [cx + 12.0, -4.0 - cx, cz - 15.0, 22.0 - cz];
+            let m = d.iter().cloned().fold(f32::MAX, f32::min);
+            let out = if m == d[0] { (-13.6, cz) } else if m == d[1] { (-2.4, cz) } else if m == d[2] { (cx, 13.6) } else { (cx, 23.4) };
+            self.teleport(ctx, out.0, out.1);
+            self.pond_cd = 1.0;
+            self.climb_outs += 1;
+            self.life.toast(if data.save.data.quest_part { "Brr! Too deep to swim. You need Prof. Quill's diving suit." } else { "Brr! The pond is deep and cold." });
+        }
+    }
+
+    /// The dive is over (the screen is black): you stand on the north bank, the village comes back.
+    fn surfaced(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        self.move_to(ctx, POND_EXIT[0], POND_EXIT[1], 0.0);
+        self.pond_cd = 1.5;
+        self.surface_fade = SURFACE_FADE;
+        self.help_hidden = false;
+        ctx.ui.set("help", if self.touch_ui { TOUCH_HELP } else { KEYS_HELP });
+        data.settings.applied = None;
+    }
+
     /// The touch buttons: Use only in reach of someone or in a dialog (Kaigen touch button 0).
     fn touch_buttons(&self, ctx: &mut Ctx, cards_busy: bool) {
         if !self.touch_ui {
@@ -600,7 +696,7 @@ impl PlayScreen {
             String::new()
         };
         ctx.ui.set("title", &title);
-        let dark = self.door_dark();
+        let dark = self.door_dark().max(self.surface_fade / SURFACE_FADE);
         ctx.ui.set("fade", &if dark > 0.0 { format!("<div class='bh-fade' style='opacity:{dark:.2}'></div>") } else { String::new() });
         let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
         ctx.ui.set("toast", &toast);
@@ -736,6 +832,7 @@ impl Screen<Data> for PlayScreen {
         self.show_area(ctx);
         ctx.ui.set("help", KEYS_HELP);
         self.vox.init(ctx);
+        self.dive.init(ctx, data.town.as_mut().unwrap());
     }
 
     fn pause(&mut self, ctx: &mut Ctx, _data: &mut Data) {
@@ -769,8 +866,9 @@ impl Screen<Data> for PlayScreen {
         (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity) = self.base_light;
         self.scr.close(ctx, &mut data.sound);
         data.cards.deck_open = false;
+        self.dive.abort(ctx);
         ctx.input.touch.set_stick_enabled(true);
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill"] {
+        for slot in ["dive", "dive_fx", "help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill"] {
             ctx.ui.set(slot, "");
         }
     }
@@ -878,6 +976,20 @@ impl Screen<Data> for PlayScreen {
             return Trans::Push(Box::new(BattleScreen::new(k, seed)));
         }
         let actions = ctx.ui.take_actions();
+        // ---- diving: the cave owns the screen (only the toasts stay) ----
+        if self.dive.on {
+            self.busy = true;
+            if self.dive.update(ctx, data, &mut self.life, &actions, dt) {
+                self.surfaced(ctx, data);
+            } else {
+                self.dive.draw(ctx, &data.save.data, self.touch_ui);
+            }
+            self.life.update(dt);
+            data.save.update(ctx, dt);
+            let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
+            ctx.ui.set("toast", &toast);
+            return Trans::None;
+        }
         // the card screens (deck, packs) own the keys while they are open
         let cards_before = data.cards.busy();
         // Esc: the dialog's (it closes it), else the menu
@@ -924,7 +1036,7 @@ impl Screen<Data> for PlayScreen {
             let clicks: Vec<String> = if menu { vec![] } else { actions.clone() };
             self.scr.update(ctx, &mut data.sound, &data.save.data, &clicks, !menu, dt);
         } else if let Some((p, _)) = pos {
-            self.nearby = if menu || cards_busy || self.fight { None } else { self.pick_target(p) };
+            self.nearby = if menu || cards_busy || self.fight { None } else { self.pick_target(p, &data.save.data) };
             // a sign's text closes when you walk, press Esc or are no longer at it
             if let Some(r) = self.reading {
                 let at = self.nearby.map(|i| TARGETS[i].kind) == Some(Use::Read(r));
@@ -946,6 +1058,14 @@ impl Screen<Data> for PlayScreen {
         if let Some((p, _)) = pos {
             self.vox.hide_me = self.hero_hidden;
             self.fight = self.vox.update(ctx, data, &mut self.life, p / STUD, self.area, self.busy, &actions, dt);
+        }
+        // ---- the pond: with the suit it takes you down into the cave ----
+        self.pond(ctx, data, dt);
+        if self.sink_t > 0.0 || self.dive.on {
+            self.busy = true;
+            if self.dive.on {
+                return Trans::None;
+            }
         }
 
         // ---- a new game wakes up in your room upstairs, with a thought about the day ----
@@ -979,6 +1099,7 @@ impl Screen<Data> for PlayScreen {
             ctx.set_layer(missing, if ready { rooms::HIDDEN_LAYER } else { lab });
             ctx.set_layer(rdy, if ready { lab } else { rooms::HIDDEN_LAYER });
         }
+        self.dive.lab(ctx, &data.save.data);
 
         // the camera at your eyes, looking at whom you talk to (head and shoulders, above the dialog box)
         let board = match (self.dlg.is_open(), self.talk_npc, pos) {
@@ -1074,6 +1195,7 @@ impl Screen<Data> for PlayScreen {
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
             ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
+            ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
         ]
     }
@@ -1099,7 +1221,7 @@ impl Screen<Data> for PlayScreen {
                     return Some(Ok(json!({"open": d})));
                 }
                 let p = self.hero_pos(ctx)?.0;
-                match self.pick_target(p) {
+                match self.pick_target(p, &data.save.data) {
                     Some(t) => {
                         self.use_target(ctx, data, t);
                         Some(Ok(json!({"talk": TARGETS[t].label})))
@@ -1231,6 +1353,16 @@ impl Screen<Data> for PlayScreen {
                 }
                 Some(Ok(self.vox.describe(ctx)))
             }
+            "dive" => {
+                if a["sink"].as_bool() == Some(true) && !self.dive.on {
+                    self.sink_t = 1e-4;
+                }
+                if a["start"].as_bool() == Some(true) && !self.dive.on {
+                    self.sink_t = 1.0; // the next frame ends the sinking and starts the dive
+                }
+                self.dive.cheat(a);
+                Some(Ok(self.dive.describe(ctx, &data.save.data)))
+            }
             "card_face" => {
                 let f = Self::face_arg(a)?;
                 let url = data.faces.url(f);
@@ -1341,6 +1473,10 @@ impl Screen<Data> for PlayScreen {
             "battle_transition": data.trans.as_ref().map(|t| (t.t * 100.0).round() / 100.0),
             "battles": self.battles,
             "fight": self.fight,
+            "dive": self.dive.describe(ctx, &data.save.data),
+            "sink": (self.sink_t * 100.0).round() / 100.0,
+            "pond_cd": (self.pond_cd * 100.0).round() / 100.0,
+            "climb_outs": self.climb_outs,
             "vox": self.vox.describe(ctx),
             "stick": ctx.input.touch.stick_enabled(),
             "nearby": self.nearby.map(|i| TARGETS[i].label),
@@ -1361,7 +1497,7 @@ impl Screen<Data> for PlayScreen {
                 "last_sfx": data.sound.last_sfx, "sfx_played": data.sound.sfx_played,
             },
             "cards": data.cards.describe(&data.save, &data.faces),
-            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "vox_wins": g.vox_wins, "voxelmon": g.voxelmon, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
+            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "vox_wins": g.vox_wins, "voxelmon": g.voxelmon, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "has_suit": g.has_suit, "has_part": g.has_part, "dive_found": g.dive_found, "intro_seen": g.intro_seen},
         })
     }
 }

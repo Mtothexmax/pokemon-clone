@@ -6,8 +6,8 @@
 //! Hooks for later parts:
 //! * [`TARGETS`] lists everything you can use (studs) with what it does ([`Use`]: talk with its
 //!   [`DialogId`], read a sign, the TV, the piano, the computers, the bed); `PlayScreen::use_target`
-//!   dispatches. Stonecrest adds the knight, the baker and its signs, the lab quest the diving suit
-//!   (a `Use` variant + its spot at 315.6, -7.2). Pip's spot follows him (`Life::pip`).
+//!   dispatches. Stonecrest adds the knight, the baker and its signs. The lab quest's diving suit is
+//!   `Use::Suit` (`SUIT_TARGET`, only while it stands there). Pip's spot follows him (`Life::pip`).
 //! * [`goal_text`] is the quest line from the save flags. [`CamZoom`] eases the camera to any board
 //!   ([`Board`]: a sign, a TV screen, a face; `tilt` for screens leaning back) and back.
 
@@ -40,6 +40,8 @@ pub enum Use {
     Pc,
     Lab,
     Sleep,
+    /// Prof. Quill's old diving suit in the lab corner (only while it is there: `dive::suit_here`)
+    Suit,
 }
 
 const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static str) -> Target {
@@ -48,7 +50,7 @@ const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static st
 
 /// Everything you can do something with (Kaigen `world_target`): the villagers, the signs and the
 /// mailbox, the TVs, the piano, the computers, your bed. Pip's spot follows him.
-pub const TARGETS: [Target; 19] = [
+pub const TARGETS: [Target; 20] = [
     Target { kind: Use::Talk, x: 193.4, z: -2.8, verb: "Talk to", label: "Mom", dialog: DialogId::Mom, npc: "mom" },
     Target { kind: Use::Talk, x: 335.4, z: -1.2, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Prof, npc: "lab-prof" },
     Target { kind: Use::Talk, x: 52.5, z: -1.8, verb: "Talk to", label: "Dex", dialog: DialogId::Dex, npc: "rival" },
@@ -72,7 +74,10 @@ pub const TARGETS: [Target; 19] = [
     thing(Use::Sleep, 196.2, 38.6, "Sleep in", "your bed"),
     thing(Use::Lab, 343.2, -2.2, "Use", "the lab computer"),
     thing(Use::Lab, 343.2, 3.3, "Use", "the lab computer"),
+    // the lab quest: the suit behind the bookshelves (Kaigen st_world.c case 15)
+    thing(Use::Suit, 315.6, -7.2, "Take", "the old diving suit"),
 ];
+pub const SUIT_TARGET: usize = 19;
 pub const PIP_TARGET: usize = 6;
 /// Reach (studs): 4.2 for everyone, 6 for Pip (he stops walking within 6).
 pub fn reach(i: usize) -> f32 {
