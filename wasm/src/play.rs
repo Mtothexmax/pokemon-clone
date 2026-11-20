@@ -150,6 +150,8 @@ pub struct PlayScreen {
     gate_to: Option<[f32; 3]>,
     /// times the closed gap sent you back (tests)
     gate_stops: u32,
+    /// the tall grass tufts bending and swaying (grass.rs)
+    grass: crate::grass::Grass,
 }
 
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
@@ -868,7 +870,8 @@ impl Screen<Data> for PlayScreen {
         // (tried auto_lod with lod_distance 3 on engine 890610b: no level switches at this camera
         // distance, still 860k triangles, so nothing gained)
         ctx.gltf_defaults.auto_lod = false;
-        let (solids, stats, occluders) = town::build(ctx, data.town.as_mut().unwrap());
+        let (solids, stats, occluders, tufts) = town::build(ctx, data.town.as_mut().unwrap());
+        self.grass = crate::grass::Grass::new(tufts);
         self.life.blocks = solids.iter().map(|s| s.r).collect();
         self.fader = crate::fade::Fader::new(occluders);
         self.stats = stats;
@@ -1047,6 +1050,25 @@ impl Screen<Data> for PlayScreen {
         }
 
         self.gate_walk(ctx, dt);
+        // ---- the tall grass: whoever walks through pushes the tufts aside ----
+        if self.area.is_none() {
+            let mut push: Vec<(Vec3, f32)> = vec![];
+            if let Some((p, _)) = self.hero_pos(ctx) {
+                push.push((p, 0.3));
+            }
+            for (i, n) in self.npcs.iter().enumerate() {
+                if n.area.is_none() {
+                    if let Some(q) = self.npc_pos(ctx, i) {
+                        push.push((q, 0.3));
+                    }
+                }
+            }
+            push.extend(self.vox.pushers());
+            self.grass.set_pushers(push);
+        } else {
+            self.grass.set_pushers(vec![]);
+        }
+        self.grass.step(dt);
         // ---- village life: Pip walks his loop; whoever you talk to turns to you ----
         let me = self.hero_pos(ctx).map(|(p, _)| Vec2::new(p.x, p.z) / STUD).unwrap_or_default();
         let kid = self.npc_index("kid");
@@ -1264,6 +1286,10 @@ impl Screen<Data> for PlayScreen {
             }
         }
         self.life.update(dt);
+        if self.area.is_none() {
+            let me = self.hero_pos(ctx).map(|h| h.0);
+            self.grass.update(ctx, me, dt);
+        }
 
         // ---- the save: the clock every 20 s (the day goes on where you left it) ----
         self.clock_t += dt;
@@ -1317,6 +1343,7 @@ impl Screen<Data> for PlayScreen {
             ("cards", "Cards and the save. args: {starter?: true (Prof. Quill's gift with its packs), give?: ['pebbit'|..] | 'all', exp?: n (adds), level?: {id: stage}, deck?: ['id'..], rewards?: ['id'..] (foil packs, shown only), open?: bool (deck screen), pick?: 'id'}"),
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
             ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
+            ("tall_grass", "The tall grass tufts (grass.rs). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
@@ -1463,6 +1490,12 @@ impl Screen<Data> for PlayScreen {
                 }
                 Some(Ok(json!({"battle": kind})))
             }
+            "tall_grass" => {
+                if let Some(w) = a.get("wind").and_then(|v| v.as_f64()) {
+                    self.grass.wind = w as f32;
+                }
+                return Some(Ok(self.grass.describe(self.hero_pos(ctx).map(|h| h.0))));
+            }
             "vox" => {
                 self.vox.cheat(a);
                 if let Some(f) = a.get("force").filter(|f| !f.is_null() && f.as_bool() != Some(false)) {
@@ -1607,6 +1640,7 @@ impl Screen<Data> for PlayScreen {
             "pond_cd": (self.pond_cd * 100.0).round() / 100.0,
             "climb_outs": self.climb_outs,
             "vox": self.vox.describe(ctx),
+            "grass": self.grass.describe(self.hero_pos(ctx).map(|h| h.0)),
             "stick": ctx.input.touch.stick_enabled(),
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),

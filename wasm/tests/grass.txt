@@ -1,0 +1,40 @@
+# The tall grass moves (grass.rs): walking through patch 0 bends the tufts near you away (damped spring), they spring
+# back once you are gone; the tufts in view sway in the wind. Their shadows are static casters (no shadow redraws).
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/grass.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+call flags {"gate_open": true}
+call vox {"rate": 0}
+resume
+call teleport {"x": 2.5, "z": -22}
+frames 75
+expect game_state.state.grass.tufts > 600
+expect game_state.state.grass.patches.0 > 150
+expect game_state.state.grass.bent == 0
+expect game_state.state.grass.swaying > 100
+# ---- walk north into the patch ----
+down KeyW
+frames 75
+expect game_state.state.hero.z < -31
+expect game_state.state.grass.bent >= 2
+expect game_state.state.grass.near.0.1 > 0.25
+expect game_state.state.grass.awake >= 3
+pause
+screenshot shots/grass-walk.png
+resume
+up KeyW
+# ---- out of the way: the tufts spring back ----
+call teleport {"x": 0, "z": -20}
+frames 30
+expect game_state.state.grass.max_bend < 0.6
+wait_for game_state.state.grass.awake == 0 6000
+expect game_state.state.grass.bent == 0
+expect game_state.state.grass.max_bend < 0.01
+# ---- the wind can be stilled (debug) ----
+call tall_grass {"wind": 0}
+call tall_grass {"wind": 1}
+expect game_state.state.grass.wind == 1

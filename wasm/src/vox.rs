@@ -1156,6 +1156,18 @@ impl Vox {
 
     // ------------------------------------------------------------------ tests
 
+    /// Who pushes the tall grass (grass.rs): your Voxelmon while it is shown, the wild one in a fight (feet in
+    /// metres, radius in metres).
+    pub fn pushers(&self) -> Vec<(Vec3, f32)> {
+        let mut v = vec![];
+        for (f, on) in [(&self.me, self.me.id.is_some_and(|id| self.models.get(&id).is_some_and(|m| m.1))), (&self.wild, self.phase != Phase::None && self.wild.id.is_some())] {
+            if on {
+                v.push((f.p * STUD, (f.size * 0.35).clamp(0.6, 3.0) * STUD));
+            }
+        }
+        v
+    }
+
     pub fn describe(&self, ctx: &Ctx) -> Value {
         let r = |v: f32| (v * 100.0).round() / 100.0;
         let fighter = |f: &Fighter| {
