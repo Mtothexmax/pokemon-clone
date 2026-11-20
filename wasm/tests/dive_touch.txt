@@ -1,0 +1,117 @@
+# The dive on a phone held upright (390 x 844, touch; Kaigen de41477 / fea1c7b): no joystick, a held finger swims
+# forward and steers where it moves (as abyssal-garden), pinching two fingers swims backwards, spreading them swims
+# faster; a wide lens (105 degrees across: 120 up and down on an upright phone), the short pill top left, the Surface
+# button; swimming up into the hole also takes you back to the pond.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/dive_touch.txt --port 9223 --url http://localhost:8091/
+reload
+viewport 390 844 3 touch
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"quest_part": true, "has_suit": true}
+call teleport {"x": -2, "z": 10}
+frames 10
+# a tap: the touch HUD
+call input {"touch": {"id": 1, "x": 300, "y": 700, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 1, "x": 300, "y": 700, "phase": "end"}}
+frames 5
+expect ui.slots.touch contains >Jump<
+expect game_state.state.stick == true
+
+# ---- into the cave: no stick, no Jump / Use, the phone's HUD ----
+call dive {"start": true}
+wait_for game_state.state.dive.on == true 3000
+call dive {"skip_fade": true}
+frames 3
+expect game_state.state.stick == false
+expect ui.slots.touch == ""
+expect ui.slots.dive contains bh-dive-pill narrow
+expect ui.slots.dive contains Core: deep
+expect ui.slots.dive contains Hold a finger to swim
+expect ui.slots.dive contains Surface
+expect game_state.state.dive.fov == 120
+call dive {"at": [-10, 40, 0], "yaw": 0, "pitch": 0}
+frames 2
+screenshot shots/dive-phone.png
+
+# ---- hold a finger: swim forward; move it right: the view turns right (yaw goes down) ----
+call input {"touch": {"id": 5, "x": 200, "y": 500, "phase": "start"}}
+frames 30
+expect game_state.state.dive.touch == 5
+expect game_state.state.dive.az ~= 0.7
+expect game_state.state.dive.speed > 3
+expect game_state.state.dive.z < -1
+call input {"touch": {"id": 5, "x": 260, "y": 500, "phase": "move"}}
+frames 20
+expect game_state.state.dive.yaw < -0.3
+# up: the view tilts up
+call input {"touch": {"id": 5, "x": 260, "y": 440, "phase": "move"}}
+frames 5
+expect game_state.state.dive.pitch > 0.2
+call input {"touch": {"id": 5, "x": 260, "y": 440, "phase": "end"}}
+frames 30
+expect game_state.state.dive.touch == null
+expect game_state.state.dive.az == 0
+
+# ---- pinch two fingers together: backwards ----
+call dive {"at": [-10, 40, 0], "yaw": 0, "pitch": 0}
+call input {"touch": {"id": 6, "x": 150, "y": 400, "phase": "start"}}
+call input {"touch": {"id": 7, "x": 250, "y": 400, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 6, "x": 180, "y": 400, "phase": "move"}}
+call input {"touch": {"id": 7, "x": 220, "y": 400, "phase": "move"}}
+frames 30
+expect game_state.state.dive.pinch == true
+expect game_state.state.dive.squeeze > 0.5
+expect game_state.state.dive.az < -0.5
+expect game_state.state.dive.z > 1
+expect game_state.state.dive.yaw == 0
+call input {"touch": {"id": 6, "x": 180, "y": 400, "phase": "end"}}
+call input {"touch": {"id": 7, "x": 220, "y": 400, "phase": "end"}}
+frames 5
+
+# ---- spread them apart: faster ----
+call dive {"at": [-10, 40, 0], "yaw": 0, "pitch": 0}
+call input {"touch": {"id": 8, "x": 180, "y": 400, "phase": "start"}}
+call input {"touch": {"id": 9, "x": 220, "y": 400, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 8, "x": 100, "y": 400, "phase": "move"}}
+call input {"touch": {"id": 9, "x": 300, "y": 400, "phase": "move"}}
+frames 30
+expect game_state.state.dive.squeeze < -0.5
+expect game_state.state.dive.fast == true
+expect game_state.state.dive.az == 1
+expect game_state.state.dive.speed > 12
+call input {"touch": {"id": 8, "x": 100, "y": 400, "phase": "end"}}
+call input {"touch": {"id": 9, "x": 300, "y": 400, "phase": "end"}}
+frames 5
+expect game_state.state.dive.fast == false
+
+# ---- swim up into the hole (finger held, looking up): back at the pond ----
+call dive {"at": [0, 84, 0], "yaw": 0, "pitch": 1.4}
+frames 2
+call input {"touch": {"id": 10, "x": 200, "y": 500, "phase": "start"}}
+wait_for game_state.state.dive.leaving == true 4000
+call input {"touch": {"id": 10, "x": 200, "y": 500, "phase": "end"}}
+wait_for game_state.state.dive.on == false 3000
+frames 3
+expect game_state.state.stick == true
+expect game_state.state.hero.z ~= 13.6
+expect ui.slots.touch contains >Jump<
+
+# ---- again, out by the Surface button ----
+frames 100
+call dive {"start": true}
+wait_for game_state.state.dive.on == true 3000
+call dive {"skip_fade": true}
+frames 3
+action dive_surface
+wait_for game_state.state.dive.on == false 3000
+expect game_state.state.dive.dives == 2
+expect game_state.state.stick == true
+call save_reset
+viewport off

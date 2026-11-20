@@ -33,8 +33,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Wild Voxelmon fights in the tall grass, skills, upgrades, own music, no touch Jump/Use in fights (vox.rs: the
       follower, encounters, the real-time fight with its camera and HUD, rewards, the upgrade showcase in 3D, HP back on
       sleep; beasts `assets/beasts/*.glb`; tests vox.txt, vox_lose.txt, vox_upgrade.txt, vox_touch.txt)
-- [ ] Lab quest: diving suit, deck machine "missing part", pond dive into the cave (swim in 3D, darker with depth,
-      seaweed, glowing plants, collectibles, marine snow, part deep down), deck built on return
+- [x] Lab quest: diving suit, deck machine "missing part", pond dive into the cave (swim in 3D, darker with depth,
+      seaweed, glowing plants, collectibles, marine snow, part deep down), deck built on return (dive.rs, cave.rs;
+      tests dive.txt, dive_touch.txt)
 - [ ] Route 1 north and Stonecrest
 - [ ] Hide and seek with Pip (then he battles), night pill, gate, debug panel
 
@@ -158,3 +159,22 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   rustles), `fight`, `stick`; `save.vox_wins`, `save.voxelmon`. HUD slots `vox_wild`, `vox_mine` (actions
   `vox_skill:0|1`, `vox_run`), `vox_pill`.
 - The gate (Prof. Quill steps aside once you have a Voxelmon): `save.voxelmon > 0`, as the dialogues already check.
+
+## Hooks for later parts (lab quest / dive slice)
+- `dive.rs` (`PlayScreen::dive`, Kaigen `st_dive.c`) and `cave.rs` (Kaigen `st_cave.c`): the cave is built once per play
+  screen far east (x 600..680 studs, y -30..100) on its own render layer `cave::CAVE_LAYER` (8); the dive has its own camera
+  (`ctx.set_main_camera`, layer 8 only, 105 degrees across) and owns fog / sun_scale / ambient_scale / shadows while
+  `dive.on` (given back in `Dive::stop`). While diving `PlayScreen::update` returns early after the dive (no dialogs, menu,
+  vox, doors); only toasts stay. Cave coordinates: studs from (`CAVE_X`, 0, `CAVE_Z`), `cave::world(c)` -> metres,
+  `cave::floor(x, z)`, the diver's solids `Dive::solids`.
+- The pond: `PlayScreen::pond` (jump onto it: `dive::can_dive` -> sink 0.9 s -> `Dive::start`; else back on the nearest
+  bank, `climb_outs`); after a dive you stand at `POND_EXIT` (-5.5, 13.6; Kaigen -8 is Pip's home spot). Pip's football /
+  the ducks (life part) must keep out of `town::POND` as before.
+- The suit: `talk::Use::Suit` (`SUIT_TARGET`, skipped by `pick_target` unless `dive::suit_here`), the model in the lab
+  (`Dive::lab` shows / hides it). Save: `has_suit`, `has_part`, `dive_found` (pearl bits, 8 pearls, +5 studs each).
+- Kaigen's F2 (diver to the trench) is the debug command `dive {at: [0, -19, 38]}`; `dive {sink | start | at | yaw | pitch |
+  skip_fade | surface}`; `game_state.state.dive` (on, t, fade, leaving, x/y/z, yaw, pitch, speed, az, fast, depth, metres,
+  touch, pinch, squeeze, pearls, pearls_now, core_taken, dives, fov, cam_main, lights_on, fog, sun_scale, ambient,
+  suit_shown, cave_tris, solids, near_core), `sink`, `pond_cd`, `climb_outs`, `save {has_suit, has_part, dive_found}`.
+  HUD slots `dive` (tint, edge, pill, hint, Surface button = action `dive_surface`, fade) and `dive_fx` (helmet bubbles).
+- The hide-and-seek / debug-panel part: the Kaigen debug panel's "dive" entries map to the `dive` command above.
