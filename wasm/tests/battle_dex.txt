@@ -1,0 +1,110 @@
+# The card battle vs Dex to a win: his dialogue's "Battle!" starts it, you play every turn (battle_auto: the AI's plan
+# for you, through the UI's play path) with a power boost so the win is certain, SNAP doubles the stakes, the
+# opponent cards fly in face down and flip, attacks fly as balls, the victory: confetti bricks, the victory music,
+# Continue: +studs, +40 EXP, a first win over Dex gives 2 new cards as foil packs, then his "WHAT?!" dialogue.
+# Then Pip's battle (debug: hide and seek is not ported yet) with his +1 power deck, retreated: -1 stud.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle_dex.txt --port 9223 --url http://localhost:8091/
+reload
+viewport 1600 900 1 touch
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"has_deck": true, "studs": 5}
+call cards {"give": ["quickhop", "flicker", "drizzlet", "zapling", "voltail", "cinderpup", "gustling", "tidalotl", "echowl", "thundrake", "emberhorn", "titanoak"], "deck": ["quickhop", "flicker", "drizzlet", "zapling", "voltail", "cinderpup", "gustling", "tidalotl", "echowl", "thundrake", "emberhorn", "titanoak"]}
+frames 5
+expect game_state.state.cards.owned == 12
+# ---- Dex: "Battle!" ----
+call battle {"seed": 11, "start": false}
+call talk {"dialog": "Dex"}
+frames 20
+expect game_state.state.dialog.choices.0 == "Battle!"
+key KeyE
+frames 4
+expect game_state.state.dialog.line == 1
+action dlg_choice:0
+frames 20
+expect game_state.state.battle_transition > 0
+wait_for game_state.screen == "battle" 4000
+expect game_state.state.battle.opponent == "Dex"
+expect game_state.state.battle.taunt contains ?
+wait_for game_state.state.battle.transition == null 4000
+expect ui.slots.bt_trans == ""
+call battle_cheat {"power": 6}
+call battle_speed {"x": 3}
+# ---- SNAP ----
+action bt_snap
+frames 3
+expect game_state.state.battle.p_snapped == true
+expect game_state.state.battle.stakes == 2
+expect game_state.state.battle.last_sfx == "alert"
+# ---- six turns ----
+call battle_auto {"end": true}
+wait_for game_state.state.battle.turn == 2 8000
+wait_for game_state.state.battle.phase == "Plan" 8000
+call battle_auto {"end": true}
+wait_for game_state.state.battle.turn == 3 8000
+wait_for game_state.state.battle.phase == "Plan" 8000
+expect game_state.state.battle.locations.2.revealed == true
+call battle_auto {"end": true}
+wait_for game_state.state.battle.turn == 4 8000
+wait_for game_state.state.battle.phase == "Plan" 8000
+call battle_auto {"end": true}
+wait_for game_state.state.battle.turn == 5 8000
+wait_for game_state.state.battle.phase == "Plan" 8000
+call battle_auto {"end": true}
+wait_for game_state.state.battle.turn == 6 8000
+wait_for game_state.state.battle.phase == "Plan" 8000
+screenshot shots/battle-dex-t6.png
+call battle_auto {"end": true}
+wait_for game_state.state.battle.phase == "Over" 10000
+expect game_state.state.battle.result == "Win"
+expect game_state.state.battle.flips >= 6
+expect game_state.state.battle.lands >= 6
+expect game_state.state.battle.track == "victory"
+expect game_state.state.battle.taunt == "No way… my deck was perfect!"
+expect ui.slots.bt_over contains VICTORY!
+expect game_state.state.battle.confetti == 70
+frames 25
+screenshot shots/battle-confetti.png
+wait_for game_state.state.battle.confetti_resting >= 40 6000
+screenshot shots/battle-victory.png
+# ---- Continue: studs, EXP, two cards for the first win over Dex, then his dialogue ----
+key Enter
+frames 5
+expect game_state.screen == "play"
+expect game_state.state.save.wins == 1
+expect game_state.state.save.rival_wins == 1
+expect game_state.state.save.exp == 40
+expect game_state.state.save.studs > 5
+expect game_state.state.cards.owned == 14
+expect game_state.state.cards.rewards.cards.1 != null
+expect game_state.state.sound.track == "home"
+wait_for ui.slots.packs contains blob: 5000
+screenshot shots/battle-rewards.png
+key Enter
+frames 80
+action pack_ok
+frames 10
+expect game_state.state.cards.rewards == null
+expect game_state.state.dialog.id == "DexWon"
+key Escape
+frames 10
+# ---- Pip (hide and seek comes later: `battle {kind: pip}`), his cards +1 Power; Flee ----
+call battle {"kind": "pip", "seed": 5, "instant": true}
+frames 10
+expect game_state.screen == "battle"
+expect game_state.state.battle.opponent == "Pip"
+expect game_state.state.battle.taunt != null
+frames 60
+action bt_retreat
+frames 5
+expect game_state.screen == "play"
+expect game_state.state.save.exp == 45
+expect game_state.state.dialog.id == "PipLost"
+key Escape
+frames 10
+call save_reset
+viewport off

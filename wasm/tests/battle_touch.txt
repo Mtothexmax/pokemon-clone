@@ -1,0 +1,96 @@
+# The card battle on a phone held upright (390 x 844, touch): the narrow table (steeper camera, columns closer), the
+# hand at the bottom with the energy orb, Undo and End Turn under it. Tap a card: it shows big with "Play to:"; a tap
+# on your row of a location plays it there (lowered onto the slot). Tap a card, tap outside the big card (closed, the
+# card stays selected), tap a location: played. End Turn and Flee are HUD buttons (data-action).
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle_touch.txt --port 9223 --url http://localhost:8091/
+reload
+viewport 390 844 3 touch
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"studs": 3}
+call battle {"kind": "practice", "seed": 7, "instant": true}
+frames 100
+expect game_state.screen == "battle"
+expect game_state.state.battle.camera.portrait == true
+expect game_state.state.battle.layout.w == 390
+expect game_state.state.battle.hand.0.screen.1 > 650
+expect game_state.state.battle.locations.0.screen.1 < 400
+expect ui.slots.bt_bottom contains phone
+screenshot shots/battle-touch.png
+# ---- tap Quickhop: the big card, "Play to:" ----
+call input {"touch": {"id": 1, "x": 63, "y": 708, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 1, "x": 63, "y": 708, "phase": "end"}}
+frames 20
+expect game_state.state.battle.inspect contains Hand
+expect game_state.state.battle.selected == "quickhop"
+expect ui.slots.bt_over contains Play to:
+screenshot shots/battle-touch-inspect.png
+# ---- a tap on your row of the first location plays it there ----
+call input {"touch": {"id": 2, "x": 85, "y": 455, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 2, "x": 85, "y": 455, "phase": "end"}}
+frames 6
+expect game_state.state.battle.inspect == null
+expect game_state.state.battle.locations.0.mine.0.id == "quickhop"
+expect game_state.state.battle.locations.0.mine.0.anim.style == "Lower"
+screenshot shots/battle-touch-lowering.png
+frames 40
+expect game_state.state.battle.lands == 1
+# ---- take it back (Undo), then: tap the card, tap outside the big card, tap a location ----
+action bt_undo
+frames 30
+expect game_state.state.battle.hand_n == 4
+call input {"touch": {"id": 3, "x": 63, "y": 708, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 3, "x": 63, "y": 708, "phase": "end"}}
+frames 10
+expect game_state.state.battle.inspect contains Hand
+call input {"touch": {"id": 4, "x": 360, "y": 600, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 4, "x": 360, "y": 600, "phase": "end"}}
+frames 10
+expect game_state.state.battle.inspect == null
+expect game_state.state.battle.selected == "quickhop"
+expect ui.slots.bt_over contains glowing location
+screenshot shots/battle-touch-selected.png
+call input {"touch": {"id": 5, "x": 85, "y": 330, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 5, "x": 85, "y": 330, "phase": "end"}}
+frames 50
+expect game_state.state.battle.locations.0.mine.0.id == "quickhop"
+expect game_state.state.battle.selected == null
+# ---- End Turn (button): the reveal ----
+action bt_end
+frames 5
+expect game_state.state.battle.phase == "Reveal"
+wait_for game_state.state.battle.phase == "Plan" 8000
+expect game_state.state.battle.turn == 2
+screenshot shots/battle-touch-t2.png
+# ---- a tap on a location tile with nothing selected shows it big ----
+call input {"touch": {"id": 6, "x": 85, "y": 330, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 6, "x": 85, "y": 330, "phase": "end"}}
+frames 20
+expect game_state.state.battle.inspect == "Zone(0)"
+screenshot shots/battle-touch-zone.png
+call input {"touch": {"id": 7, "x": 200, "y": 700, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 7, "x": 200, "y": 700, "phase": "end"}}
+frames 5
+expect game_state.state.battle.inspect == null
+# ---- Flee: -1 stud, +5 EXP, back in the village ----
+action bt_retreat
+frames 5
+expect game_state.screen == "play"
+expect game_state.state.save.studs == 2
+expect game_state.state.save.exp == 5
+expect game_state.state.dialog.id == "LumiLost"
+key Escape
+frames 5
+call save_reset
+viewport off

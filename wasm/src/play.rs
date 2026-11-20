@@ -1,12 +1,14 @@
 //! The play screen: the village, you, the villagers, talking, the HUD (goal, prompt, toast, markers,
 //! the ☰ menu) and the touch buttons.
 
+use crate::arena::{self, BattleOut, BattleScreen};
+use crate::battle::{BattleKind, Outcome};
 use crate::cards;
 use crate::dialog::{dialog_for, DialogAction, DialogId, DialogState};
 use crate::figure::Figure;
 use crate::life::{self, Life};
 use crate::settings::{self, MenuOut};
-use crate::sound::{self, Sfx};
+use crate::sound::{self, Sfx, Track};
 use crate::screens::{ScreenKind, Screens};
 use crate::talk::{self, CamZoom, Use, TARGETS};
 use crate::town::rooms::{self, RoomId};
@@ -116,6 +118,12 @@ pub struct PlayScreen {
     sleeps: u32,
     /// 3D cards of the `card_preview` command
     previews: Vec<Entity>,
+    /// `battle {instant: true}`: push the battle screen on the next update
+    push_battle: Option<(BattleKind, u32)>,
+    /// a seed for the next battle (`battle {seed}`; else the card game's generator)
+    battle_seed: Option<u32>,
+    /// battles played from here (tests)
+    battles: u32,
 }
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
@@ -427,11 +435,85 @@ impl PlayScreen {
             DialogAction::GiveStarter => self.give_starter(ctx, data),
             DialogAction::DexScared => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::DexScared, s)),
             DialogAction::BattlePip if s.seek_played == 0 && s.seek_wins == 0 => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::PipNotYet, s)),
+            DialogAction::BattleRival => self.start_battle(ctx, data, BattleKind::Rival),
+            DialogAction::BattlePractice => self.start_battle(ctx, data, BattleKind::Practice),
+            DialogAction::BattlePip => self.start_battle(ctx, data, BattleKind::Pip),
             // battles, hide and seek, tag, sleeping, the starter cards: their parts handle these
             _ => {
                 log_info!("dialog action {act:?}: not implemented yet");
                 self.pending_action = Some(act);
             }
+        }
+    }
+
+    /// A dialogue chose a battle (Kaigen `cg_start_battle`): the intro fanfare and the bricks; the battle screen is
+    /// pushed under them (`arena::TRANS_BOARD`).
+    fn start_battle(&mut self, ctx: &mut Ctx, data: &mut Data, kind: BattleKind) {
+        if data.trans.is_some() {
+            return;
+        }
+        arena::start_transition(ctx, data, kind);
+    }
+
+    /// The seed of the next battle.
+    fn next_seed(&mut self, ctx: &mut Ctx, data: &mut Data) -> u32 {
+        match self.battle_seed.take() {
+            Some(s) => s,
+            None => data.cg_rand(ctx),
+        }
+    }
+
+    /// The battle is over and the result was seen (Kaigen `cg_battle_done`): studs, EXP, cards, then what the opponent
+    /// says (the reward packs first, if any).
+    fn battle_done(&mut self, ctx: &mut Ctx, data: &mut Data, out: BattleOut) {
+        data.sound.music(ctx, Track::Home);
+        let mut seed = if data.cg_seed == 0 { data.cg_rand(ctx) } else { data.cg_seed };
+        let s = &mut data.save.data;
+        let r = out.result;
+        let delta = match r {
+            Outcome::Win => {
+                s.wins += 1;
+                out.stakes
+            }
+            Outcome::Lose => {
+                s.losses += 1;
+                -out.stakes
+            }
+            Outcome::Retreat => -(out.stakes / 2).max(1),
+            _ => 0,
+        };
+        s.studs = (s.studs as i32 + delta).max(0) as u32;
+        let exp = cards::battle_exp(r.code(), matches!(out.kind, BattleKind::Rival | BattleKind::Pip));
+        s.exp += exp;
+        let mut ids = vec![];
+        if r == Outcome::Win {
+            let k = if (out.kind == BattleKind::Rival && s.rival_wins == 0) || (out.kind == BattleKind::Pip && s.pip_wins == 0) { 2 } else { 1 };
+            for _ in 0..k {
+                if let Some(c) = cards::reward_card(s, &mut seed, false) {
+                    ids.push(c);
+                }
+            }
+            match out.kind {
+                BattleKind::Rival => s.rival_wins += 1,
+                BattleKind::Pip => s.pip_wins += 1,
+                _ => {}
+            }
+        }
+        data.cg_seed = seed;
+        data.save.mark();
+        let win = r == Outcome::Win;
+        let after = match out.kind {
+            BattleKind::Pip => if win { DialogId::PipWon } else { DialogId::PipLost },
+            BattleKind::Rival => if win { DialogId::DexWon } else { DialogId::DexLost },
+            _ => if win { DialogId::LumiWon } else { DialogId::LumiLost },
+        };
+        self.life.toast(&format!("+{exp} EXP \u{b7} upgrade your cards in the Deck menu (C)"));
+        self.battles += 1;
+        log_info!("battle done: {r:?} vs {:?}, studs {delta:+}, +{exp} EXP, cards {ids:?}", out.kind);
+        if ids.is_empty() {
+            self.dlg.open(ctx, &mut data.sound, dialog_for(after, &data.save.data));
+        } else {
+            data.cards.show_rewards(&format!("New card added to your collection! \u{b7} +{exp} EXP"), &ids, Some(after));
         }
     }
 
@@ -643,7 +725,29 @@ impl Screen<Data> for PlayScreen {
         ctx.ui.set("help", KEYS_HELP);
     }
 
+    fn pause(&mut self, ctx: &mut Ctx, _data: &mut Data) {
+        // a battle covers the village: its HUD and the markers go
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn"] {
+            ctx.ui.set(slot, "");
+        }
+        for n in &mut self.npcs {
+            let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
+            n.marker_html.clear();
+        }
+    }
+
+    fn resume(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        ctx.ui.set("help", if self.touch_ui { TOUCH_HELP } else { KEYS_HELP });
+        self.shown_area = None;
+        self.show_area(ctx);
+        if let Some(out) = data.battle_out.take() {
+            self.battle_done(ctx, data, out);
+        }
+    }
+
     fn exit(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        data.trans = None;
+        ctx.ui.set("bt_trans", "");
         data.save.data.time_of_day = ctx.renderer.settings.time_of_day;
         data.save.flush(ctx);
         data.sound.stop_voice(ctx);
@@ -740,6 +844,18 @@ impl Screen<Data> for PlayScreen {
             data.settings.touch = true; // Auto: the phone profile
         }
         data.sound.update(ctx, dt);
+        data.track_music(ctx, false);
+        // the way into a battle: the board is set up under the bricks
+        let kind = data.trans.as_ref().map(|t| t.kind);
+        if arena::transition_update(ctx, data, dt) {
+            if let Some(k) = kind {
+                let seed = self.next_seed(ctx, data);
+                return Trans::Push(Box::new(BattleScreen::new(k, seed)));
+            }
+        }
+        if let Some((k, seed)) = self.push_battle.take() {
+            return Trans::Push(Box::new(BattleScreen::new(k, seed)));
+        }
         let actions = ctx.ui.take_actions();
         // the card screens (deck, packs) own the keys while they are open
         let cards_before = data.cards.busy();
@@ -803,7 +919,7 @@ impl Screen<Data> for PlayScreen {
             self.talk_npc = None;
             self.face_yaw = None;
         }
-        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy();
+        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some();
 
         // ---- a new game wakes up in your room upstairs, with a thought about the day ----
         self.play_t += dt;
@@ -910,6 +1026,7 @@ impl Screen<Data> for PlayScreen {
             ("play_sfx", "Play a synthesized effect. args: {name: blip|coin|fanfare|alert|quack|kick|splash|piano|pop, pitch?: 1}"),
             ("cards", "Cards and the save. args: {starter?: true (Prof. Quill's gift with its packs), give?: ['pebbit'|..] | 'all', exp?: n (adds), level?: {id: stage}, deck?: ['id'..], rewards?: ['id'..] (foil packs, shown only), open?: bool (deck screen), pick?: 'id'}"),
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
+            ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
         ]
     }
@@ -1037,6 +1154,22 @@ impl Screen<Data> for PlayScreen {
                 }
                 Some(Ok(data.cards.describe(&data.save, &data.faces)))
             }
+            "battle" => {
+                let kind = BattleKind::from_name(a["kind"].as_str().unwrap_or("practice"))?;
+                if let Some(sd) = a["seed"].as_u64() {
+                    self.battle_seed = Some(sd as u32);
+                }
+                if a["start"].as_bool() == Some(false) {
+                    return Some(Ok(json!({"seed": self.battle_seed})));
+                }
+                if a["instant"].as_bool() == Some(true) {
+                    let seed = self.next_seed(ctx, data);
+                    self.push_battle = Some((kind, seed));
+                } else {
+                    self.start_battle(ctx, data, kind);
+                }
+                Some(Ok(json!({"battle": kind})))
+            }
             "card_face" => {
                 let f = Self::face_arg(a)?;
                 let url = data.faces.url(f);
@@ -1144,6 +1277,8 @@ impl Screen<Data> for PlayScreen {
             "dialog_lines_shown": self.dlg.lines_shown,
             "last_dialog": self.dlg.last_closed.map(|(d, a)| json!({"id": format!("{d:?}"), "action": format!("{a:?}")})),
             "pending_action": self.pending_action.map(|a| format!("{a:?}")),
+            "battle_transition": data.trans.as_ref().map(|t| (t.t * 100.0).round() / 100.0),
+            "battles": self.battles,
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
@@ -1162,7 +1297,7 @@ impl Screen<Data> for PlayScreen {
                 "last_sfx": data.sound.last_sfx, "sfx_played": data.sound.sfx_played,
             },
             "cards": data.cards.describe(&data.save, &data.faces),
-            "save": {"plays": g.plays, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
+            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
         })
     }
 }

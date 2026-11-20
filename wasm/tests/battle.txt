@@ -1,0 +1,171 @@
+# The card battle in 3D vs Lumi (practice), from her dialogue to the end: the bricks transition, the table with
+# three location tiles, the hand, playing a card by dragging it with the mouse (it is lowered onto the slot), End
+# Turn (the opponent's cards come face down and flip at the reveal), the location reveals, a whole battle you lose
+# (you play nothing after turn 1), the result, the music, then -studs, EXP and Lumi's "Good try!" in the village.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle.txt --port 9223 --url http://localhost:8091/
+reload
+viewport 1600 900 1 touch
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call flags {"has_deck": true, "studs": 10}
+call cards {"give": ["quickhop", "flicker", "drizzlet", "zapling", "voltail", "cinderpup", "gustling", "tidalotl", "echowl", "thundrake", "emberhorn", "titanoak"], "deck": ["quickhop", "flicker", "drizzlet", "zapling", "voltail", "cinderpup", "gustling", "tidalotl", "echowl", "thundrake", "emberhorn", "titanoak"]}
+frames 5
+# ---- Lumi offers a practice battle: the bricks slide in, the intro fanfare ----
+call talk {"dialog": "Lumi"}
+frames 20
+expect game_state.state.dialog.choices.0 == "Practice battle"
+expect game_state.state.dialog.lines == 8
+key KeyE
+frames 4
+key KeyE
+frames 4
+key KeyE
+frames 4
+key KeyE
+frames 4
+key KeyE
+frames 4
+key KeyE
+frames 4
+key KeyE
+frames 4
+expect game_state.state.dialog.line == 7
+call battle {"seed": 7, "start": false}
+action dlg_choice:0
+frames 30
+expect game_state.state.battle_transition > 0
+expect game_state.state.sound.track == "intro"
+expect ui.slots.bt_trans contains VS
+screenshot shots/battle-trans.png
+wait_for game_state.screen == "battle" 4000
+expect game_state.stack.0 == "play"
+# ---- the table ----
+wait_for game_state.state.battle.transition == null 4000
+expect game_state.state.battle.opponent == "Lumi"
+expect game_state.state.battle.turn == 1
+expect game_state.state.battle.energy == 1
+expect game_state.state.battle.hand_n == 4
+expect game_state.state.battle.hand.0.id == "quickhop"
+expect game_state.state.battle.locations.0.revealed == true
+expect game_state.state.battle.locations.1.revealed == false
+expect game_state.state.battle.taunt == "Let’s have a fun practice round!"
+wait_for game_state.state.battle.voice == "assets/voices/7e9bc202.ogg" 4000
+expect ui.slots.bt_top contains Lumi
+expect ui.slots.bt_bottom contains ENERGY
+expect ui.slots.bt_over contains Tap a card
+wait_for game_state.state.battle.pictures >= 13 5000
+frames 30
+screenshot shots/battle-table.png
+# a card you cannot pay is not playable
+expect game_state.state.battle.hand.3.playable == false
+call battle_play {"card": "titanoak", "zone": 0}
+expect game_state.state.battle.hand_n == 4
+# ---- drag Quickhop (hand 0) with a finger onto the first location: it is lowered with a bounce ----
+# (a finger, not the mouse: the real mouse over the debug window would move the pointer)
+call input {"touch": {"id": 1, "x": 600, "y": 799, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 1, "x": 595, "y": 740, "phase": "move"}}
+frames 2
+call input {"touch": {"id": 1, "x": 570, "y": 620, "phase": "move"}}
+frames 2
+call input {"touch": {"id": 1, "x": 520, "y": 490, "phase": "move"}}
+frames 3
+expect game_state.state.battle.dragging == true
+expect game_state.state.battle.drag_over == 0
+screenshot shots/battle-drag.png
+call input {"touch": {"id": 1, "x": 520, "y": 490, "phase": "end"}}
+frames 4
+expect game_state.state.battle.locations.0.mine.0.id == "quickhop"
+expect game_state.state.battle.locations.0.mine.0.anim.style == "Lower"
+expect game_state.state.battle.locations.0.mine.0.y > 0.05
+screenshot shots/battle-lowering.png
+frames 40
+expect game_state.state.battle.locations.0.mine.0.anim == null
+expect game_state.state.battle.locations.0.mine.0.y < 0.02
+expect game_state.state.battle.lands == 1
+expect game_state.state.battle.energy_left == 0
+expect game_state.state.battle.no_moves == true
+expect ui.slots.bt_over contains No more moves
+# Undo takes it back, playing again puts it there
+action bt_undo
+frames 30
+expect game_state.state.battle.hand_n == 4
+expect game_state.state.battle.energy_left == 1
+call battle_play {"card": "quickhop", "zone": 0}
+frames 40
+# ---- End Turn: their cards fly in face down, then everything turns over in order ----
+key Enter
+frames 3
+expect game_state.state.battle.phase == "Reveal"
+expect game_state.state.battle.banner contains reveals first
+frames 30
+expect game_state.state.battle.locations.0.mine.0.flip > 3
+screenshot shots/battle-facedown.png
+wait_for game_state.state.battle.flips >= 1 4000
+frames 8
+screenshot shots/battle-flipping.png
+wait_for game_state.state.battle.phase == "Plan" 8000
+expect game_state.state.battle.turn == 2
+expect game_state.state.battle.energy == 2
+expect game_state.state.battle.locations.0.mine.0.revealed == true
+expect game_state.state.battle.locations.0.mine.0.flip == 0
+expect game_state.state.battle.locations.1.revealed == true
+expect game_state.state.battle.banner == "Turn 2"
+# ---- the big card on tap (the inspect), the location's card ----
+call battle_inspect {"card": "quickhop"}
+frames 25
+expect game_state.state.battle.inspect contains Board
+expect ui.slots.bt_over contains Close
+screenshot shots/battle-inspect.png
+action bt_close
+frames 5
+expect game_state.state.battle.inspect == null
+call battle_inspect {"zone": 1}
+frames 20
+screenshot shots/battle-zone.png
+key Escape
+frames 5
+expect game_state.state.battle.inspect == null
+# ---- the rest: you only end your turns, Lumi wins ----
+call battle_speed {"x": 4}
+key Enter
+wait_for game_state.state.battle.turn == 3 6000
+wait_for game_state.state.battle.phase == "Plan" 6000
+key Enter
+wait_for game_state.state.battle.turn == 4 6000
+wait_for game_state.state.battle.phase == "Plan" 6000
+key Enter
+wait_for game_state.state.battle.turn == 5 6000
+wait_for game_state.state.battle.phase == "Plan" 6000
+key Enter
+wait_for game_state.state.battle.turn == 6 6000
+wait_for game_state.state.battle.phase == "Plan" 6000
+expect game_state.state.battle.stakes >= 2
+key Enter
+wait_for game_state.state.battle.phase == "Over" 8000
+expect game_state.state.battle.result == "Lose"
+expect game_state.state.battle.track == "defeat"
+expect ui.slots.bt_over contains DEFEAT
+expect game_state.state.battle.taunt == "Good try! You’re getting better."
+frames 20
+screenshot shots/battle-defeat.png
+# ---- Continue: back in the village, -studs, +10 EXP, Lumi's after-dialogue ----
+action bt_continue
+frames 5
+expect game_state.screen == "play"
+expect game_state.state.save.losses == 1
+expect game_state.state.save.exp == 10
+expect game_state.state.save.studs < 10
+expect game_state.state.dialog.id == "LumiLost"
+expect game_state.state.sound.track == "home"
+expect game_state.state.toast contains +10 EXP
+expect ui.slots.bt_top == ""
+key Escape
+frames 10
+expect game_state.state.dialog == null
+call save_reset
+viewport off

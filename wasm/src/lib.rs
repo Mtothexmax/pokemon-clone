@@ -4,6 +4,8 @@
 
 #![recursion_limit = "256"]
 
+mod arena;
+mod battle;
 mod cardface;
 mod cards;
 mod deck;
@@ -16,6 +18,7 @@ mod save;
 mod screens;
 mod settings;
 mod sound;
+mod table;
 mod talk;
 mod town;
 
@@ -34,7 +37,8 @@ pub fn main() {
     engine::run_with(
         ScreenStack::new(Data::default(), Box::new(Title))
             .register("title", || Box::new(Title))
-            .register("play", || Box::new(PlayScreen::default())),
+            .register("play", || Box::new(PlayScreen::default()))
+            .register("battle", || Box::new(arena::BattleScreen::default())),
         engine::renderer::RenderConfig { msaa: 1 },
     );
 }
@@ -51,10 +55,40 @@ pub(crate) struct Data {
     pub faces: cardface::CardFaces,
     /// the deck screen, the foil packs, the upgrade moment
     pub cards: deck::CardUi,
+    /// the card battle's 3D pieces (table.rs)
+    pub art: table::TableArt,
+    /// the way into a battle (the bricks over the screen), drawn by whichever screen is on top
+    pub trans: Option<arena::Transition>,
+    /// a battle just ended: the play screen pays out (studs, EXP, cards) and opens the after-dialogue
+    pub battle_out: Option<arena::BattleOut>,
+    /// the card game's generator (battle seeds, reward cards; Kaigen `cg->seed`)
+    pub cg_seed: u32,
 }
 
 impl Data {
     pub fn ensure(&mut self, ctx: &mut Ctx) {
+        self.ensure_loaded(ctx);
+        // the village theme (the browser starts it on the first key or tap)
+        self.sound.music(ctx, Track::Home);
+    }
+
+    /// The intro fanfare hands over to the fight music after 10.8 s (as the three.js one), or back home.
+    pub fn track_music(&mut self, ctx: &mut Ctx, in_battle: bool) {
+        if self.sound.track() == Track::Intro && self.sound.track_t > 10.8 {
+            self.sound.music(ctx, if in_battle { Track::Fight } else { Track::Home });
+        }
+    }
+
+    /// A random number of the card game (Kaigen `cg_rand`).
+    pub fn cg_rand(&mut self, ctx: &mut Ctx) -> u32 {
+        if self.cg_seed == 0 {
+            self.cg_seed = ctx.rng.next_u64() as u32 | 1;
+        }
+        self.cg_seed = self.cg_seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.cg_seed >> 8
+    }
+
+    pub fn ensure_loaded(&mut self, ctx: &mut Ctx) {
         if !self.loaded {
             self.loaded = true;
             self.save.load(ctx);
@@ -62,10 +96,9 @@ impl Data {
             ctx.ui.set("style", play::STYLE);
             ctx.ui.set("style_screens", screens::STYLE);
             ctx.ui.set("style_cards", deck::STYLE);
+            ctx.ui.set("style_battle", arena::STYLE);
             self.cards = deck::CardUi::new();
         }
-        // the village theme (the browser starts it on the first key or tap)
-        self.sound.music(ctx, Track::Home);
     }
 }
 

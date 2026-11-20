@@ -23,7 +23,7 @@ use web_sys::{CanvasGradient, CanvasRenderingContext2d as C2d, HtmlCanvasElement
 /// Face size in pixels (1 : 1.4, as the cards). `em` = a tenth of the width (the Kaigen card's unit).
 pub const FACE_W: u32 = 300;
 pub const FACE_H: u32 = 420;
-const FONT: &str = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+pub(crate) const FONT: &str = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 /// What a face shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
@@ -72,10 +72,10 @@ impl Face {
     }
 }
 
-fn hex(c: u32) -> String {
+pub(crate) fn hex(c: u32) -> String {
     format!("#{:06x}", c & 0xffffff)
 }
-fn rgba(c: u32, a: f32) -> String {
+pub(crate) fn rgba(c: u32, a: f32) -> String {
     format!("rgba({},{},{},{:.3})", (c >> 16) & 255, (c >> 8) & 255, c & 255, a.clamp(0.0, 1.0))
 }
 /// css color-mix(in srgb, a (1-t), b t)
@@ -212,12 +212,12 @@ fn rr(g: &C2d, x: f64, y: f64, w: f64, h: f64, r: [f64; 4]) {
     let _ = g.arc_to(x, y, x + w, y, r[0]);
     g.close_path();
 }
-fn rr1(g: &C2d, x: f64, y: f64, w: f64, h: f64, r: f64) {
+pub(crate) fn rr1(g: &C2d, x: f64, y: f64, w: f64, h: f64, r: f64) {
     rr(g, x, y, w, h, [r; 4]);
 }
 
 /// A css linear-gradient(deg, stops) over the box.
-fn lin(g: &C2d, x: f64, y: f64, w: f64, h: f64, deg: f64, stops: &[(f32, String)]) -> CanvasGradient {
+pub(crate) fn lin(g: &C2d, x: f64, y: f64, w: f64, h: f64, deg: f64, stops: &[(f32, String)]) -> CanvasGradient {
     let a = deg.to_radians();
     let (dx, dy) = (a.sin(), -a.cos());
     let len = (w * dx).abs() + (h * dy).abs();
@@ -230,7 +230,7 @@ fn lin(g: &C2d, x: f64, y: f64, w: f64, h: f64, deg: f64, stops: &[(f32, String)
 }
 
 /// radial-gradient(circle at fx fy, a, b t1) for a box (farthest corner).
-fn rad(g: &C2d, x: f64, y: f64, w: f64, h: f64, fx: f64, fy: f64, a: &str, b: &str, t1: f32) -> Option<CanvasGradient> {
+pub(crate) fn rad(g: &C2d, x: f64, y: f64, w: f64, h: f64, fx: f64, fy: f64, a: &str, b: &str, t1: f32) -> Option<CanvasGradient> {
     let (cx, cy) = (x + w * fx, y + h * fy);
     let r = ((w * fx.max(1.0 - fx)).powi(2) + (h * fy.max(1.0 - fy)).powi(2)).sqrt();
     let gr = g.create_radial_gradient(cx, cy, 0.0, cx, cy, r).ok()?;
@@ -240,7 +240,7 @@ fn rad(g: &C2d, x: f64, y: f64, w: f64, h: f64, fx: f64, fy: f64, a: &str, b: &s
 }
 
 /// Bold centred text, shrunk to fit `max_w`.
-fn text(g: &C2d, s: &str, x: f64, y: f64, size: f64, weight: u32, color: &str, max_w: f64) {
+pub(crate) fn text(g: &C2d, s: &str, x: f64, y: f64, size: f64, weight: u32, color: &str, max_w: f64) {
     let mut sz = size;
     loop {
         g.set_font(&format!("{weight} {sz:.1}px {FONT}"));
@@ -257,7 +257,7 @@ fn text(g: &C2d, s: &str, x: f64, y: f64, size: f64, weight: u32, color: &str, m
 }
 
 /// Words wrapped into lines no wider than `max_w`.
-fn wrap(g: &C2d, s: &str, max_w: f64) -> Vec<String> {
+pub(crate) fn wrap(g: &C2d, s: &str, max_w: f64) -> Vec<String> {
     let mut lines = vec![];
     let mut cur = String::new();
     for word in s.split_whitespace() {
@@ -275,13 +275,13 @@ fn wrap(g: &C2d, s: &str, max_w: f64) -> Vec<String> {
     lines
 }
 
-fn shadow(g: &C2d, color: &str, blur: f64, oy: f64) {
+pub(crate) fn shadow(g: &C2d, color: &str, blur: f64, oy: f64) {
     g.set_shadow_color(color);
     g.set_shadow_blur(blur);
     g.set_shadow_offset_x(0.0);
     g.set_shadow_offset_y(oy);
 }
-fn no_shadow(g: &C2d) {
+pub(crate) fn no_shadow(g: &C2d) {
     g.set_shadow_color("rgba(0,0,0,0)");
     g.set_shadow_blur(0.0);
     g.set_shadow_offset_y(0.0);

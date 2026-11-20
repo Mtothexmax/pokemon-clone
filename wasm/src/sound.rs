@@ -6,9 +6,7 @@
 //! * `sound.sfx(ctx, Sfx::Fanfare, pitch, volume)` — blip, coin, fanfare, alert, quack, kick, splash,
 //!   piano (C4, pitch = 2^(semitones/12)), pop; `Sfx::Rain` is a 2 s loop (`sfx_loop`).
 //! * `sound.music(ctx, Track::Wild)` — switches the track (crossfade); `Track::Home` is the village.
-//!   Only `home` and `wild` are in assets/music; the card battle tracks (battle-intro, fight, victory,
-//!   defeat) come with the battle part: convert them from the Kaigen assets to .ogg (opus 96k) and they
-//!   play from here.
+//!   The card battle plays Intro (then Fight after 10.8 s, `Data::track_music`), Victory, Defeat.
 //! * `sound.voice(ctx, "10a293f7")` — a voice line (stops the one before); `prefetch_voice` loads early.
 //!
 //! Voice lines play on the engine's `Bus::Voice`; the menu's "voices" switch sets that bus's volume
@@ -157,7 +155,7 @@ pub fn render(id: Sfx) -> Vec<f32> {
     out
 }
 
-/// The music tracks (Kaigen `MusicTrack`). Only Home and Wild have files yet (see the module doc).
+/// The music tracks (Kaigen `MusicTrack`), assets/music/*.ogg (opus 96k).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Track {
     None,
@@ -216,6 +214,8 @@ pub struct Sound {
     /// Effects played (for tests): name of the last one.
     pub last_sfx: Option<&'static str>,
     pub sfx_played: u32,
+    /// seconds the current track has played (the battle intro hands over to the fight music)
+    pub track_t: f32,
 }
 
 impl Sound {
@@ -249,6 +249,7 @@ impl Sound {
             return;
         }
         self.track = Some(t);
+        self.track_t = 0.0;
         match t.url() {
             Some(url) => {
                 ctx.audio.play_music(url, MusicOpts { fade: 1.5, volume: 1.0, looped: t.looped() });
@@ -317,6 +318,7 @@ impl Sound {
 
     /// Every frame: starts a voice line whose file has just arrived.
     pub fn update(&mut self, ctx: &mut Ctx, dt: f32) {
+        self.track_t += dt;
         if let Some(v) = &mut self.voice {
             if v.1.is_none() {
                 v.3 += dt;
