@@ -1,5 +1,6 @@
-# The tall grass moves (grass.rs): walking through patch 0 bends the tufts near you away (damped spring), they spring
-# back once you are gone; the tufts in view sway in the wind. Their shadows are static casters (no shadow redraws).
+# The tall grass moves (grass.rs): the engine bends the tufts (Material::bend) away from the pushers the game sets every
+# frame (you, villagers, Voxelmon + two far wind pushers); no tuft transform is written (no instance upload for them).
+# `near` / `bent` / `max_bend` are the engine's lean (common.wgsl push_offset) recomputed from the walkers.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/grass.txt --port 9223 --url http://localhost:8091/
 reload
 screen play
@@ -15,26 +16,41 @@ frames 75
 expect game_state.state.grass.tufts > 600
 expect game_state.state.grass.patches.0 > 150
 expect game_state.state.grass.bent == 0
-expect game_state.state.grass.swaying > 100
+expect game_state.state.grass.writes == 0
+# the bending materials (one per green) and the pushers the renderer has: you + the two wind pushers at least
+expect bend.materials.length >= 4
+expect bend.materials.0.bend ~= 1.1
+expect bend.pushers.length >= 3
+expect game_state.state.grass.wind_pushers == 2
 # ---- walk north into the patch ----
 down KeyW
 frames 75
 expect game_state.state.hero.z < -31
 expect game_state.state.grass.bent >= 2
+expect game_state.state.grass.wake >= 2
 expect game_state.state.grass.near.0.1 > 0.25
-expect game_state.state.grass.awake >= 3
+expect stats.render.instance_upload_bytes < 60000
 pause
 screenshot shots/grass-walk.png
 resume
 up KeyW
-# ---- out of the way: the tufts spring back ----
+# ---- out of the way: your wake fades, the tufts stand up again ----
 call teleport {"x": 0, "z": -20}
-frames 30
-expect game_state.state.grass.max_bend < 0.6
-wait_for game_state.state.grass.awake == 0 6000
+wait_for game_state.state.grass.wake <= 1 3000
+frames 40
 expect game_state.state.grass.bent == 0
 expect game_state.state.grass.max_bend < 0.01
-# ---- the wind can be stilled (debug) ----
+# ---- the wind can be stilled (debug): its two pushers go ----
 call tall_grass {"wind": 0}
+frames 2
+expect game_state.state.grass.wind_pushers == 0
+expect bend.pushers.length >= 1
 call tall_grass {"wind": 1}
+frames 2
 expect game_state.state.grass.wind == 1
+expect game_state.state.grass.wind_pushers == 2
+# ---- indoors: no pushers ----
+call enter {"room": "Home"}
+wait_for game_state.state.area != null 4000
+frames 2
+expect bend.pushers.length == 0

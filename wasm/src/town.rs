@@ -244,8 +244,6 @@ pub struct Town {
     prop_lod: f32,
     /// the tall grass tufts' blades (instanced, see grass.rs)
     pub tufts: Vec<TuftSpec>,
-    /// the tufts' shadow casters per render layer (drawn by no camera)
-    tuft_shadow: BTreeMap<u8, MeshBuilder>,
 }
 
 /// One tuft of tall grass: its blades' pivot (metres, the top of the round plate), turn, size, colour.
@@ -291,7 +289,7 @@ fn y_to(dir: Vec3) -> Quat {
 
 impl Town {
     fn new() -> Self {
-        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0, rooms::VILLAGE_LAYER), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, prop_lod: 0.0, tufts: vec![], tuft_shadow: BTreeMap::new() }
+        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0, rooms::VILLAGE_LAYER), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, prop_lod: 0.0, tufts: vec![] }
     }
 
     fn rand(&mut self) -> f32 {
@@ -591,24 +589,9 @@ impl Town {
             return;
         }
         self.cyl(hex, x, 0.0, z, 0.4, 0.4, 0.3, 6);
-        // the blades are one instanced mesh per tuft (`tuft_mesh`) that bends and sways (grass.rs)
+        // the blades are one instanced mesh per tuft (`tuft_mesh`) that the engine bends (grass.rs)
         let a0 = self.rand() * std::f32::consts::TAU;
         self.tufts.push(TuftSpec { pos: m(x, 0.25, z), yaw: a0, scale: s, hex });
-        // their shadow: static blades (turned half a blade, so no face lies on a moving one) that only cast
-        // (the moving tufts cast none: dynamic casters would redraw the shadow maps every frame)
-        let mb = self.tuft_shadow.entry(layer_at(x, z)).or_insert_with(MeshBuilder::new);
-        mb.part("shadow");
-        for i in 0..7 {
-            let a = a0 + 0.45 + i as f32 * 0.9;
-            let lean = if i == 6 { 0.0 } else { 0.55 + 0.15 * (i % 2) as f32 };
-            let h = if i == 6 { 2.4 } else { 2.0 } * s;
-            let (base, tip) = (m(x, 0.25, z), m(x + a.cos() * lean * s, h, z + a.sin() * lean * s));
-            let d = tip - base;
-            let profile = [Vec2::new(0.17 * STUD, 0.0), Vec2::new(0.0, d.length())];
-            mb.with(Mat4::from_rotation_translation(y_to(d), base), |b| {
-                b.lathe(&profile, 3);
-            });
-        }
     }
 
     // ------------------------------------------------------------------------------- buildings
@@ -1198,8 +1181,9 @@ pub struct TownAssets {
     pub water: MaterialId,
     /// the creek on Route 1 (coarser waves: a long strip)
     pub creek: MaterialId,
-    /// the blades of a tall grass tuft (`tuft_mesh`)
+    /// the blades of a tall grass tuft (`tuft_mesh`) and their bending materials per colour
     pub tuft: MeshId,
+    pub tuft_mats: HashMap<u32, MaterialId>,
     /// the village life's meshes (life.rs, made on the first play screen)
     pub life: Option<crate::life::LifeArt>,
 }
@@ -1260,11 +1244,16 @@ impl TownAssets {
         let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });
         let _ = AlphaMode::Opaque;
         let tuft = ctx.renderer.add_mesh("grass tuft", &tuft_mesh());
-        Self { materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft, life: None }
+        Self { materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
     }
 
     pub fn material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
         *self.materials.entry(hex).or_insert_with(|| ctx.renderer.add_material(lego(hex)))
+    }
+
+    /// The tall grass blades in `hex`: the LEGO plastic that bends away from the pushers (grass.rs).
+    pub fn tuft_material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
+        *self.tuft_mats.entry(hex).or_insert_with(|| ctx.renderer.add_material(Material { name: format!("grass tuft {hex:06x}"), bend: crate::grass::TUFT_BEND, ..lego(hex) }))
     }
 }
 
@@ -1377,28 +1366,14 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
         }
     }
     stats.studs = t.studs.len();
-    // ---- the tall grass blades: one mesh, instanced, each tuft its own transform (bends, sways) ----
+    // ---- the tall grass blades: one mesh, instanced, each tuft its own static transform; the engine bends them
+    // (`Material::bend`, pushers set in grass.rs); they cast their own (unbent) static shadows ----
     let mut tufts = vec![];
     for spec in &t.tufts {
-        let mat = assets.material(ctx, spec.hex);
+        let mat = assets.tuft_material(ctx, spec.hex);
         let e = ctx.spawn_mesh("grass tuft", assets.tuft, mat, Transform::from_translation(spec.pos).with_rotation(Quat::from_rotation_y(-spec.yaw)).with_scale(Vec3::splat(spec.scale)));
         ctx.set_layer(e, layer_at(spec.pos.x / STUD, spec.pos.z / STUD));
-        if let Ok(mut mr) = ctx.world.get::<&mut MeshRenderer>(e) {
-            mr.cast_shadows = false;
-        }
         tufts.push((e, *spec));
-    }
-    let shade_mat = assets.material(ctx, C_GREEN);
-    for (layer, mb) in std::mem::take(&mut t.tuft_shadow) {
-        let parts = mb.finish();
-        let root = ctx.spawn_parts(&format!("grass shadow (layer {layer})"), &parts, |_| shade_mat, Transform::default());
-        ctx.set_layer(root, layer);
-        let kids: Vec<Entity> = ctx.world.query::<(Entity, &Parent, &MeshRenderer)>().iter().filter(|(_, p, _)| p.0 == root).map(|(e, _, _)| e).collect();
-        for k in kids {
-            if let Ok(mut mr) = ctx.world.get::<&mut MeshRenderer>(k) {
-                mr.opacity = 0.0;
-            }
-        }
     }
     for ((root, min, max, area), extra) in roots.into_iter().zip(group_studs) {
         // the rooms are drawn alone: nothing in them hides you

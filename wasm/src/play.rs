@@ -1133,6 +1133,7 @@ impl Screen<Data> for PlayScreen {
         self.scr.close(ctx, &mut data.sound);
         data.cards.deck_open = false;
         self.dive.abort(ctx);
+        ctx.renderer.set_pushers(&[]);
         self.life_view.stop(ctx);
         ctx.audio.set_bus_volume(Bus::Ambience, 1.0);
         ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
@@ -1250,11 +1251,10 @@ impl Screen<Data> for PlayScreen {
                 }
             }
             push.extend(self.vox.pushers());
-            self.grass.set_pushers(push);
+            self.grass.set_pushers(push, dt);
         } else {
-            self.grass.set_pushers(vec![]);
+            self.grass.set_pushers(vec![], dt);
         }
-        self.grass.step(dt);
         // ---- village life: golden studs, ducks, ball, chest, weather, Pip; whoever you talk to turns to you ----
         let feet = self.hero_pos(ctx).map(|(p, _)| p / STUD).unwrap_or_default();
         let me = Vec2::new(feet.x, feet.z);
@@ -1552,10 +1552,9 @@ impl Screen<Data> for PlayScreen {
         }
         self.life.update(dt);
         self.life_frame(ctx, data);
-        if self.area.is_none() {
-            let me = self.hero_pos(ctx).map(|h| h.0);
-            self.grass.update(ctx, me, dt);
-        }
+        // the tall grass leans away from whoever walks there (indoors: no pushers)
+        let me = if self.area.is_none() { self.hero_pos(ctx).map(|h| h.0) } else { None };
+        self.grass.update(ctx, me, dt);
         let layers = self.camera.and_then(|c| ctx.world.get::<&Camera>(c).ok().map(|c| c.layers)).unwrap_or(0);
         self.fountain.set_visible(ctx, layers, self.area.is_none());
         self.fountain.update(ctx, dt);
@@ -1615,7 +1614,7 @@ impl Screen<Data> for PlayScreen {
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
             ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
             ("look", "Debug close-up: the camera eases to look at a spot like a sign close-up. args: {at: [x, y, z] studs, yaw?: 0 (the side it is seen from, 0 = south), w?: 8, h?: 6 (studs in view), tilt?: 0.5 (radians above)}; {} = back"),
-            ("tall_grass", "The tall grass tufts (grass.rs). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
+            ("tall_grass", "The tall grass tufts (grass.rs, engine bend pushers). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
