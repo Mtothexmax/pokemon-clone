@@ -1,0 +1,94 @@
+# The quest chain end to end (Kaigen cg_quest_draw + cg_markers_draw): from the bedroom start to Stonecrest, the goal
+# pill follows the save flags and the "!" marker sits over whoever matters next. The goal shows outside only (not
+# in the rooms, not while talking), as Kaigen.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/goal.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+# ---- a new game: you wake up in your room; no goal in the rooms ----
+call intro
+wait_for game_state.state.dialog.id == "IntroKeys" 5000
+expect game_state.state.area == "Bedroom"
+frames 3
+expect ui.slots.goal == ""
+key Space
+frames 5
+key Space
+frames 5
+expect game_state.state.dialog == null
+frames 3
+expect ui.slots.goal == ""
+# Mom downstairs: "!" until you talked to her
+call enter {"room": "Home"}
+wait_for game_state.state.area == "Home" 3000
+call teleport {"x": 194, "z": 0.5}
+frames 20
+expect game_state.state.npcs.5.id == "mom"
+expect game_state.state.npcs.5.marker == "!"
+key KeyE
+frames 10
+expect game_state.state.dialog.id == "Mom"
+expect ui.slots.goal == ""
+key Space
+frames 5
+key Space
+frames 30
+expect game_state.state.npcs.5.marker == "…"
+# ---- outside: the Professor ----
+call teleport {"x": -15, "z": 2}
+frames 30
+expect game_state.state.area == null
+expect ui.slots.goal contains Visit Prof. Quill in her lab
+call enter {"room": "Lab"}
+wait_for game_state.state.area == "Lab" 3000
+frames 20
+expect game_state.state.npcs.7.id == "lab-prof"
+expect game_state.state.npcs.7.marker == "!"
+# her quest: the suit, the dive, the Stud Core
+call flags {"quest_part": true}
+frames 5
+expect game_state.state.goal contains Find Prof. Quill's old diving suit
+expect game_state.state.npcs.7.marker == "…"
+call flags {"has_suit": true}
+frames 5
+expect game_state.state.goal contains Dive into the pond
+call flags {"has_part": true}
+frames 5
+expect game_state.state.goal contains Bring the Stud Core
+expect game_state.state.npcs.7.marker == "!"
+# ---- the deck: Dex ----
+call flags {"has_deck": true}
+call teleport {"x": 52.5, "z": 4}
+frames 30
+expect ui.slots.goal contains Beat Dex
+expect game_state.state.npcs.0.marker == "!"
+call flags {"rival_wins": 1}
+frames 5
+expect ui.slots.goal contains upgrade a 6-energy card into a Voxelmon
+expect game_state.state.npcs.0.marker == "…"
+# ---- a Voxelmon: Prof. Quill at the gap ----
+call flags {"voxelmon": 1}
+call teleport {"x": 0, "z": -18}
+frames 30
+expect ui.slots.goal contains Show your Voxelmon to Prof. Quill
+expect game_state.state.npcs.2.id == "gate-prof"
+expect game_state.state.npcs.2.marker == "!"
+call flags {"gate_open": true}
+frames 5
+expect ui.slots.goal contains Battle wild Voxelmon on Route 1
+expect game_state.state.npcs.2.marker == "…"
+# ---- on to Stonecrest: the goal goes along ----
+call teleport {"x": 0, "z": -125}
+frames 30
+expect game_state.state.zone == "Stonecrest"
+expect ui.slots.goal contains Battle wild Voxelmon on Route 1
+call cards {"give": "all"}
+frames 5
+expect ui.slots.goal contains Collection complete!
+screenshot shots/goal-stonecrest.png
+call life {"freeze": false}
+call save_reset

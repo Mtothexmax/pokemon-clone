@@ -185,7 +185,8 @@ const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "s
 /// out runs, two fingers zoom.
 /// (the heading is the zone you are in: Kaigen `g_hud_place`)
 const TOUCH_HELP: &str = "<div class='panel'><b>{place}</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
-const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
+const SWIPE_HELP: &str = "<div class='panel'><b>{place}</b><br>swipe: walk that way &middot; tap: stop &middot; two fingers: zoom</div>";
+const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
@@ -254,7 +255,7 @@ impl PlayScreen {
     /// The help line (keys or touch) under the zone's name (Brickhollow / Route 1 / Stonecrest).
     fn help(&self) -> String {
         let place = if self.area.is_some() { "Brickhollow" } else { town::ZONE_NAMES[self.zone] };
-        (if self.touch_ui { TOUCH_HELP } else { KEYS_HELP }).replace("{place}", place)
+        (if self.swipe_mode { SWIPE_HELP } else if self.touch_ui { TOUCH_HELP } else { KEYS_HELP }).replace("{place}", place)
     }
 
     /// Outside: the zone you walk into gets its title (three.js `zoneLabel` toast, Kaigen `world_doors`), the help
@@ -926,7 +927,11 @@ impl PlayScreen {
         let s = &data.save.data;
         let narrow = ctx.canvas.client_width() < 640;
         let (studs, seekfade) = self.life.hud(s, narrow);
-        let goal = if self.fight { String::new() } else { format!("<div class='bh-goal{}'><b>GOAL</b><span>{}</span></div>{}", if night > 0.5 { " night" } else { "" }, talk::goal_text(s), if narrow { studs.as_str() } else { "" }) };
+        // the goal: outside only, not while talking, at a screen, in a fight or a close-up (Kaigen cg_quest_draw's
+        // condition); phones keep the studs under where it is
+        let show_goal = !self.fight && self.area.is_none() && !self.dlg.is_open() && !self.scr.is_open() && !self.zoom.active;
+        let pill = if show_goal { format!("<div class='bh-goal{}'><b>GOAL</b><span>{}</span></div>", if night > 0.5 { " night" } else { "" }, talk::goal_text(s)) } else { String::new() };
+        let goal = format!("{pill}{}", if narrow && !self.scr.is_open() { studs.as_str() } else { "" });
         ctx.ui.set("goal", &goal);
         ctx.ui.set("studs", if narrow || self.zoom.active { "" } else { &studs });
         ctx.ui.set("seekfade", &seekfade);
@@ -1424,7 +1429,13 @@ impl Screen<Data> for PlayScreen {
         }
         // ---- swipe walking on phones (the menu's CONTROLS: Swipe or Stick) ----
         self.clock += dt;
-        self.swipe_mode = self.touch_ui && data.save.data.touch_mode == 0;
+        let swipe_mode = self.touch_ui && data.save.data.touch_mode == 0;
+        if swipe_mode != self.swipe_mode {
+            self.swipe_mode = swipe_mode;
+            if !self.help_hidden {
+                ctx.ui.set("help", &self.help());
+            }
+        }
         if !self.fight && !self.dive.on {
             let want_stick = !self.swipe_mode;
             if ctx.input.touch.stick_enabled() != want_stick {
@@ -1459,7 +1470,7 @@ impl Screen<Data> for PlayScreen {
                 data.save.data.intro_seen = true;
                 data.save.mark();
                 self.move_to(ctx, INTRO_AT[0], INTRO_AT[1], 0.0);
-                let id = if self.touch_ui { DialogId::IntroTouch } else { DialogId::IntroKeys };
+                let id = if !self.touch_ui { DialogId::IntroKeys } else if data.save.data.touch_mode == 0 { DialogId::IntroSwipe } else { DialogId::IntroTouch };
                 self.dlg.open(ctx, &mut data.sound, dialog_for(id, &data.save.data));
                 self.busy = true;
             }

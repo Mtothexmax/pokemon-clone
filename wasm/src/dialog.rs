@@ -38,6 +38,8 @@ pub enum DialogAction {
 pub enum DialogId {
     IntroKeys,
     IntroTouch,
+    /// phones with swipe walking (Kaigen DLG_INTRO_SWIPE)
+    IntroSwipe,
     Mom,
     Prof,
     Dex,
@@ -94,6 +96,10 @@ pub fn dialog_script(id: DialogId) -> Dialog {
         IntroTouch => d(id, "You", vec![
             l("*yawn* What a beautiful morning in Brickhollow.", "91b19939"),
             l("I should go downstairs and talk to Mom in the kitchen. Drag the stick to walk and tap the talk button.", "459836e6"),
+        ]),
+        IntroSwipe => d(id, "You", vec![
+            l("*yawn* What a beautiful morning in Brickhollow.", "91b19939"),
+            l("I should go downstairs and talk to Mom in the kitchen. Swipe to walk, tap to stop, and tap the talk button.", "4c5ccef1"),
         ]),
         Mom => d(id, "Mom", vec![
             l("Morning, sweetie! Professor Quill was looking for you earlier.", "10a293f7"),
