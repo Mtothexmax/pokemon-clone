@@ -12,6 +12,9 @@ use engine::prelude::*;
 use engine::renderer::{AlphaMode, Material, MaterialId, MeshId};
 use std::collections::{BTreeMap, HashMap};
 
+#[path = "rooms.rs"]
+pub mod rooms;
+
 /// Metres per stud: the minifig (4.9 studs) is then 1.86 m.
 pub const STUD: f32 = 0.38;
 const STUD_H: f32 = 0.17;
@@ -115,6 +118,8 @@ pub struct Prop {
     pub pos: Vec3,
     pub scale: f32,
     pub rot: f32,
+    /// -1 the village, else the room (`rooms::RoomId`) it stands in.
+    pub area: i8,
 }
 
 /// A static collider: rect in studs, height in metres (from the ground).
@@ -159,6 +164,11 @@ pub struct Town {
     /// Buildings with their own meshes (so they can fade), and the one being built.
     groups: Vec<MeshBuilder>,
     group: Option<usize>,
+    /// The area (-1 village, else `rooms::RoomId`) of each group, and of what is built now.
+    group_area: Vec<i8>,
+    area: i8,
+    /// Sloped colliders (the stairs): centre and half size (metres), turn about x (radians).
+    pub ramps: Vec<(Vec3, Vec3, f32)>,
 }
 
 fn part(hex: u32) -> String {
@@ -177,7 +187,7 @@ fn y_to(dir: Vec3) -> Quat {
 
 impl Town {
     fn new() -> Self {
-        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None }
+        Self { rng: TownRng(20261114), chunks: BTreeMap::new(), at: (0, 0), used: vec![], solids: vec![], props: vec![], studs: vec![], box_n: 0, groups: vec![], group: None, group_area: vec![], area: -1, ramps: vec![] }
     }
 
     fn rand(&mut self) -> f32 {
@@ -208,6 +218,7 @@ impl Town {
     /// Builds `f` into its own group of meshes (a building that fades while it hides the hero).
     fn group(&mut self, f: impl FnOnce(&mut Self)) {
         self.groups.push(MeshBuilder::new());
+        self.group_area.push(self.area);
         self.group = Some(self.groups.len() - 1);
         f(self);
         self.group = None;
@@ -304,7 +315,7 @@ impl Town {
         if !path.starts_with("assets/signs/") && y < 1.0 && Self::in_sign_view(x, z) {
             return;
         }
-        self.props.push(Prop { path: path.to_string(), pos: m(x, y, z), scale: s, rot });
+        self.props.push(Prop { path: path.to_string(), pos: m(x, y, z), scale: s, rot, area: self.area });
     }
 
     fn petal(hex: u32) -> &'static str {
@@ -1129,6 +1140,9 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
     let t0 = engine::log::now_ms();
     let mut t = Town::new();
     t.build_village();
+    t.rooms_build();
+    let village = rooms::VILLAGE_LAYER;
+    let layer = |a: i8| if a < 0 { village } else { rooms::layer_of(Some(rooms::ROOMS[a as usize])) };
     let mut stats = TownStats::default();
 
     // ---- the baseplate (village) and the table under it (diorama feel) ----
@@ -1137,12 +1151,14 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
         mb.part("ground").cuboid(m(20.0 - 52.0, -0.8, -9.0 - 38.0), m(20.0 + 52.0, 0.0, -9.0 + 38.0));
         let parts = mb.finish();
         let g = assets.ground;
-        ctx.spawn_parts("baseplate", &parts, |_| g, Transform::default());
+        let base = ctx.spawn_parts("baseplate", &parts, |_| g, Transform::default());
+        ctx.set_layer(base, village);
         ctx.physics.add_static(ColliderBuilder::cuboid(52.0 * STUD, 0.4 * STUD, 38.0 * STUD), m(20.0, -0.4, -9.0));
         let table = ctx.spawn_mesh("table", ctx.renderer.builtin.cube, assets.table, Transform::from_translation(m(20.0, -1.3, -9.0)).with_scale(m(400.0, 1.0, 400.0)));
-        let _ = table;
+        ctx.set_layer(table, village);
         // the pond's water surface
-        ctx.spawn_water("pond water", assets.water, Vec2::new((POND.x1 - POND.x0) * STUD, (POND.z1 - POND.z0) * STUD), Transform::from_translation(m((POND.x0 + POND.x1) * 0.5, 0.25, (POND.z0 + POND.z1) * 0.5)));
+        let pond = ctx.spawn_water("pond water", assets.water, Vec2::new((POND.x1 - POND.x0) * STUD, (POND.z1 - POND.z0) * STUD), Transform::from_translation(m((POND.x0 + POND.x1) * 0.5, 0.25, (POND.z0 + POND.z1) * 0.5)));
+        ctx.set_layer(pond, village);
     }
 
     // ---- the bricks, chunk by chunk, one part per colour ----
@@ -1158,7 +1174,8 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
                 (p.clone(), assets.material(ctx, hex))
             })
             .collect();
-        ctx.spawn_parts(&format!("town chunk {cx},{cz}"), &parts, |p| mats[p], Transform::default());
+        let e = ctx.spawn_parts(&format!("town chunk {cx},{cz}"), &parts, |p| mats[p], Transform::default());
+        ctx.set_layer(e, village);
         stats.chunks += 1;
     }
 
@@ -1184,25 +1201,32 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             .map(|(p, _)| (p.clone(), assets.material(ctx, u32::from_str_radix(&p[1..], 16).unwrap_or(0xffffff))))
             .collect();
         let root = ctx.spawn_parts(&format!("building {i}"), &parts, |p| mats[p], Transform::default());
-        roots.push((root, min, max));
+        ctx.set_layer(root, layer(t.group_area[i]));
+        roots.push((root, min, max, t.group_area[i]));
     }
 
     // ---- studs: one mesh, instanced ----
     for (hex, p, g) in &t.studs {
         let mat = assets.material(ctx, *hex);
         let e = ctx.spawn_mesh("stud", assets.stud, mat, Transform::from_translation(*p));
+        ctx.set_layer(e, layer(g.map(|g| t.group_area[g]).unwrap_or(-1)));
         if let Some(g) = g {
             group_studs[*g].push(e);
         }
     }
     stats.studs = t.studs.len();
-    for ((root, min, max), extra) in roots.into_iter().zip(group_studs) {
+    for ((root, min, max, area), extra) in roots.into_iter().zip(group_studs) {
+        // the rooms are drawn alone: nothing in them hides you
+        if area >= 0 {
+            continue;
+        }
         occluders.push(OccluderSpec::Bricks { root, extra, min, max });
     }
 
     // ---- models (the trees can fade too) ----
     for p in &t.props {
         let root = ctx.load_gltf(&p.path, Transform::from_translation(p.pos).with_rotation(Quat::from_rotation_y(p.rot)).with_scale(Vec3::splat(p.scale)));
+        ctx.set_layer(root, layer(p.area));
         if p.path.contains("tree") || p.path.contains("spruce") || p.path.contains("cypress") || p.path.contains("pine") || p.path.contains("castle") {
             occluders.push(OccluderSpec::Model { root });
         }
@@ -1215,7 +1239,10 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
         let (hx, hz) = ((s.r.x1 - s.r.x0) * 0.5 * STUD, (s.r.z1 - s.r.z0) * 0.5 * STUD);
         ctx.physics.add_static(ColliderBuilder::cuboid(hx, s.h * 0.5, hz), Vec3::new((s.r.x0 + s.r.x1) * 0.5 * STUD, s.y0 + s.h * 0.5, (s.r.z0 + s.r.z1) * 0.5 * STUD));
     }
-    stats.colliders = t.solids.len();
+    for (c, half, ang) in &t.ramps {
+        ctx.physics.add_static(ColliderBuilder::cuboid(half.x, half.y, half.z).rotation(Vec3::X * *ang), *c);
+    }
+    stats.colliders = t.solids.len() + t.ramps.len();
     stats.colours = assets.materials.len();
     engine::log_info!("town: {} chunks, {} meshes, {} tris, {} studs, {} props, {} colliders in {:.0} ms", stats.chunks, stats.meshes, stats.triangles, stats.studs, stats.props, stats.colliders, engine::log::now_ms() - t0);
     (t.solids, stats, occluders)

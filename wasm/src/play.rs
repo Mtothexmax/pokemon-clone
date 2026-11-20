@@ -7,21 +7,32 @@ use crate::life::{self, Life};
 use crate::settings::{self, MenuOut};
 use crate::sound::{self, Sfx};
 use crate::talk::{self, CamZoom, TARGETS};
+use crate::town::rooms::{self, RoomId};
 use crate::town::{self, TownAssets, TownStats, STUD};
 use crate::{day_colours, setup_look, Data, Title};
 use engine::prelude::*;
 use serde_json::{json, Value};
 
-/// Where you start (outside, in front of your house) — the bedroom start comes with the interiors slice.
+/// Where you start (outside, in front of your house); a new game wakes up in your room upstairs (`INTRO_AT`).
 const START: [f32; 2] = [-15.0, -2.5];
 /// Camera offset of the original (studs, before zoom) and its default zoom.
 const CAM_OFFSET: Vec3 = Vec3::new(0.0, 32.0, 17.0);
 const ZOOM: f32 = 1.15;
+/// A new game: in your room, next to the bed (Kaigen app_update).
+const INTRO_AT: [f32; 2] = [197.4, 41.2];
+/// Going through a door: the screen goes dark, you are moved, it comes back (seconds).
+const DOOR_OUT: f32 = 0.15;
+const DOOR_IN: f32 = 0.25;
+/// Indoors the sun is a soft remainder and the sky light dims: the warm ceiling lights carry the room.
+const INDOOR_SUN: f32 = 0.04;
+const INDOOR_SKY: f32 = 0.3;
 
 /// A villager in the town: id (as `town::NPCS`), figure, the way it faces (yaw, figures face +z at 0),
 /// its "!" / "…" marker (a `WorldLabel` child) and that marker's current html.
 struct Npc {
     id: String,
+    /// the room it stands in (None: the village)
+    area: Option<RoomId>,
     fig: Figure,
     yaw: f32,
     marker: Entity,
@@ -66,6 +77,34 @@ pub struct PlayScreen {
     clock_t: f32,
     /// the last dialog action no part handles yet (battles, hide and seek, ...), for tests and later parts
     pending_action: Option<DialogAction>,
+    // ---- rooms (rooms.rs) ----
+    /// the room you are in (None: the village); the camera draws only this area
+    area: Option<RoomId>,
+    /// the area the camera and the lights were last set up for
+    shown_area: Option<Option<RoomId>>,
+    /// going through a door: seconds since it started, where to (studs), the yaw there
+    door: Option<(f32, Vec2, f32)>,
+    door_cooldown: f32,
+    doors_used: u32,
+    /// the area title ("Home", "Brickhollow") and its seconds left
+    title: &'static str,
+    title_t: f32,
+    /// the rooms' ceiling lights (room, entity, relative intensity)
+    room_lights: Vec<(RoomId, Entity, f32)>,
+    /// 0 outside .. 1 inside (eased): dims the sun and the sky light
+    indoor: f32,
+    /// the sky's light outside (setup_look's values), scaled by `indoor`
+    base_light: (f32, f32, f32),
+    /// the Deck-o-Matic's screens: "MISSING PART" and "READY"
+    machine: Option<(Entity, Entity)>,
+    machine_ready: Option<bool>,
+    /// the camera target while looking at something without a face (the Deck-o-Matic)
+    talk_board: Option<talk::Board>,
+    /// the intro was checked this session, and the seconds since the screen started
+    intro_checked: bool,
+    play_t: f32,
+    /// your figure is hidden (the camera is where you stand: a close-up)
+    hero_hidden: bool,
 }
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
@@ -115,6 +154,9 @@ pub const STYLE: &str = "<style>
 .bh-prompt{display:flex;gap:10px;align-items:center;background:rgba(16,18,24,.75);border-radius:8px;padding:8px 16px 8px 14px;font-size:16px}
 .bh-prompt.touch{margin-bottom:122px}
 #ui .bh-prompt kbd{background:#f2cd37;color:#1b2a34;font-weight:700;padding:2px 8px;font-size:16px}
+#ui [data-slot=title]{position:fixed;left:0;right:0;top:112px;display:flex;justify-content:center;pointer-events:none}
+.bh-title{background:rgba(16,18,24,.66);color:#fff;border-radius:8px;padding:8px 18px;font-size:22px}
+.bh-fade{position:fixed;inset:0;background:#000;pointer-events:none;z-index:30}
 #ui [data-slot=toast]{position:fixed;left:0;right:0;top:70px;display:flex;justify-content:center}
 .bh-toast{background:rgba(250,250,246,.95);color:#1b2a34;border:2px solid #1b2a34;border-radius:10px;padding:8px 16px;font-size:18px}
 #ui .world-label.bh-mark{background:rgba(250,250,246,.88);color:#1b2a34;border:2px solid #1b2a34;padding:0;width:28px;height:18px;line-height:14px;text-align:center;font-weight:700;font-size:14px;border-radius:10px}
@@ -139,6 +181,100 @@ impl PlayScreen {
                 cc.velocity = Vec3::ZERO;
             }
         }
+    }
+
+    /// Moves you (a door, the stairs, the intro): turned to `yaw` (the controller's: 0 north, pi south), the
+    /// camera snaps along (it would fly 70 m otherwise).
+    fn move_to(&mut self, ctx: &mut Ctx, x: f32, z: f32, yaw: f32) {
+        self.teleport(ctx, x, z);
+        let Some(h) = self.hero else { return };
+        if let Ok(mut cc) = ctx.world.get::<&mut CharacterController>(h) {
+            cc.yaw = yaw;
+        }
+        if let Ok(mut t) = ctx.world.get::<&mut Transform>(h) {
+            t.rotation = Quat::from_rotation_y(yaw);
+        }
+        self.area = rooms::area_at(x, z);
+        if let Some(cam) = self.camera {
+            if !self.zoom.active {
+                let off = CAM_OFFSET * ZOOM * STUD;
+                let foot = ctx.world.get::<&CharacterController>(h).map(|c| c.foot_offset()).unwrap_or(0.85);
+                let target = town::m(x, 0.6, z) + Vec3::Y * (1.5 * STUD - foot + foot);
+                if let Ok(mut c) = ctx.world.get::<&mut ThirdPersonCamera>(cam) {
+                    c.pivot = None;
+                }
+                if let Ok(mut t) = ctx.world.get::<&mut Transform>(cam) {
+                    *t = Transform::from_translation(target + off).looking_at(target, Vec3::Y);
+                }
+            }
+        }
+    }
+
+    /// The area changed (or the screen started): the camera draws only this area, its ceiling lights
+    /// are on, the title shows (Kaigen `world_doors` + the group visibility of app_update).
+    fn show_area(&mut self, ctx: &mut Ctx) {
+        if self.shown_area == Some(self.area) {
+            return;
+        }
+        let first = self.shown_area.is_none();
+        self.shown_area = Some(self.area);
+        if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut Camera>(c).ok()) {
+            c.layers = 1 | (1 << rooms::layer_of(self.area));
+        }
+        for (r, e, k) in &self.room_lights {
+            if let Ok(mut l) = ctx.world.get::<&mut PointLight>(*e) {
+                l.intensity = if Some(*r) == self.area { 9.0 * k } else { 0.0 };
+            }
+        }
+        self.title = self.area.map(|r| rooms::room_def(r).label).unwrap_or("Brickhollow");
+        self.title_t = if first && self.area.is_none() { 0.0 } else { 3.5 };
+    }
+
+    /// Doors and stairs: walking into one fades out, moves you, fades in (Kaigen `world_doors`).
+    fn doors(&mut self, ctx: &mut Ctx, dt: f32) {
+        self.door_cooldown = (self.door_cooldown - dt).max(0.0);
+        if let Some((t, to, yaw)) = self.door {
+            let t2 = t + dt;
+            if t < DOOR_OUT && t2 >= DOOR_OUT {
+                self.move_to(ctx, to.x, to.y, yaw);
+                self.doors_used += 1;
+            }
+            self.door = if t2 >= DOOR_OUT + DOOR_IN { None } else { Some((t2, to, yaw)) };
+            return;
+        }
+        if self.busy || self.door_cooldown > 0.0 {
+            return;
+        }
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let (x, z) = (p.x / STUD, p.z / STUD);
+        if let Some((to, yaw)) = rooms::door_at(self.area, x, z) {
+            self.door = Some((0.0, to, yaw));
+            self.door_cooldown = DOOR_OUT + DOOR_IN + 0.6;
+        }
+    }
+
+    /// The screen's black while going through a door.
+    fn door_dark(&self) -> f32 {
+        match self.door {
+            Some((t, _, _)) if t < DOOR_OUT => t / DOOR_OUT,
+            Some((t, _, _)) => 1.0 - (t - DOOR_OUT) / DOOR_IN,
+            None => 0.0,
+        }
+    }
+
+    /// Inside, the sun and the sky light dim (eased); the engine's day cycle derives the light from these.
+    fn indoor_light(&mut self, ctx: &mut Ctx, dt: f32) {
+        let want = if self.area.is_some() { 1.0 } else { 0.0 };
+        self.indoor += (want - self.indoor) * (dt * 6.0).min(1.0);
+        if self.door.is_some() {
+            self.indoor = want; // behind the black: no visible fade
+        }
+        let k = self.indoor;
+        let (day, atm, moon) = self.base_light;
+        let s = &mut ctx.renderer.settings;
+        s.daylight_intensity = day * (1.0 + (INDOOR_SUN - 1.0) * k);
+        s.moon_intensity = moon * (1.0 + (INDOOR_SUN - 1.0) * k);
+        s.atmosphere_intensity = atm * (1.0 + (INDOOR_SKY - 1.0) * k);
     }
 
     fn npc_index(&self, id: &str) -> Option<usize> {
@@ -175,6 +311,15 @@ impl PlayScreen {
         let mut at = if target == talk::PIP_TARGET { self.life.pip * STUD } else { Vec2::new(t.x, t.z) * STUD };
         let mut best = 6.0 * STUD;
         self.talk_npc = None;
+        self.talk_board = None;
+        if t.npc.is_empty() {
+            // a machine: the camera looks at its screen (no villager nearby turns to you)
+            best = 0.0;
+            if t.dialog == DialogId::Machine {
+                let [mx, my, mz] = rooms::MACHINE_SCREEN;
+                self.talk_board = Some(talk::Board { c: town::m(mx, my - 1.2, mz), yaw: 0.0, w: 4.4, h: 5.2, max_dist: 0.0 });
+            }
+        }
         for i in 0..self.npcs.len() {
             if let Some(q) = self.npc_pos(ctx, i) {
                 let d = Vec2::new(q.x - p.x, q.z - p.z).length();
@@ -240,13 +385,21 @@ impl PlayScreen {
             _ => String::new(),
         };
         ctx.ui.set("prompt", &prompt);
+        let title = if self.title_t > 0.0 {
+            format!("<div class='bh-title' style='opacity:{:.2}'>{}</div>", (self.title_t * 2.0).min(1.0), self.title)
+        } else {
+            String::new()
+        };
+        ctx.ui.set("title", &title);
+        let dark = self.door_dark();
+        ctx.ui.set("fade", &if dark > 0.0 { format!("<div class='bh-fade' style='opacity:{dark:.2}'></div>") } else { String::new() });
         let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
         ctx.ui.set("toast", &toast);
         // markers: "!" over whoever matters for the goal, "…" for small talk; none while the camera is at a face
         let me = self.hero_pos(ctx).map(|(p, _)| p).unwrap_or_default();
         for i in 0..self.npcs.len() {
             let d = self.npc_pos(ctx, i).map(|q| (q - me).length()).unwrap_or(f32::MAX);
-            let show = !self.zoom.active && d < 40.0 * STUD && d > 1.2 * STUD;
+            let show = !self.zoom.active && d < 40.0 * STUD && d > 1.2 * STUD && self.npcs[i].area == self.area;
             let big = talk::marker_big(&self.npcs[i].id, s, self.mom_talked, self.kid_talked);
             let html = if !show {
                 String::new()
@@ -313,8 +466,16 @@ impl Screen<Data> for PlayScreen {
         self.hero = Some(hero);
         self.fig = Some(fig);
 
-        for n in &town::NPCS {
-            let f = Figure::spawn(ctx, n.style, Transform::from_translation(town::m(n.x, 0.0, n.z)).with_rotation(Quat::from_rotation_y(n.rot)), None);
+        // the villagers: outside, then in the rooms (Mom, Lumi, the Professor in her lab)
+        let all: Vec<(&str, &str, f32, f32, f32, f32)> = town::NPCS
+            .iter()
+            .map(|n| (n.id, n.style, n.x, 0.0, n.z, n.rot))
+            .chain(rooms::ROOM_NPCS.iter().map(|n| (n.0, n.1, n.2, rooms::FLOOR, n.3, n.4)))
+            .collect();
+        for (id, style, x, y, z, rot) in all {
+            let f = Figure::spawn(ctx, style, Transform::from_translation(town::m(x, y, z)).with_rotation(Quat::from_rotation_y(rot)), None);
+            let area = rooms::area_at(x, z);
+            ctx.set_layer(f.root, rooms::layer_of(area));
             // a kinematic capsule (as big as the hero's) so you bump into people instead of walking through them;
             // the figure's root is at its feet, so the capsule is lifted by its half height
             let (hh, r) = (0.62, 0.32);
@@ -325,9 +486,23 @@ impl Screen<Data> for PlayScreen {
                 engine::physics::rapier::prelude::ColliderBuilder::capsule_y(hh, r).translation(Vec3::Y * (hh + r)),
             );
             // the marker hangs a little above the head (Kaigen: 2.45 m above the feet)
-            let marker = ctx.world.spawn((Transform::from_xyz(0.0, 2.45, 0.0), Parent(f.root), Name(format!("marker:{}", n.id))));
-            self.npcs.push(Npc { id: n.id.to_string(), fig: f, yaw: n.rot, marker, marker_html: String::new() });
+            let marker = ctx.world.spawn((Transform::from_xyz(0.0, 2.45, 0.0), Parent(f.root), Name(format!("marker:{id}"))));
+            self.npcs.push(Npc { id: id.to_string(), area, fig: f, yaw: rot, marker, marker_html: String::new() });
         }
+        // the rooms' warm ceiling lights (on only in the room you are in)
+        for r in rooms::ROOMS {
+            for (p, k) in rooms::room_lights(r) {
+                let e = ctx.world.spawn((Transform::from_translation(town::m(p.x, p.y, p.z)), PointLight { color: Vec3::new(1.0, 0.84, 0.62), intensity: 0.0, range: 9.0 }));
+                self.room_lights.push((r, e, k));
+            }
+        }
+        // the Deck-o-Matic's screen (the lab's middle machine): MISSING PART until the deck is printed
+        let [mx, my, mz] = rooms::MACHINE_SCREEN;
+        let missing = ctx.load_gltf("assets/signs/machine_missing.glb", Transform::from_translation(town::m(mx, my, mz)));
+        let ready = ctx.load_gltf("assets/signs/machine_ready.glb", Transform::from_translation(town::m(mx, my, mz)));
+        self.machine = Some((missing, ready));
+        let s = &ctx.renderer.settings;
+        self.base_light = (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity);
 
         // the fixed top-down camera of the original: (0, 32, 17) studs * zoom above you, looking at your feet + 1.5 studs
         let off = CAM_OFFSET * ZOOM * STUD;
@@ -348,6 +523,8 @@ impl Screen<Data> for PlayScreen {
         };
         let camera = Camera { fov_y_deg: 38.0, near: 0.5 * STUD, far: 400.0 * STUD, ..Camera::default() };
         self.camera = Some(ctx.world.spawn((Transform::from_translation(town::m(START[0], 0.0, START[1]) + off), camera, cam)));
+        self.area = None;
+        self.show_area(ctx);
         ctx.ui.set("help", KEYS_HELP);
     }
 
@@ -356,7 +533,9 @@ impl Screen<Data> for PlayScreen {
         data.save.flush(ctx);
         data.sound.stop_voice(ctx);
         data.settings.open = false;
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings"] {
+        let s = &mut ctx.renderer.settings;
+        (s.daylight_intensity, s.atmosphere_intensity, s.moon_intensity) = self.base_light;
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade"] {
             ctx.ui.set(slot, "");
         }
     }
@@ -411,7 +590,7 @@ impl Screen<Data> for PlayScreen {
         let me = self.hero_pos(ctx).map(|(p, _)| Vec2::new(p.x, p.z) / STUD).unwrap_or_default();
         let kid = self.npc_index("kid");
         let talking_pip = self.dlg.is_open() && self.talk_npc.is_some() && self.talk_npc == kid;
-        self.life.step_pip(me, dt, true, talking_pip);
+        self.life.step_pip(me, dt, self.area.is_none(), talking_pip);
         if let Some(k) = kid {
             let (pos, yaw, sp) = (self.life.pip, self.life.pip_yaw, self.life.pip_speed);
             let n = &mut self.npcs[k];
@@ -484,15 +663,54 @@ impl Screen<Data> for PlayScreen {
             self.talk_npc = None;
             self.face_yaw = None;
         }
-        self.busy = self.dlg.is_open() || menu;
+        self.busy = self.dlg.is_open() || menu || self.door.is_some();
+
+        // ---- a new game wakes up in your room upstairs, with a thought about the day ----
+        self.play_t += dt;
+        if !self.intro_checked && self.play_t > 1.0 && data.save.loaded {
+            self.intro_checked = true;
+            if !data.save.data.intro_seen {
+                data.save.data.intro_seen = true;
+                data.save.mark();
+                self.move_to(ctx, INTRO_AT[0], INTRO_AT[1], 0.0);
+                let id = if self.touch_ui { DialogId::IntroTouch } else { DialogId::IntroKeys };
+                self.dlg.open(ctx, &mut data.sound, dialog_for(id, &data.save.data));
+                self.busy = true;
+            }
+        }
+
+        // ---- doors and stairs, the room you are in ----
+        self.doors(ctx, dt);
+        if self.door.is_none() {
+            if let Some((p, _)) = self.hero_pos(ctx) {
+                self.area = rooms::area_at(p.x / STUD, p.z / STUD);
+            }
+        }
+        self.show_area(ctx);
+        self.indoor_light(ctx, dt);
+        self.title_t = (self.title_t - dt).max(0.0);
+        let ready = data.save.data.has_deck;
+        if let (Some((missing, rdy)), true) = (self.machine, self.machine_ready != Some(ready)) {
+            self.machine_ready = Some(ready);
+            let lab = rooms::layer_of(Some(RoomId::Lab));
+            ctx.set_layer(missing, if ready { rooms::HIDDEN_LAYER } else { lab });
+            ctx.set_layer(rdy, if ready { lab } else { rooms::HIDDEN_LAYER });
+        }
 
         // the camera at your eyes, looking at whom you talk to (head and shoulders, above the dialog box)
         let board = match (self.dlg.is_open(), self.talk_npc, pos) {
             (true, Some(i), Some((p, _))) => self.npc_pos(ctx, i).map(|q| talk::face_board(q, p)),
+            (true, None, _) => self.talk_board,
             _ => None,
         };
         if let Some(cam) = self.camera {
             self.zoom.update(ctx, cam, board, dt);
+        }
+        // the camera is where you stand (a close-up): your figure would be in the way (Kaigen show_me)
+        let hide = self.zoom.active && self.zoom.t > 0.25;
+        if let (Some(f), true) = (&self.fig, hide != self.hero_hidden) {
+            self.hero_hidden = hide;
+            ctx.set_layer(f.root, if hide { rooms::HIDDEN_LAYER } else { 0 });
         }
 
         // whatever stands between the camera and you fades (the camera stays)
@@ -534,7 +752,9 @@ impl Screen<Data> for PlayScreen {
             ("time", "Set the time of day. args: {hours}"),
             ("talk", "Talk to whoever is in reach (as E). args: {} | {dialog: 'Pip'|'Dex'|'Mom'|'Prof'|'Lumi'|'Gate'|'Machine'|'Knight'|'Baker'} opens that dialog directly"),
             ("life", "Village life. args: {freeze?: bool, pip_home?: true}"),
-            ("save_reset", "A new game: the save (progress and menu settings) back to the defaults."),
+            ("save_reset", "A new game: the save (progress and menu settings) back to the defaults, intro already seen (see `intro`)."),
+            ("intro", "Start a new game's intro: wake up in your room with the thought about the day (as after the first load)."),
+            ("enter", "Go into a room as through its door (fade, teleport). args: {room: 'Home'|'Dex'|'Lab'|'Bedroom'}"),
             ("flags", "Set save fields (quest flags, menu). args: any GameSave field, e.g. {has_deck: true, rival_wins: 1, gfx: 0, music_level: 2}"),
             ("play_sfx", "Play a synthesized effect. args: {name: blip|coin|fanfare|alert|quack|kick|splash|piano|pop, pitch?: 1}"),
         ]
@@ -580,8 +800,28 @@ impl Screen<Data> for PlayScreen {
             }
             "save_reset" => {
                 data.save.reset(ctx);
+                // (a test's new game: no intro on the next load either; `intro` starts it)
+                data.save.data.intro_seen = true;
+                data.save.flush(ctx);
+                self.dlg.d = None;
+                data.sound.stop_voice(ctx);
+                self.intro_checked = true;
                 data.settings.applied = None;
                 Some(Ok(json!({"reset": true})))
+            }
+            "intro" => {
+                data.save.data.intro_seen = false;
+                self.intro_checked = false;
+                self.play_t = 1.0;
+                Some(Ok(json!({"intro": true})))
+            }
+            "enter" => {
+                let name = a["room"].as_str()?;
+                let id = rooms::ROOMS.into_iter().find(|r| format!("{r:?}").eq_ignore_ascii_case(name))?;
+                let r = rooms::room_def(id);
+                let to = if id == RoomId::Bedroom { Vec2::new(207.0, 40.0) } else { Vec2::new(r.ox, r.oz + r.d * 0.5 - 2.6) };
+                self.door = Some((0.0, to, 0.0));
+                Some(Ok(json!({"enter": name})))
             }
             "flags" => {
                 let mut v = serde_json::to_value(&data.save.data).ok()?;
@@ -648,6 +888,16 @@ impl Screen<Data> for PlayScreen {
         let g = &data.save.data;
         json!({
             "hero": hero,
+            "area": self.area.map(|r| format!("{r:?}")),
+            "door": self.door.map(|d| (d.0 * 100.0).round() / 100.0),
+            "doors_used": self.doors_used,
+            "title": if self.title_t > 0.0 { Some(self.title) } else { None },
+            "indoor": (self.indoor * 100.0).round() / 100.0,
+            "camera_layers": self.camera.and_then(|c| ctx.world.get::<&Camera>(c).ok().map(|c| c.layers)),
+            "room_lights_on": self.room_lights.iter().filter(|(_, e, _)| ctx.world.get::<&PointLight>(*e).map(|l| l.intensity > 0.0).unwrap_or(false)).count(),
+            "machine": self.machine_ready.map(|r| if r { "ready" } else { "missing" }),
+            "hero_hidden": self.hero_hidden,
+            "sun": (ctx.renderer.settings.sun_intensity * 100.0).round() / 100.0,
             "camera": cam,
             "town": self.stats,
             "hiding": self.fader.hiding,
@@ -680,7 +930,7 @@ impl Screen<Data> for PlayScreen {
                 "voice": data.sound.voice_url_now(), "last_voice": data.sound.last_voice, "voices_started": data.sound.voices_started,
                 "last_sfx": data.sound.last_sfx, "sfx_played": data.sound.sfx_played,
             },
-            "save": {"plays": g.plays, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part},
+            "save": {"plays": g.plays, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "intro_seen": g.intro_seen},
         })
     }
 }

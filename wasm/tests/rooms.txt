@@ -1,0 +1,160 @@
+# Rooms: the bedroom start with the intro thought, the stairs, the house doors (fade, teleport), each room
+# drawn alone with its warm ceiling lights, the villagers inside (Mom, Lumi, the Professor) and the Deck-o-Matic.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/rooms.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 5
+expect game_state.state.area == null
+expect game_state.state.camera_layers == 3
+expect game_state.state.room_lights_on == 0
+
+# ---- a new game: you wake up in your room, with a thought ----
+call intro
+frames 30
+expect game_state.state.area == "Bedroom"
+expect game_state.state.save.intro_seen == true
+expect game_state.state.dialog.id == "IntroKeys"
+expect game_state.state.dialog.speaker == "You"
+expect game_state.state.title == "Your Room"
+expect game_state.state.camera_layers == 33
+expect game_state.state.room_lights_on == 3
+wait_for game_state.state.indoor > 0.95 3000
+wait_for game_state.state.sound.last_voice == "assets/voices/91b19939.ogg" 5000
+expect game_state.state.hero.x ~= 197.4
+screenshot shots/rooms-bedroom.png
+key Space
+frames 5
+key Space
+frames 5
+expect game_state.state.dialog == null
+
+# ---- down the stairwell: you come out at the foot of the stairs in the living room ----
+call teleport {"x": 207, "z": 42.4}
+frames 5
+down KeyS
+wait_for game_state.state.door != null 3000
+up KeyS
+wait_for game_state.state.area == "Home" 3000
+frames 30
+expect game_state.state.door == null
+expect game_state.state.hero.x ~= 210.6
+expect game_state.state.camera_layers == 5
+expect game_state.state.room_lights_on == 3
+# Mom (in the kitchen) has the "!" now that you are in her room
+expect game_state.state.npcs.3.id == "mom"
+expect game_state.state.npcs.3.marker == "!"
+expect game_state.state.npcs.4.marker == ""
+# ... and up the stairs again (walkable steps)
+frames 40
+down KeyW
+wait_for game_state.state.area == "Bedroom" 6000
+up KeyW
+frames 30
+expect game_state.state.hero.x ~= 207
+
+# ---- Mom in the kitchen ----
+call enter {"room": "Home"}
+wait_for game_state.state.area == "Home" 3000
+frames 30
+call teleport {"x": 193.4, "z": -0.6}
+frames 20
+expect game_state.state.nearby == "Mom"
+key KeyE
+frames 50
+expect game_state.state.dialog.id == "Mom"
+expect game_state.state.talk_npc == "mom"
+expect game_state.state.hero_hidden == true
+screenshot shots/rooms-mom.png
+key KeyE
+frames 5
+key KeyE
+frames 70
+expect game_state.state.dialog == null
+expect game_state.state.hero_hidden == false
+
+# ---- out through the front door: you stand outside your house, the village is drawn again ----
+call teleport {"x": 200, "z": 6}
+frames 10
+down KeyS
+wait_for game_state.state.door != null 3000
+up KeyS
+wait_for game_state.state.area == null 3000
+frames 30
+expect game_state.state.hero.x ~= -15
+expect game_state.state.hero.z ~= -3
+expect game_state.state.camera_layers == 3
+expect game_state.state.title == "Brickhollow"
+wait_for game_state.state.indoor < 0.05 3000
+expect game_state.state.room_lights_on == 0
+
+# ---- in through the door again (walking north into it) ----
+frames 60
+down KeyW
+wait_for game_state.state.area == "Home" 3000
+up KeyW
+frames 30
+expect game_state.state.hero.yaw ~= 0
+
+# ---- Dex & Lumi's house: Lumi ----
+call teleport {"x": 47, "z": -2.5}
+frames 60
+down KeyW
+wait_for game_state.state.area == "Dex" 3000
+up KeyW
+frames 30
+expect game_state.state.title == "Dex & Lumi's House"
+call teleport {"x": 256.1, "z": 4.5}
+frames 20
+expect game_state.state.nearby == "Lumi"
+key KeyE
+frames 50
+expect game_state.state.dialog.id == "Lumi"
+expect game_state.state.talk_npc == "lumi"
+screenshot shots/rooms-lumi.png
+key Escape
+frames 60
+
+# ---- the lab: the Professor and the Deck-o-Matic (MISSING PART) ----
+call teleport {"x": 13, "z": 18.6}
+frames 60
+down KeyW
+wait_for game_state.state.area == "Lab" 3000
+up KeyW
+frames 30
+expect game_state.state.room_lights_on == 4
+expect game_state.state.machine == "missing"
+call teleport {"x": 333, "z": 1.8}
+frames 20
+expect game_state.state.nearby == "Prof. Quill"
+key KeyE
+frames 50
+expect game_state.state.dialog.id == "Prof"
+expect game_state.state.talk_npc == "lab-prof"
+key Escape
+frames 60
+call teleport {"x": 341.6, "z": -4.6}
+frames 20
+expect game_state.state.nearby == "the Deck-o-Matic"
+key KeyE
+frames 50
+expect game_state.state.dialog.id == "Machine"
+expect game_state.state.dialog.text == "*beep* ERROR: MISSING PART. Stud Core not found."
+expect game_state.state.talk_npc == null
+expect game_state.state.talk_cam == 1
+screenshot shots/rooms-machine.png
+key Escape
+frames 60
+call flags {"has_deck": true}
+frames 5
+expect game_state.state.machine == "ready"
+call flags {"has_deck": false}
+frames 5
+expect game_state.state.machine == "missing"
+call teleport {"x": 330, "z": 4}
+frames 30
+screenshot shots/rooms-lab.png

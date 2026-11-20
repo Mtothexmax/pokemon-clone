@@ -43,8 +43,8 @@ resume
 wait_for game_state.state.camera.0 > 2 3000
 pause
 
-# your house blocks the way: from the front door north (W) you stop at its wall
-call teleport {"x": -15, "z": -2.5}
+# your house blocks the way: next to the front door (the door itself leads in, see rooms.txt) you stop at its wall
+call teleport {"x": -17, "z": -2.5}
 step 5
 down KeyW
 step 90

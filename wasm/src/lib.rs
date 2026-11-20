@@ -2,6 +2,8 @@
 //! in the repo root), ported in vertical slices. Slice 1: the walkable village with your minifig, the
 //! fixed top-down camera of the original and the villagers standing in it. Start: CLAUDE.md.
 
+#![recursion_limit = "256"]
+
 mod dialog;
 mod fade;
 mod figure;
