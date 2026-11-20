@@ -25,7 +25,8 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - [x] Rooms / interiors with doors (studded furniture, warm light), TV and computer screens, piano, mailbox,
       sign close-ups; the bedroom start with the intro thought, Mom / Lumi / the lab Prof inside, the
       Deck-o-Matic showing MISSING PART (rooms.rs, screens.rs, talk.rs; tests rooms.txt, screens.txt)
-- [ ] Cards and Voxelmon data, starter gift, foil packs, deck screen (collection, deck)
+- [x] Cards and Voxelmon data, starter gift, foil packs, deck screen (collection, deck), upgrades with the upgrade
+      moment, card faces as PNG / 3D texture (cards.rs, cardface.rs, deck.rs; tests cards.txt, screens.txt)
 - [ ] Card battle in 3D (cards are 3D objects lowered onto a 3D playing field) vs Dex, Lumi, Pip
 - [ ] Wild Voxelmon fights in the tall grass, skills, upgrades, own music, no touch Jump/Use in fights
 - [ ] Lab quest: diving suit, deck machine "missing part", pond dive into the cave (swim in 3D, darker with depth,
@@ -68,3 +69,37 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Debug: `intro` (new game's wake-up), `enter {room}`; `save_reset` now leaves `intro_seen` true (tests start in
   the village); `game_state.state` has `area`, `door`, `title`, `indoor`, `camera_layers`, `room_lights_on`,
   `machine`, `hero_hidden`, `screen {kind, channel, line, app, notes, term_lines}`, `reading`, `sleeps`.
+
+## Hooks for later parts (cards slice)
+- Card data (`cards.rs`, Kaigen `st_cards.c`): cards are `usize` indices, `cards::card(c)` -> `CardDef {id, name, kind,
+  cost, power, text}`, consts `cards::PEBBIT ..`, `by_id("pebbit")`, `kind_info(kind)` (label, colours, glyph),
+  `ZONES` + `zone_picture(z)` (`assets/zones/<id>.jpg`, 400x225; battle backgrounds `assets/backgrounds/
+  {forest,cave,lab}.png`, 480x270 pixel art, both from the three.js `static/`), `DECKS[DECK_STARTER|RIVAL|RIVAL_2|
+  PRACTICE|PIP]`, `STARTER`, stages (`stage(lv)`, `upgrade_cost`, `upgrade`, `max_level`, `VOXEL_LEVEL`),
+  `battle_exp(result, rival)`, `reward_card(save, &mut seed, rare)` (gives and returns a missing card), `WILD_EXP`,
+  `picture(c)` (the Voxelmon front pixel art, RGBA, from `src/beasts.bin` = Kaigen `st_beasts_data.c` via
+  `tools/make_beasts.py`).
+- Save: `GameSave::collection` (bit per card; `cards::owns/give_card/owned_count`), `deck: Vec<u8>` (card indices,
+  up to `DECK_SIZE`; `cards::in_deck`), `card_level: Vec<u8>` (may be shorter than `CARD_COUNT`: read with
+  `cards::level(s, c)`), `exp`, `voxelmon` (CardId + 1), `wins/losses/rival_wins/pip_wins`.
+- Card textures (`cardface.rs`): `data.faces.texture(ctx, Face::new(card, level))` -> `Option<TextureId>` (sRGB, mips,
+  300x420 = 1 : 1.4, transparent rounded corners, cached per `Face`). Use it as
+  `Material { texture: Some(t), ..Material::color(0xffffff).cutout(0.5) }` on `ctx.renderer.builtin.quad` scaled
+  (w, 1.4 w, 1) (see the `card_preview` command in play.rs). Variants: `.big()` (art + kind + ability text: the
+  detail card), small (ability symbol only; what the hand / board shows), `.unknown()`, `.power(p)` (green / red
+  badge), `hide_cost`, `Face::back()` (the card back). Textures are never freed: keep `power` at the card's own
+  value and draw battle power changes as separate badges/meshes. `data.faces.rgba(face)` gives the pixels;
+  `data.faces.url(face)` a PNG blob URL for the DOM (None for a frame or two while it encodes).
+- Card screens (`deck.rs`, `data.cards: CardUi`): `data.cards.show_rewards(title, &[c..3], Some(DialogId::DexWon))`
+  shows foil packs (the battle part: after `reward_card`; the dialogue opens when they are closed); `busy()`;
+  the deck screen (`deck_open`, C / Deck button / `cards {open}`), the upgrade moment (`up`; a Voxelmon card
+  bursts and the screen opens onto the town at `UP_BURST + 0.3` s: the Voxelmon part adds the 3D beast rising there,
+  Kaigen `vox_showcase`; "Walk with me" sets `voxelmon`).
+- Starter gift: `PlayScreen::give_starter` (DialogAction::GiveStarter; packs Titanoak / Thundrake / Emberhorn, then
+  DialogId::ProfAfter). The legendary Goldbrick is given by `CardUi::update` once `legendary` is set.
+- Screens: the Beasts app shows owned name chips; the lab terminal analyses a random pool card.
+- Debug: `cards {starter, give, exp, level, deck, rewards, open, pick}`, `card_face {id, level, big, texture}`,
+  `card_preview {id, level}`; `game_state.state.cards` (owned, collection, deck, exp, levels, deck_open, pick,
+  upgrade, rewards {cards, tear, revealed}, faces {drawn, urls, textures}).
+- Step 0: voices play on `Bus::Voice` (menu Voices = that bus's volume); Graphics High stores MSAA 4 for the next
+  start (`engine::set_msaa_pref`), other choices clear it (`menu.msaa_pref` in game_state).
