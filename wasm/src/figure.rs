@@ -10,6 +10,8 @@ const PIVOT: [Vec3; 6] = [
     Vec3::new(0.0, 0.0, 0.0),
     Vec3::new(-0.3268, 1.1856, -0.038),
     Vec3::new(0.3268, 1.1856, -0.038),
+    // (the legs' hip-joint cylinders end 2 mm short of x = 0: the glTFs' reached 3 cm past it, the two coaxial
+    // cylinders lay in each other, z-fighting; trimmed in assets/minifig/*/leg{L,R}.glb)
     Vec3::new(-0.152, 0.589, 0.0),
     Vec3::new(0.152, 0.589, 0.0),
 ];

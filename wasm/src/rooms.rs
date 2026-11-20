@@ -104,7 +104,8 @@ pub fn room_lights(id: RoomId) -> Vec<(Vec3, f32)> {
 /// The villagers in the rooms (Kaigen app_init): Mom in the kitchen, Lumi at home, the Professor in her
 /// lab (the floors are 0.4 studs high). id, figure style, studs, yaw (figures face +z at 0).
 pub const ROOM_NPCS: [(&str, &str, f32, f32, f32); 3] = [
-    ("mom", "mom", 193.4, -4.4, 0.0),
+    // (Kaigen -4.4: her hips lay in the back of the dining chair in front of her, z-fighting)
+    ("mom", "mom", 193.4, -4.75, 0.0),
     ("lumi", "lumi", 254.5, 2.0, std::f32::consts::FRAC_PI_2),
     ("lab-prof", "quill", 337.0, -1.2, -std::f32::consts::FRAC_PI_2),
 ];
@@ -146,7 +147,8 @@ impl Town {
             let mut x = -w * 0.5;
             while x < w * 0.5 {
                 let c = if x.abs() as i32 & 1 != 0 { floor_b } else { floor_a };
-                self.brick(c, 1.0, 0.4, d, ox + x + 0.5, 0.0, oz, false);
+                // (bottom deep in the dark surround: at 0 it shared a plane with every wall's bottom)
+                self.brick(c, 1.0, 0.65, d, ox + x + 0.5, -0.25, oz, false);
                 x += 1.0;
             }
         }
@@ -154,18 +156,20 @@ impl Town {
         self.solids.push(Solid { r: Rect::new(ox - w * 0.5, ox + w * 0.5, oz - d * 0.5, oz + d * 0.5 + 2.6), y0: 0.0, h: FLOOR * STUD });
         const H: f32 = 9.0;
         self.furn(wall, w + 2.0, H, 1.0, ox, 0.0, oz - d * 0.5 - 0.5, false);
-        self.brick(trim, w, 2.4, 0.3, ox, 0.4, oz - d * 0.5 + 0.1, false);
+        // the trims start a little in the floor and stop short of the back wall: their bottoms / ends lay in the
+        // planes of the floor planks', the machines' and the counters' (z-fighting)
+        self.brick(trim, w, 2.5, 0.3, ox, 0.3, oz - d * 0.5 + 0.1, false);
         self.brick(trim, w + 2.0, 0.4, 1.4, ox, H, oz - d * 0.5 - 0.5, false);
         for s in [-1.0f32, 1.0] {
             self.furn(wall, 1.0, H, d + 1.0, ox + s * (w * 0.5 + 0.5), 0.0, oz - 0.5, false);
-            self.brick(trim, 0.3, 2.4, d, ox + s * (w * 0.5 - 0.1), 0.4, oz, false);
+            self.brick(trim, 0.3, 2.5, d - 0.2, ox + s * (w * 0.5 - 0.1), 0.3, oz, false);
         }
         if door {
             let seg = w * 0.5 - 1.6;
             for s in [-1.0f32, 1.0] {
                 self.furn(wall, seg + 1.0, 1.2, 1.0, ox + s * (1.6 + seg * 0.5 + 0.5), 0.0, oz + d * 0.5 + 0.5, true);
             }
-            self.brick(C_RED, 3.0, 0.1, 1.6, ox, 0.4, oz + d * 0.5 - 0.6, false); // door mat
+            self.brick(C_RED, 3.0, 0.1, 1.6, ox, 0.43, oz + d * 0.5 - 0.6, false); // door mat (above the lab's tile inlays)
             for s in [-1.0f32, 1.0] {
                 self.brick(trim, 0.5, 1.6, 1.2, ox + s * 1.8, 0.0, oz + d * 0.5 + 0.5, true);
             }
@@ -215,7 +219,8 @@ impl Town {
         self.furn(C_BROWN, w, 7.0, 1.4, x, 0.4, z, false);
         for i in 0..4 {
             self.brick(C_RED_BROWN, w - 0.4, 0.2, 1.2, x, 1.2 + i as f32 * 1.6, z + 0.15, false);
-            self.room_books(x, z + 0.3, w - 0.6, 1.2, 1.4 + i as f32 * 1.6);
+            // (the books' fronts a little behind the shelves' and the case's)
+            self.room_books(x, z + 0.2, w - 0.6, 1.2, 1.4 + i as f32 * 1.6);
         }
     }
 
@@ -274,7 +279,7 @@ impl Town {
         }
         self.flower_pot_on(ox - 6.0, oz - 1.0, 2.8 + STUD_H);
         // living room: rug, sofa, TV
-        self.brick(0x3d6fd1, 9.0, 0.12, 7.0, ox + 5.0, 0.4, oz + 0.5, false);
+        self.brick(0x3d6fd1, 8.0, 0.12, 7.0, ox + 4.5, 0.4, oz + 0.5, false); // (not under the stairs)
         self.brick(0x6fa0ff, 7.6, 0.13, 5.6, ox + 5.0, 0.46, oz + 0.5, false);
         self.furn(C_RED, 6.0, 1.4, 2.2, ox + 5.0, 0.4, oz + 4.8, true);
         self.brick(C_RED, 6.0, 2.2, 0.7, ox + 5.0, 1.8, oz + 5.6, false);
@@ -333,7 +338,7 @@ impl Town {
         }
         // rug and a toy shelf with little brick beasts
         self.brick(C_YELLOW, 6.0, 0.12, 4.4, ox - 1.2, 0.4, oz + 1.6, false);
-        self.brick(C_ORANGE, 5.0, 0.13, 3.4, ox - 1.2, 0.46, oz + 1.6, false);
+        self.brick(C_ORANGE, 5.0, 0.13, 3.4, ox - 1.2, 0.5, oz + 1.6, false);
         self.furn(C_BROWN, 1.4, 3.2, 4.0, ox - 8.2, 0.4, oz + 3.4, true);
         for (i, c) in [C_RED, C_BLUE, C_DARK_GREEN, C_YELLOW, 0x7b2fbe].into_iter().enumerate() {
             self.brick(c, 0.8, 0.8, 0.6, ox - 8.2, 3.6 + STUD_H, oz + 1.8 + i as f32 * 0.8, true);
@@ -344,7 +349,7 @@ impl Town {
         let cx = (wl.x0 + wl.x1) * 0.5;
         self.brick(0x151f27, wl.x1 - wl.x0, 0.06, wl.z1 - wl.z0, cx, 0.4, (wl.z0 + wl.z1) * 0.5, false);
         for (i, c) in [0xc8955c, 0xa87a48, 0x7a5834, 0x4d3822].into_iter().enumerate() {
-            self.brick(c, wl.x1 - wl.x0 - 0.2, 0.05, 0.8, cx, 0.43, wl.z0 + 0.5 + i as f32 * 0.95, false);
+            self.brick(c, wl.x1 - wl.x0 - 0.2, 0.05, 0.8, cx, 0.48, wl.z0 + 0.5 + i as f32 * 0.95, false);
         }
         self.brick(C_WHITE, 0.3, 1.6, wl.z1 - wl.z0 + 0.3, wl.x0 - 0.15, 0.4, (wl.z0 + wl.z1) * 0.5, false);
         self.brick(C_WHITE, wl.x1 - wl.x0 + 0.3, 1.6, 0.3, cx, 0.4, wl.z1 + 0.15, false);

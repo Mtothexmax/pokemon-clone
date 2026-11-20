@@ -344,10 +344,11 @@ impl Town {
     /// A brick: w x h x d studs, centred on x/z, its BOTTOM at y (`box()` in the three.js town).
     pub fn brick(&mut self, hex: u32, w: f32, h: f32, d: f32, x: f32, y: f32, z: f32, studs: bool) {
         // bricks that touch would share faces exactly and flicker: every brick is a few hundredths of a
-        // stud smaller or larger than the last, so no two faces lie in one plane
+        // stud smaller or larger than the last, so no two faces lie in one plane (a step of 0.012 studs moves
+        // a face 2.3 mm: more than the z-fighting check's 2 mm)
         self.box_n += 1;
-        let e = 0.006 * ((self.box_n % 7) as i32 - 3) as f32;
-        let e2 = 0.006 * ((self.box_n * 3 % 7) as i32 - 3) as f32;
+        let e = 0.012 * ((self.box_n % 7) as i32 - 3) as f32;
+        let e2 = 0.012 * ((self.box_n * 3 % 7) as i32 - 3) as f32;
         self.here(x, z);
         self.b(hex).block(m(x, y + e2 * 0.5, z), m(w + e, h + e2, d - e));
         if studs {
@@ -1230,7 +1231,10 @@ fn stud_maps(ctx: &mut Ctx) -> (Option<engine::renderer::TextureId>, Option<engi
 impl TownAssets {
     pub fn new(ctx: &mut Ctx) -> Self {
         let mut mb = MeshBuilder::new();
-        mb.lathe(&[Vec2::new(0.0, 0.0), Vec2::new(STUD_R * STUD, 0.0), Vec2::new(STUD_R * STUD, STUD_H * STUD), Vec2::new(0.0, STUD_H * STUD)], 10);
+        // no bottom disc: a stud always stands on a brick (the disc lay in the plane of any brick stacked on it);
+        // 0.01 studs lower than STUD_H: a plate laid "on the studs" (y + STUD_H) does not share the studs' top plane
+        let sh = (STUD_H - 0.01) * STUD;
+        mb.lathe(&[Vec2::new(STUD_R * STUD, 0.0), Vec2::new(STUD_R * STUD, sh), Vec2::new(0.0, sh)], 10);
         let parts = mb.finish();
         let mut md = parts.into_iter().next().unwrap().1;
         engine::geom::smooth_normals(&mut md, 50.0);

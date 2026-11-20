@@ -12,6 +12,12 @@ frames 5
 expect game_state.state.area == null
 expect game_state.state.camera_layers == 3
 expect game_state.state.room_lights_on == 0
+# ---- no z-fighting in the rooms (Home with Mom, Dex & Lumi's, the lab with the Prof, your room): bricks, studs,
+# the minifigs' leg halves, the lab's props ----
+expect zfight{"center":[76,1,0],"radius":9}.pairs == 0
+expect zfight{"center":[98.8,1,0],"radius":9}.pairs == 0
+expect zfight{"center":[125.4,1,0],"radius":10}.pairs == 0
+expect zfight{"center":[76,1,15.2],"radius":7}.pairs == 0
 
 # ---- a new game: you wake up in your room, with a thought ----
 call intro

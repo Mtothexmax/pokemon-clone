@@ -1508,6 +1508,13 @@ impl Screen<Data> for PlayScreen {
             let lab = rooms::layer_of(Some(RoomId::Lab));
             ctx.set_layer(missing, if ready { rooms::HIDDEN_LAYER } else { lab });
             ctx.set_layer(rdy, if ready { lab } else { rooms::HIDDEN_LAYER });
+            // the hidden one also steps 2 m down: the engine's z-fighting check does not know layers
+            let [mx, my, mz] = rooms::MACHINE_SCREEN;
+            for (e, shown) in [(missing, !ready), (rdy, ready)] {
+                if let Ok(mut t) = ctx.world.get::<&mut Transform>(e) {
+                    t.translation = town::m(mx, my, mz) - Vec3::Y * if shown { 0.0 } else { 2.0 };
+                }
+            }
         }
         self.dive.lab(ctx, &data.save.data);
 
