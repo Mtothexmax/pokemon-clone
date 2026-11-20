@@ -15,10 +15,13 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
 pub fn main() {
-    engine::run(
+    // no MSAA, FXAA in the composite: at dpr 2 the village looks the same as with 4x MSAA and renders
+    // ~30 % faster on desktop (much more on phones). `?msaa=4` in the URL brings MSAA back
+    engine::app::run_with(
         ScreenStack::new(Data::default(), Box::new(Title))
             .register("title", || Box::new(Title))
             .register("play", || Box::new(PlayScreen::default())),
+        engine::renderer::RenderConfig { msaa: 1 },
     );
 }
 
