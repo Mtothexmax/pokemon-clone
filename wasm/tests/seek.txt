@@ -1,0 +1,135 @@
+# Pip's games (life.rs, Kaigen st_life.c + 9c50087 / c10df7f): hide and seek from his dialog (the screen goes dark
+# while he hides, he crouches at a spot behind something, no marker gives him away, E at him finds him instead of
+# his chat), then he takes card battles; time up; tag (sprint into him, catch him again); football.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/seek.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call flags {"has_deck": true}
+call time {"hours": 12}
+call life {"freeze": false, "pip_home": true}
+resume
+# ---- before a round: a card battle? hide and seek first ----
+call teleport {"x": -8, "z": 9}
+frames 20
+action use
+frames 10
+expect game_state.state.dialog.id == "Pip"
+action dlg_next
+frames 3
+action dlg_next
+frames 3
+action dlg_next
+frames 3
+expect game_state.state.dialog.choices.2 == "Card battle!"
+key KeyD
+frames 3
+key KeyD
+frames 3
+key KeyE
+frames 10
+expect game_state.state.dialog.id == "PipNotYet"
+action dlg_next
+frames 3
+expect game_state.state.dialog.choices.0 == "Hide and seek"
+key KeyE
+frames 5
+# ---- the countdown: eyes closed ----
+expect game_state.state.last_dialog.action == "HideSeek"
+expect game_state.state.life.fade == true
+expect game_state.state.busy == true
+expect ui.slots.seekfade contains Pip is hiding
+screenshot shots/seek-countdown.png
+wait_for game_state.state.life.fade == false 6000
+expect game_state.state.pip.mode == "Hiding"
+expect game_state.state.life.hidden == true
+expect game_state.state.life.pip_pose == "Crouch"
+expect game_state.state.npcs.1.marker == ""
+expect game_state.state.toast contains Ready or not
+expect ui.slots.studs contains Find Pip
+# he hid at least 16 studs away
+expect game_state.state.life.seek_left > 50
+# ---- E at him: found (no chat) ----
+call life {"to_pip": 5}
+frames 5
+expect game_state.state.nearby == "Pip"
+expect ui.slots.prompt contains Found you,
+screenshot shots/seek-found.png
+key KeyE
+frames 5
+expect game_state.state.dialog == null
+expect game_state.state.pip.mode == "Wave"
+expect game_state.state.life.seek_wins == 1
+expect game_state.state.life.seek_played == 1
+expect game_state.state.save.studs == 5
+expect game_state.state.toast contains You found Pip!
+# ---- now he takes a card battle (+1 power deck) ----
+action use
+frames 10
+expect game_state.state.dialog.id == "Pip"
+action dlg_next
+frames 3
+action dlg_next
+frames 3
+action dlg_next
+frames 3
+key KeyD
+frames 3
+key KeyD
+frames 3
+key KeyE
+frames 5
+expect game_state.state.last_dialog.action == "BattlePip"
+expect game_state.state.battle_transition != null
+wait_for game_state.screen == "battle" 8000
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call time {"hours": 12}
+call life {"freeze": false, "pip_home": true}
+# ---- time is up ----
+call teleport {"x": 30, "z": 0}
+call life {"seek": true}
+wait_for game_state.state.life.fade == false 6000
+call life {"seek_left": 0.1}
+wait_for game_state.state.pip.mode == "Wave" 6000
+expect game_state.state.toast contains Time is up
+# ---- walking right up to a hidden Pip finds him too ----
+call life {"pip_home": true}
+call teleport {"x": 30, "z": 0}
+call life {"seek": true}
+wait_for game_state.state.life.fade == false 6000
+call life {"to_pip": 2.5}
+frames 5
+expect game_state.state.pip.mode == "Wave"
+# ---- tag: sprint into him, he runs; catch him within 10 s ----
+call life {"pip_home": true}
+call teleport {"x": -8, "z": 10.6}
+frames 10
+down ShiftLeft
+down KeyS
+wait_for game_state.state.pip.mode == "Flee" 3000
+up KeyS
+up ShiftLeft
+expect game_state.state.toast contains Tag with Pip
+frames 60
+expect game_state.state.pip.speed > 5
+call life {"to_pip": 1.5}
+frames 3
+expect game_state.state.pip.mode == "Wave"
+expect game_state.state.life.tag_wins == 1
+expect game_state.state.toast contains You tagged Pip
+# too slow: after 10 s he gives up
+call life {"pip_home": true, "tag": true}
+call teleport {"x": 0, "z": 0}
+wait_for game_state.state.pip.mode == "Walk" 14000
+expect game_state.state.toast contains Too slow
+# ---- football: the ball lies near him and you are not on it: he kicks it ----
+call life {"pip_home": true, "ball": [-3, 10]}
+call teleport {"x": -1, "z": 3}
+wait_for game_state.state.pip.mode == "Football" 3000
+expect game_state.state.toast contains My turn!
+wait_for game_state.state.life.ball_speed > 1 6000
+expect game_state.state.sound.last_sfx == "kick"
+call save_reset

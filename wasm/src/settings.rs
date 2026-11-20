@@ -106,6 +106,9 @@ impl Settings {
                     if let Some(n) = a.strip_prefix("set_music:").and_then(|n| n.parse::<u8>().ok()) {
                         g.music_level = n.min(3);
                         changed = true;
+                    } else if let Some(n) = a.strip_prefix("set_touch:").and_then(|n| n.parse::<u8>().ok()) {
+                        g.touch_mode = n.min(1);
+                        changed = true;
                     } else if let Some(n) = a.strip_prefix("set_gfx:").and_then(|n| n.parse::<u8>().ok()) {
                         g.gfx = n.min(3);
                         // High: sharper edges (MSAA 4) from the next start; the rest: the default (FXAA)
@@ -164,7 +167,8 @@ impl Settings {
     }
 
     /// The ☰ button (always) and the menu (when open).
-    pub fn draw(&self, ctx: &mut Ctx, g: &GameSave, sound: &Sound) {
+    /// `debug_on`: the debug panel's switch (the row shows its state).
+    pub fn draw(&self, ctx: &mut Ctx, g: &GameSave, sound: &Sound, debug_on: bool) {
         ctx.ui.set(
             "menubtn",
             &format!("<button class='bh-menubtn{}' data-action='menu' aria-label='Menu'>{}</button>", if self.open { " on" } else { "" }, if self.open { "&times;" } else { "<i></i><i></i><i></i>" }),
@@ -187,21 +191,33 @@ impl Settings {
         } else {
             "Lower settings run smoother on slow devices.".to_string()
         };
+        // phones: swipe walking or the stick (Kaigen st_settings.c CONTROLS)
+        let controls = if self.touch {
+            format!(
+                "<div class='bh-cap'>CONTROLS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>",
+                seg(&["Swipe", "Stick"], g.touch_mode.min(1) as usize, "set_touch"),
+                if g.touch_mode == 0 { "Swipe once to walk that way, tap to stop." } else { "Hold and drag the stick to walk." }
+            )
+        } else {
+            String::new()
+        };
         let fps = if self.fps > 0.0 { format!("<div class='bh-fps'>{:.0} fps</div>", self.fps) } else { String::new() };
         let html = format!(
             "<div class='bh-shade' data-action='menu_close'></div><div class='bh-menu'>\
              <div class='bh-prog'><span class='gold'>&#9733; {}/15</span><span>&#9679; {} studs</span></div>\
              <button class='bh-row' data-action='set_voices'><b>Voices</b><span>{}</span></button>\
              <div class='bh-cap'>MUSIC</div><div class='bh-seg'>{}</div>\
-             <div class='bh-cap'>GRAPHICS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>{}\
-             <button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
+             <div class='bh-cap'>GRAPHICS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>{}{}\
+             <button class='bh-row' data-action='dbg_toggle'><b>Debug panel</b><span>{}</span></button><button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
             g.golden_count(),
             g.studs,
             if g.voices_off { "off" } else { "on" },
             seg(&MUSIC_LEVEL_NAMES, sound.music_level(), "set_music"),
             seg(&GFX_NAMES, g.gfx as usize, "set_gfx"),
             hint,
+            controls,
             fps,
+            if debug_on { "on" } else { "off" },
         );
         ctx.ui.set("settings", &html);
     }

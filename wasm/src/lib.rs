@@ -10,6 +10,7 @@ mod cardface;
 mod cards;
 mod deck;
 mod cave;
+mod debugpanel;
 mod dialog;
 mod dive;
 mod fade;
@@ -22,6 +23,7 @@ mod save;
 mod screens;
 mod settings;
 mod sound;
+mod swipe;
 mod table;
 mod talk;
 mod town;
@@ -104,6 +106,7 @@ impl Data {
             ctx.ui.set("style_battle", arena::STYLE);
             ctx.ui.set("style_vox", vox::STYLE);
             ctx.ui.set("style_dive", dive::STYLE);
+            ctx.ui.set("style_debug", debugpanel::STYLE);
             self.cards = deck::CardUi::new();
         }
     }
@@ -143,7 +146,7 @@ pub(crate) fn setup_look(ctx: &mut Ctx) {
 }
 
 /// The original's day: `dayLength` 360 s, `timeOfDay` 0.15 of a day after sunrise (6:00).
-const DAY_MINUTES: f32 = 6.0;
+pub(crate) const DAY_MINUTES: f32 = 6.0;
 pub(crate) const START_HOUR: f32 = 6.0 + 0.15 * 24.0;
 
 /// The original `updateDayNight` sky: night -> dusk -> day colours for the background and the fog.

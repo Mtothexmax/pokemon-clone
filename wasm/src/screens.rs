@@ -11,7 +11,7 @@
 //! and `scr_pos` (a style slot that places both over the screen every frame).
 //!
 //! The Beasts app shows the collection and the newest owned beasts as name chips, the lab terminal analyses
-//! a random card of the pool (cards.rs). Hooks: butterflies (Stats) come with the life part.
+//! a random card of the pool (cards.rs). The Stats app counts the life part's butterflies (`GameSave::butterflies`).
 
 use crate::save::GameSave;
 use crate::sound::{Sfx, Sound};
@@ -506,7 +506,7 @@ impl Screens {
             lines[self.line % lines.len()].1
         });
         serde_json::json!({
-            "kind": self.kind, "shown": self.shown, "channel": TV_CHANNELS[self.channel], "line": self.line,
+            "kind": self.kind, "weather": self.weather, "shown": self.shown, "channel": TV_CHANNELS[self.channel], "line": self.line,
             "tv_text": if self.kind == Some(ScreenKind::Tv) { tv } else { None },
             "notes": self.notes, "app": APPS[self.app].0, "term_lines": self.term_n, "typing": self.typing,
         })
@@ -765,7 +765,7 @@ fn pc_html(app: usize, g: &GameSave, fact: u32, narrow: bool) -> String {
                 ("Battles lost", g.losses.to_string()),
                 ("Beat Dex", format!("{}\u{d7}", g.rival_wins)),
                 ("Golden studs", format!("{}/15", g.golden_count())),
-                ("Butterflies caught", "0".to_string()), // (the butterflies come with the life part)
+                ("Butterflies caught", g.butterflies.to_string()),
                 ("Ducks fed", g.duck_feeds.to_string()),
                 ("Treasure chests", g.chests.to_string()),
                 ("Pip found", g.seek_wins.to_string()),

@@ -1,0 +1,41 @@
+# The debug panel (debugpanel.rs, Kaigen st_debug.c): on with the engine's debug mode (`) or the menu's switch; FPS
+# and frame time, the picker names what is under a click / tap, Copy puts "x, y, z" studs on the clipboard.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/debug_panel.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call teleport {"x": -8, "z": 6}
+frames 10
+expect ui.slots.debug == ""
+# the menu's switch (phones)
+key Escape
+frames 3
+expect ui.slots.settings contains Debug panel
+action dbg_toggle
+frames 40
+key Escape
+frames 3
+expect game_state.state.debug_panel.on == true
+expect ui.slots.debug contains FPS
+expect game_state.state.debug_panel.fps > 5
+# turning it on named what is in the middle of the screen (you are skipped)
+expect game_state.state.debug_panel.picks >= 1
+call debug_pick {"copy": "me"}
+expect game_state.state.debug_panel.clip contains -8.0
+expect ui.slots.debug contains Copied!
+screenshot shots/debug-panel.png
+call debug_pick {"menu": false}
+frames 3
+expect ui.slots.debug == ""
+# the engine's debug mode (`) shows it too
+call debug_mode {"on": true}
+frames 3
+expect game_state.state.debug_panel.on == true
+call debug_mode {"on": false}
+frames 3
+expect game_state.state.debug_panel.on == false
+call debug_pick {"menu": false}

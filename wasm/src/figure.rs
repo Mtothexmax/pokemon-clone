@@ -16,6 +16,23 @@ const PIVOT: [Vec3; 6] = [
 const PARTS: [&str; 6] = ["head", "torso", "armL", "armR", "legL", "legR"];
 const ARM_REST: f32 = -0.22;
 
+/// What a figure does besides walking (Kaigen `FigPose`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub enum Pose {
+    /// walk / stand
+    #[default]
+    Normal,
+    /// on a bench: legs forward, hands on the knees, feet swinging
+    Sit,
+    /// arms up, hopping (the caller turns `spin`)
+    Dance,
+    ArmsUp,
+    /// hiding
+    Crouch,
+    /// right arm waving
+    Wave,
+}
+
 pub struct Figure {
     /// The figure's root (feet at its origin, facing +z).
     pub root: Entity,
@@ -23,6 +40,13 @@ pub struct Figure {
     /// Swing angle per part (x rotation), as the three.js `rotation.x`.
     rot: [f32; 6],
     walk_t: f32,
+    /// the pose (set by the game each step) and its clock
+    pub pose: Pose,
+    idle_t: f32,
+    /// extra turn of the whole figure about its feet (dancing)
+    pub spin: f32,
+    /// the parts' offset (metres, figure space): hopping, sitting, crouching
+    offset: Vec3,
 }
 
 impl Figure {
@@ -37,21 +61,26 @@ impl Figure {
             let _ = ctx.world.insert_one(e, Parent(root));
             e
         });
-        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0 };
+        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO };
         f.apply(ctx);
         f
     }
 
+    /// Each part: its pivot turned by the spin and moved by the offset, then its own swing (Kaigen `fig_set_part`).
     fn apply(&mut self, ctx: &mut Ctx) {
+        let spin = Quat::from_rotation_y(self.spin);
         for i in 0..6 {
             if let Ok(mut t) = ctx.world.get::<&mut Transform>(self.parts[i]) {
-                t.rotation = Quat::from_rotation_x(self.rot[i]);
+                t.translation = spin * PIVOT[i] + self.offset;
+                t.rotation = spin * Quat::from_rotation_x(self.rot[i]);
             }
         }
     }
 
     /// The walk cycle: `speed` 0 = standing (eases back), 1 = walking, 1.6 = running.
     pub fn animate(&mut self, ctx: &mut Ctx, dt: f32, moving: bool, speed: f32) {
+        self.idle_t += dt;
+        let moving = moving && self.pose != Pose::Sit;
         if moving {
             self.walk_t += dt * 9.0 * speed;
             let s = self.walk_t.sin() * 0.7;
@@ -68,7 +97,37 @@ impl Figure {
                 self.rot[i] += (ARM_REST - self.rot[i]) * k;
             }
         }
+        // the poses (Kaigen fig_animate) over the walk swing
+        let t = self.idle_t;
+        self.offset = Vec3::ZERO;
+        let mut rot = self.rot;
+        match self.pose {
+            Pose::Normal => {}
+            Pose::Sit => {
+                let sw = (t * 2.0).sin() * 0.12;
+                rot[4] = -1.5 + sw;
+                rot[5] = -1.5 - sw;
+                rot[2] = -0.75;
+                rot[3] = -0.75;
+                self.offset = Vec3::new(0.0, -0.08, -0.42); // onto the seat behind the feet
+            }
+            Pose::Dance | Pose::ArmsUp => {
+                let wave = (t * 8.0).sin() * 0.3;
+                rot[2] = -2.6 + wave;
+                rot[3] = -2.6 - wave;
+                self.offset.y = (t * 6.0).sin().abs() * if self.pose == Pose::Dance { 0.13 } else { 0.11 };
+            }
+            Pose::Crouch => {
+                self.offset.y = -0.19;
+                rot[4] = -0.6;
+                rot[5] = -0.6;
+            }
+            Pose::Wave => rot[3] = -2.6 + (t * 8.0).sin() * 0.3,
+        }
+        let keep = self.rot;
+        self.rot = rot;
         self.apply(ctx);
+        self.rot = keep;
     }
 
     /// Leg swing (for tests: a walking figure swings its legs).

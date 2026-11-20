@@ -1,0 +1,62 @@
+# Swipe walking on phones (swipe.rs, Kaigen st_swipe.c): the menu's CONTROLS picks Swipe (the default, no stick) or
+# Stick. A swipe walks that way (snapped to up / down / left / right on screen) and keeps walking after the finger is
+# lifted, around obstacles; a tap stops; walking into a wall stops after 1.5 s.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/swipe.txt --port 9223 --url http://localhost:8091/
+reload
+viewport 390 844 3 touch
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+call teleport {"x": -10, "z": 0.5}
+# a first touch: the touch HUD, swipe mode (no stick)
+call input {"touch": {"id": 9, "x": 300, "y": 300, "phase": "start"}}
+call input {"touch": {"id": 9, "x": 300, "y": 300, "phase": "end"}}
+frames 10
+expect game_state.state.swipe.mode == true
+expect game_state.state.stick == false
+# swipe right (a little up too: snapped to right = east)
+call input {"touch": {"id": 1, "x": 100, "y": 500, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 1, "x": 160, "y": 490, "phase": "move"}}
+frames 2
+expect game_state.state.swipe.on == true
+expect game_state.state.swipe.dir.0 == 1
+call input {"touch": {"id": 1, "x": 170, "y": 490, "phase": "end"}}
+frames 30
+# still walking after the finger is lifted
+expect game_state.state.swipe.on == true
+expect game_state.state.hero.x > -7
+expect game_state.state.hero.z ~= 0.5
+screenshot shots/swipe-walk.png
+# a tap stops
+call input {"touch": {"id": 2, "x": 200, "y": 400, "phase": "start"}}
+call input {"touch": {"id": 2, "x": 200, "y": 400, "phase": "end"}}
+frames 5
+expect game_state.state.swipe.on == false
+frames 20
+expect game_state.state.hero.speed < 1
+# swipe up (north) into the house: it walks round it or stops at the wall within 1.5 s, never runs on
+call teleport {"x": -15, "z": -2.5}
+frames 5
+call input {"touch": {"id": 3, "x": 200, "y": 600, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 3, "x": 200, "y": 500, "phase": "move"}}
+frames 2
+call input {"touch": {"id": 3, "x": 200, "y": 500, "phase": "end"}}
+expect game_state.state.swipe.dir.1 == -1
+wait_for game_state.state.swipe.on == false 5000
+# the menu: Stick brings the joystick back
+action menu
+frames 3
+expect ui.slots.settings contains CONTROLS
+action set_touch:1
+frames 5
+action menu
+frames 3
+expect game_state.state.swipe.mode == false
+expect game_state.state.stick == true
+call save_reset
+viewport off

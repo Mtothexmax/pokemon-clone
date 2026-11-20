@@ -1,4 +1,7 @@
 # NPCs are solid: walking into Pip (the kid by the pond, x -8 z 13.2 studs) stops you in front of them.
+# The game drops the part of your move wish that points into a villager within touching distance (play.rs
+# fixed_update), so you stop in front of the round capsule instead of sliding round it (engine 6178277 slides a
+# character pressed into a capsule; Kaigen's villagers were boxes). Pressing on for 2 s keeps you there.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/npc_block.txt --port 9223 --url http://localhost:8091/
 reload
 screen play
@@ -9,12 +12,13 @@ resume
 call teleport {"x": -8, "z": 8}
 frames 60
 down KeyS
-# (45 frames: you reach Pip after ~35; pressing on longer the capsule sometimes slides off sideways, see below)
 frames 45
 screenshot shots/npc-block.png
 expect game_state.state.hero.z < 12.4
-# (engine 6178277: pressing on into the round capsule, the hero slowly slides off sideways and walks
-# around Pip after ~2 s; the 120-frame version of this check fails since then, also on bbf0647)
+expect game_state.state.npc_stops > 0
+frames 120
+expect game_state.state.hero.z < 12.4
+expect game_state.state.hero.x ~= -8
 up KeyS
 frames 10
 expect game_state.state.hero.z < 12.4

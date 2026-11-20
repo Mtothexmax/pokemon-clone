@@ -248,7 +248,7 @@ fn hp_color(f: f32) -> &'static str {
 pub const STYLE: &str = "<style>
 #ui [data-slot=vox_wild]{position:fixed;left:0;right:0;top:112px;display:flex;justify-content:center;pointer-events:none}
 #ui [data-slot=vox_mine]{position:fixed;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none}
-#ui [data-slot=vox_pill]{position:fixed;right:14px;top:58px;pointer-events:none}
+#ui [data-slot=vox_pill]{position:fixed;right:14px;top:100px;pointer-events:none}
 #ui [data-slot=vox_pill].narrow{top:112px}
 .vx-box{background:rgba(16,20,26,.84);color:#fff;border-radius:10px;padding:8px 14px 10px;display:flex;flex-direction:column;gap:5px;font-size:16px;font-weight:600}
 .vx-box.shiny .vx-name{color:#ffd23d}

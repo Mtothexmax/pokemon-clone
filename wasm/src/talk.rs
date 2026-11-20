@@ -7,7 +7,8 @@
 //! * [`TARGETS`] lists everything you can use (studs) with what it does ([`Use`]: talk with its
 //!   [`DialogId`], read a sign, the TV, the piano, the computers, the bed); `PlayScreen::use_target`
 //!   dispatches. Stonecrest adds the knight, the baker and its signs. The lab quest's diving suit is
-//!   `Use::Suit` (`SUIT_TARGET`, only while it stands there). Pip's spot follows him (`Life::pip`).
+//!   `Use::Suit` (`SUIT_TARGET`, only while it stands there). Pip's spot follows him (`Life::pip`), the chest's
+//!   the chest (`CHEST_TARGET`, only while it stands there); the ducks' feeding spot and the park bench.
 //! * [`goal_text`] is the quest line from the save flags. [`CamZoom`] eases the camera to any board
 //!   ([`Board`]: a sign, a TV screen, a face; `tilt` for screens leaning back) and back.
 
@@ -42,6 +43,12 @@ pub enum Use {
     Sleep,
     /// Prof. Quill's old diving suit in the lab corner (only while it is there: `dive::suit_here`)
     Suit,
+    /// throw bread to the ducks (life.rs `Life::feed`)
+    Feed,
+    /// sit on the park bench (time flies)
+    Sit,
+    /// open the treasure chest (its spot moves: `Life::chest_p`, only while it stands there)
+    Chest,
 }
 
 const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static str) -> Target {
@@ -50,7 +57,7 @@ const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static st
 
 /// Everything you can do something with (Kaigen `world_target`): the villagers, the signs and the
 /// mailbox, the TVs, the piano, the computers, your bed. Pip's spot follows him.
-pub const TARGETS: [Target; 24] = [
+pub const TARGETS: [Target; 27] = [
     Target { kind: Use::Talk, x: 193.4, z: -2.8, verb: "Talk to", label: "Mom", dialog: DialogId::Mom, npc: "mom" },
     Target { kind: Use::Talk, x: 335.4, z: -1.2, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Prof, npc: "lab-prof" },
     Target { kind: Use::Talk, x: 52.5, z: -1.8, verb: "Talk to", label: "Dex", dialog: DialogId::Dex, npc: "rival" },
@@ -81,7 +88,14 @@ pub const TARGETS: [Target; 24] = [
     thing(Use::Read(6), 5.5, -107.4, "Read", "the town sign"),
     Target { kind: Use::Talk, x: 7.0, z: -144.8, verb: "Talk to", label: "Sir Bricksworth", dialog: DialogId::Knight, npc: "knight" },
     Target { kind: Use::Talk, x: -8.0, z: -109.2, verb: "Talk to", label: "Marla", dialog: DialogId::Baker, npc: "baker" },
+    // village life (Kaigen st_world.c: the pond's feeding spot, the park bench; the chest moves)
+    thing(Use::Feed, -2.7, 18.5, "Feed", "the ducks"),
+    thing(Use::Sit, 15.0, -7.4, "Sit on", "the park bench"),
+    thing(Use::Chest, 0.0, 0.0, "Open", "the treasure chest"),
 ];
+pub const CHEST_TARGET: usize = 26;
+pub const SIT_TARGET: usize = 25;
+pub const FEED_TARGET: usize = 24;
 pub const SUIT_TARGET: usize = 19;
 /// Prof. Quill at the gap: her spot moves aside once the way is open (`town::GATE_PROF_OPEN`).
 pub const GATE_TARGET: usize = 4;

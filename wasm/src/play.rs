@@ -6,8 +6,8 @@ use crate::battle::{BattleKind, Outcome};
 use crate::cards;
 use crate::dive::{self, Dive};
 use crate::dialog::{dialog_for, DialogAction, DialogId, DialogState};
-use crate::figure::Figure;
-use crate::life::{self, Life};
+use crate::figure::{Figure, Pose};
+use crate::life::{self, Life, LifeIn, LifeView};
 use crate::settings::{self, MenuOut};
 use crate::sound::{self, Sfx, Track};
 use crate::screens::{ScreenKind, Screens};
@@ -154,13 +154,32 @@ pub struct PlayScreen {
     look: Option<talk::Board>,
     /// Stonecrest's fountain: its water, jet, streams, spray and ripples (fountain.rs)
     fountain: crate::fountain::Fountain,
+    // ---- village life: ducks, ball, chest, weather, Pip's games (life.rs) ----
+    life_view: LifeView,
+    /// days passed (the clock's wraps) and the last hour seen
+    day: u32,
+    last_hours: Option<f32>,
+    /// your move wish this step (world x/z, for kicking the ball) and the sprint key held while moving
+    move_dir: Vec2,
+    sprinting: bool,
+    /// swipe walking on phones (swipe.rs) and the way it walks this step
+    swipe: crate::swipe::Swipe,
+    swipe_mode: bool,
+    /// the debug panel (debugpanel.rs)
+    dbg: crate::debugpanel::DebugPanel,
+    /// seconds of the frame clock (swipe walking's stall timer)
+    clock: f32,
+    /// times a move wish into a villager was stopped (tests)
+    npc_stops: u32,
+    /// the save's golden studs (for the debug picker)
+    golden_seen: u32,
 }
 
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
 const POND_EXIT: [f32; 2] = [-5.5, 13.6];
 const SURFACE_FADE: f32 = 0.5;
 /// The village HUD slots that go while you dive.
-const DIVE_HIDES: [&str; 13] = ["help", "touch", "goal", "prompt", "menubtn", "settings", "title", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "fade"];
+const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "settings", "title", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "fade", "seekfade", "debug"];
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
@@ -218,6 +237,13 @@ pub const STYLE: &str = "<style>
 .bh-sign{align-self:center;width:min(480px,calc(100vw - 24px));box-sizing:border-box;border:4px solid;border-radius:10px;padding:20px 18px 18px;display:flex;flex-direction:column;gap:10px;text-align:center}
 .bh-sign-t{font-size:30px;font-weight:800}.bh-sign hr{width:100%;height:3px;border:0;margin:0}
 .bh-sign-l{font-size:18px}.bh-sign-n{font-size:16px;font-style:italic}.bh-sign-c{font-size:13px;opacity:.6}
+#ui [data-slot=studs]{position:fixed;right:14px;top:58px;pointer-events:none}
+.bh-studs{background:rgba(16,18,24,.66);color:#f2cd37;border-radius:8px;padding:6px 12px;font-size:16px;display:flex;gap:14px}
+.bh-studs.narrow{flex-direction:column;gap:2px}.bh-seek{color:#ff8c78}
+#ui [data-slot=goal]{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+#ui [data-slot=seekfade]{position:fixed;inset:0;pointer-events:none;z-index:29}
+#ui [data-slot=seekfade]:empty{display:none}
+.bh-seekfade{position:fixed;inset:0;background:rgba(8,10,14,.94);color:#fff;font-size:34px;display:flex;align-items:center;justify-content:center}
 #ui [data-slot=toast]{position:fixed;left:0;right:0;top:70px;display:flex;justify-content:center}
 .bh-toast{background:rgba(250,250,246,.95);color:#1b2a34;border:2px solid #1b2a34;border-radius:10px;padding:8px 16px;font-size:18px}
 #ui .world-label.bh-mark{background:rgba(250,250,246,.88);color:#1b2a34;border:2px solid #1b2a34;padding:0;width:28px;height:18px;line-height:14px;text-align:center;font-weight:700;font-size:14px;border-radius:10px}
@@ -476,11 +502,13 @@ impl PlayScreen {
         let mut best = None;
         let mut best_d = f32::MAX;
         for (i, t) in TARGETS.iter().enumerate() {
-            if i == talk::SUIT_TARGET && !dive::suit_here(save) {
+            if (i == talk::SUIT_TARGET && !dive::suit_here(save)) || (i == talk::CHEST_TARGET && !self.life.chest_ready()) {
                 continue;
             }
             let (tx, tz) = if i == talk::PIP_TARGET {
                 (self.life.pip.x, self.life.pip.y)
+            } else if i == talk::CHEST_TARGET {
+                (self.life.chest_p.x, self.life.chest_p.z)
             } else if i == talk::GATE_TARGET && save.gate_open {
                 (town::GATE_PROF_OPEN[0], t.z)
             } else {
@@ -534,10 +562,25 @@ impl PlayScreen {
     /// E / Use at a target (Kaigen `world_pick` + the T_* cases of app_update).
     fn use_target(&mut self, ctx: &mut Ctx, data: &mut Data, i: usize) {
         let t = &TARGETS[i];
-        let weather = if ctx.renderer.sky.night > 0.5 { 1 } else { 0 }; // (rain comes with the weather of the life part)
+        let weather = self.life.weather_code();
         let seed = (ctx.time.frame as u32).wrapping_mul(2654435761) | 1;
         match t.kind {
+            Use::Talk if i == talk::PIP_TARGET && self.life.pip_hidden() => {
+                // hide and seek: found him, no chat
+                self.life.pip_found(&mut data.save.data);
+            }
             Use::Talk => return self.talk(ctx, data, i),
+            Use::Feed => {
+                let p = self.hero_pos(ctx).map(|h| h.0 / STUD).unwrap_or_default();
+                self.life.feed(&mut data.save.data, p);
+            }
+            Use::Sit => {
+                if self.life.sit(&mut data.save.data, true) {
+                    ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES / 24.0;
+                    self.move_to(ctx, life::BENCH_SEAT[0], life::BENCH_SEAT[1], std::f32::consts::PI);
+                }
+            }
+            Use::Chest => self.life.open_chest(&mut data.save.data),
             Use::Read(r) => {
                 // a sign opens and closes its text (the camera flies to a board)
                 self.reading = if self.reading == Some(r) { None } else { Some(r) };
@@ -595,12 +638,10 @@ impl PlayScreen {
             DialogAction::BattleRival => self.start_battle(ctx, data, BattleKind::Rival),
             DialogAction::BattlePractice => self.start_battle(ctx, data, BattleKind::Practice),
             DialogAction::BattlePip => self.start_battle(ctx, data, BattleKind::Pip),
-            // battles, hide and seek, tag, sleeping, the starter cards: their parts handle these
-            _ => {
-                log_info!("dialog action {act:?}: not implemented yet");
-                self.pending_action = Some(act);
-            }
+            DialogAction::HideSeek => self.life.hide_seek_start(),
+            DialogAction::Tag => self.life.toast("Tag! Sprint into Pip (hold Shift) and run!"),
         }
+        self.pending_action = Some(act); // (the last one, for tests)
     }
 
     /// A dialogue chose a battle (Kaigen `cg_start_battle`): the intro fanfare and the bricks; the battle screen is
@@ -796,11 +837,99 @@ impl PlayScreen {
         ctx.ui.set("sign", &html);
     }
 
+    /// The debug panel (Kaigen st_debug.c): on with the engine's debug mode (`) or the menu's switch; turning it on
+    /// names what is in the middle of the screen, a click or tap on the world names what is under it.
+    fn debug_panel(&mut self, ctx: &mut Ctx, actions: &[String], menu: bool, dt: f32) {
+        if actions.iter().any(|a| a == "dbg_toggle") {
+            self.dbg.menu_on = !self.dbg.menu_on;
+        }
+        let me = self.hero_pos(ctx).map(|h| h.0 / STUD).unwrap_or_default();
+        let was = self.dbg.on;
+        self.dbg.update(ctx, actions, me, dt);
+        if self.dbg.on {
+            let (w, h) = (ctx.canvas.client_width() as f32, ctx.canvas.client_height() as f32);
+            let at = if !was {
+                Some(Vec2::new(w * 0.5, h * 0.5))
+            } else if menu {
+                None
+            } else if ctx.input.button_pressed(MouseButton::Left) && !ctx.input.pointer_over_panel {
+                Some(ctx.input.pointer)
+            } else {
+                ctx.input.touch.taps.first().copied()
+            };
+            if let Some(c) = at {
+                self.debug_pick(ctx, c);
+            }
+        }
+        self.dbg.draw(ctx, me, self.touch_ui);
+    }
+
+    /// The debug picker at a canvas point (CSS px); also the `debug_pick` command.
+    fn debug_pick(&mut self, ctx: &mut Ctx, css: Vec2) {
+        let mut spheres: Vec<(String, Vec3, f32)> = vec![];
+        for i in 0..self.npcs.len() {
+            if self.npcs[i].area != self.area {
+                continue;
+            }
+            if let Some(q) = self.npc_pos(ctx, i) {
+                let name = match self.npcs[i].id.as_str() {
+                    "rival" => "Dex",
+                    "kid" => "Pip",
+                    "gate-prof" => "Prof. Quill (at the gap)",
+                    "mom" => "Mom",
+                    "lumi" => "Lumi",
+                    "lab-prof" => "Prof. Quill (lab)",
+                    "knight" => "Sir Bricksworth",
+                    "baker" => "Marla",
+                    _ => "villager",
+                };
+                spheres.push((name.to_string(), q / STUD + Vec3::Y * 2.4, 1.8));
+            }
+        }
+        let save = crate::save::GameSave { golden_mask: self.golden_seen, ..Default::default() };
+        for (n, c, r) in LifeView::pick_spheres(&self.life, &save) {
+            spheres.push((n.to_string(), c, r));
+        }
+        self.dbg.pick(ctx, css, self.hero, &spheres, |x, z| town::ROADS.iter().any(|r| r.contains(x, z)));
+    }
+
+    /// Every frame: the life's sounds, the day count, the rain's haze and loop, the lamps' glow.
+    fn life_frame(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        for (sfx, pitch, vol) in std::mem::take(&mut self.life.sfx) {
+            data.sound.sfx(ctx, sfx, pitch, vol);
+        }
+        if std::mem::take(&mut self.life.fish_splash) {
+            if let Some(c) = self.life_view.fish_clip {
+                ctx.audio.play(c, Play::new().volume(0.6));
+            }
+        }
+        let h = ctx.renderer.settings.time_of_day;
+        if let Some(last) = self.last_hours {
+            if h + 12.0 < last {
+                self.day += 1; // past midnight
+            }
+        }
+        self.last_hours = Some(h);
+        // rain: the air gets hazy (Kaigen: the stylized sky's haze 0.6 + 0.9 x rain)
+        if !self.dive.on {
+            let k = self.life.rain_level;
+            let s = &mut ctx.renderer.settings;
+            s.fog_density = 0.055 * (1.0 + 1.5 * k);
+            s.fog_start = 90.0 * STUD * (1.0 - 0.5 * k);
+        }
+        self.life_view.frame(ctx, &self.life);
+        self.golden_seen = data.save.data.golden_mask;
+    }
+
     /// The goal pill, the talk prompt, the toast and the markers over the villagers.
     fn draw_hud(&mut self, ctx: &mut Ctx, data: &Data, night: f32) {
         let s = &data.save.data;
-        let goal = if self.fight { String::new() } else { format!("<div class='bh-goal{}'><b>GOAL</b><span>{}</span></div>", if night > 0.5 { " night" } else { "" }, talk::goal_text(s)) };
+        let narrow = ctx.canvas.client_width() < 640;
+        let (studs, seekfade) = self.life.hud(s, narrow);
+        let goal = if self.fight { String::new() } else { format!("<div class='bh-goal{}'><b>GOAL</b><span>{}</span></div>{}", if night > 0.5 { " night" } else { "" }, talk::goal_text(s), if narrow { studs.as_str() } else { "" }) };
         ctx.ui.set("goal", &goal);
+        ctx.ui.set("studs", if narrow || self.zoom.active { "" } else { &studs });
+        ctx.ui.set("seekfade", &seekfade);
         if self.fight {
             self.title_t = 0.0; // a fight: its HP bar takes the title's place
         }
@@ -808,7 +937,9 @@ impl PlayScreen {
             Some(i) if !self.busy => {
                 let t = &TARGETS[i];
                 let (key, cls) = if self.touch_ui { ("", " touch") } else { ("<kbd>E</kbd>", "") };
-                format!("<div class='bh-prompt{cls}'>{key}<span>{} {}</span></div>", t.verb, t.label)
+                // hide and seek: E finds him
+                let (verb, label) = if i == talk::PIP_TARGET && self.life.pip_hidden() { ("Found you,", "Pip!") } else { (t.verb, t.label) };
+                format!("<div class='bh-prompt{cls}'>{key}<span>{verb} {label}</span></div>")
             }
             _ => String::new(),
         };
@@ -827,7 +958,9 @@ impl PlayScreen {
         let me = self.hero_pos(ctx).map(|(p, _)| p).unwrap_or_default();
         for i in 0..self.npcs.len() {
             let d = self.npc_pos(ctx, i).map(|q| (q - me).length()).unwrap_or(f32::MAX);
-            let show = !self.zoom.active && d < 40.0 * STUD && d > 1.2 * STUD && self.npcs[i].area == self.area;
+            // (Pip hiding has no marker: it would give him away)
+            let hiding = self.npcs[i].id == "kid" && self.life.pip_mode == life::PipMode::Hiding;
+            let show = !self.zoom.active && d < 40.0 * STUD && d > 1.2 * STUD && self.npcs[i].area == self.area && !hiding;
             let big = talk::marker_big(&self.npcs[i].id, s, self.mom_talked, self.kid_talked);
             let html = if !show {
                 String::new()
@@ -875,6 +1008,7 @@ impl Screen<Data> for PlayScreen {
         self.grass = crate::grass::Grass::new(tufts);
         self.fountain = crate::fountain::Fountain::spawn(ctx);
         self.life.blocks = solids.iter().map(|s| s.r).collect();
+        self.life_view = LifeView::spawn(ctx, data.town.as_mut().unwrap(), &self.life);
         self.fader = crate::fade::Fader::new(occluders);
         self.stats = stats;
         for l in town::LAMPS {
@@ -960,9 +1094,11 @@ impl Screen<Data> for PlayScreen {
 
     fn pause(&mut self, ctx: &mut Ctx, _data: &mut Data) {
         // a battle covers the village: its HUD and the markers go
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill"] {
+        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"] {
             ctx.ui.set(slot, "");
         }
+        ctx.audio.set_bus_volume(Bus::Ambience, 0.0); // (the rain is outside)
+        self.swipe.stop();
         for n in &mut self.npcs {
             let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
             n.marker_html.clear();
@@ -990,13 +1126,16 @@ impl Screen<Data> for PlayScreen {
         self.scr.close(ctx, &mut data.sound);
         data.cards.deck_open = false;
         self.dive.abort(ctx);
+        self.life_view.stop(ctx);
+        ctx.audio.set_bus_volume(Bus::Ambience, 1.0);
+        ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
         ctx.input.touch.set_stick_enabled(true);
-        for slot in ["dive", "dive_fx", "help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill"] {
+        for slot in ["dive", "dive_fx", "help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"] {
             ctx.ui.set(slot, "");
         }
     }
 
-    fn fixed_update(&mut self, ctx: &mut Ctx, _data: &mut Data) {
+    fn fixed_update(&mut self, ctx: &mut Ctx, data: &mut Data) {
         // the camera never turns (the original's fixed view): W is always north (-z)
         if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut ThirdPersonCamera>(c).ok()) {
             c.yaw = 0.0;
@@ -1009,11 +1148,48 @@ impl Screen<Data> for PlayScreen {
         let mut axis = ctx.input.move_axis();
         let mut jump = (space && !self.jump_block) || std::mem::take(&mut self.jump_tap);
         let mut run = ctx.input.key("ShiftLeft") || ctx.input.key("ShiftRight") || ctx.input.touch.axis.length() > TOUCH_RUN;
-        if self.busy {
+        self.sprinting = run && axis.length() > 0.2;
+        // swipe walking: keep going that way (keys and the stick take over while used); anything busy stops it
+        if self.swipe.on {
+            let feet = self.hero_pos(ctx).map(|h| h.0);
+            if self.busy || self.fight || self.life.sitting || !self.swipe_mode || axis.length() > 0.05 {
+                self.swipe.stop();
+            } else if let Some(wd) = feet.and_then(|f| self.swipe.step(ctx, f, self.clock, self.area)) {
+                axis = Vec2::new(wd.x, -wd.y);
+            } else {
+                self.swipe.stop();
+            }
+        }
+        if self.busy || self.life.sitting || self.life.fade {
             axis = Vec2::ZERO;
             jump = false;
             run = false;
         }
+        // a villager in the way: the wish into them is dropped (you stop in front of them instead of sliding
+        // round their capsule; Kaigen's villagers are boxes)
+        if axis.length() > 0.01 {
+            if let Some((p, _)) = self.hero_pos(ctx) {
+                let wish = Vec2::new(axis.x, -axis.y); // world x/z
+                for i in 0..self.npcs.len() {
+                    if self.npcs[i].area != self.area {
+                        continue;
+                    }
+                    let Some(q) = self.npc_pos(ctx, i) else { continue };
+                    let to = Vec2::new(q.x - p.x, q.z - p.z);
+                    let d = to.length();
+                    if d < 0.32 * 2.0 + 0.12 && d > 1e-3 {
+                        let n = to / d;
+                        let into = wish.dot(n);
+                        if into > 0.0 {
+                            let w = wish - n * into;
+                            axis = Vec2::new(w.x, -w.y);
+                            self.npc_stops += 1;
+                        }
+                    }
+                }
+            }
+        }
+        self.move_dir = Vec2::new(axis.x, -axis.y).normalize_or_zero();
         let mut face = if self.dlg.is_open() { self.face_yaw } else { None };
         if self.fight {
             // step back from the fight (a world direction: x east, y south) and keep watching it
@@ -1045,6 +1221,8 @@ impl Screen<Data> for PlayScreen {
             .unwrap_or((Vec3::ZERO, false));
         self.speed = Vec2::new(v.x, v.z).length();
         if let Some(mut f) = self.fig.take() {
+            f.pose = if self.life.sitting { Pose::Sit } else if self.life.dancing { Pose::Dance } else { Pose::Normal };
+            f.spin = if self.life.dancing { f.spin + dt * 2.6 } else { 0.0 };
             f.animate(ctx, dt, self.speed > 0.3, if run { 1.6 } else { 1.0 });
             self.fig = Some(f);
         }
@@ -1069,20 +1247,52 @@ impl Screen<Data> for PlayScreen {
             self.grass.set_pushers(vec![]);
         }
         self.grass.step(dt);
-        // ---- village life: Pip walks his loop; whoever you talk to turns to you ----
-        let me = self.hero_pos(ctx).map(|(p, _)| Vec2::new(p.x, p.z) / STUD).unwrap_or_default();
+        // ---- village life: golden studs, ducks, ball, chest, weather, Pip; whoever you talk to turns to you ----
+        let feet = self.hero_pos(ctx).map(|(p, _)| p / STUD).unwrap_or_default();
+        let me = Vec2::new(feet.x, feet.z);
         let kid = self.npc_index("kid");
         let talking_pip = self.dlg.is_open() && self.talk_npc.is_some() && self.talk_npc == kid;
-        self.life.step_pip(me, dt, self.area.is_none(), talking_pip);
+        let input = LifeIn {
+            p: feet,
+            move_dir: self.move_dir,
+            speed_m: self.speed,
+            sprinting: self.sprinting,
+            outside: self.area.is_none() && !self.dive.on && self.sink_t <= 0.0,
+            night: ctx.renderer.sky.night,
+            day: self.day,
+            talking_pip,
+        };
+        self.life.step(&mut data.save.data, &input, dt);
+        if std::mem::take(&mut self.life.dirty) {
+            data.save.mark();
+        }
+        self.life_view.sync(ctx, &self.life, &data.save.data);
+        let dancing = self.life.dancing;
         if let Some(k) = kid {
             let (pos, yaw, sp) = (self.life.pip, self.life.pip_yaw, self.life.pip_speed);
+            let walk = self.life.pip_mode == life::PipMode::Walk;
             let n = &mut self.npcs[k];
             n.yaw = yaw;
+            n.fig.pose = if dancing && walk { Pose::ArmsUp } else { self.life.pip_pose };
+            n.fig.spin = if dancing && walk { n.fig.spin + dt * 4.0 } else { 0.0 };
             if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
                 t.translation = town::m(pos.x, 0.0, pos.y);
                 t.rotation = Quat::from_rotation_y(yaw);
             }
-            n.fig.animate(ctx, dt, sp > 0.1, 0.6);
+            n.fig.animate(ctx, dt, sp > 0.1, (sp / life::PIP_WALK * 0.6).clamp(0.6, 1.6));
+        }
+        // dancing: the villagers within 10 studs dance along (arms up); they stand still otherwise
+        for i in 0..self.npcs.len() {
+            if Some(i) == kid || self.npcs[i].id == "gate-prof" {
+                continue;
+            }
+            let close = self.npc_pos(ctx, i).map(|q| (q / STUD - feet).length() < 10.0).unwrap_or(false);
+            let pose = if dancing && close { Pose::ArmsUp } else { Pose::Normal };
+            let n = &mut self.npcs[i];
+            if pose != Pose::Normal || n.fig.pose != Pose::Normal {
+                n.fig.pose = pose;
+                n.fig.animate(ctx, dt, false, 1.0);
+            }
         }
         if let (true, Some(i)) = (self.dlg.is_open(), self.talk_npc) {
             if Some(i) != kid {
@@ -1128,6 +1338,7 @@ impl Screen<Data> for PlayScreen {
                 self.dive.draw(ctx, &data.save.data, self.touch_ui);
             }
             self.life.update(dt);
+            self.life_frame(ctx, data);
             data.save.update(ctx, dt);
             let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
             ctx.ui.set("toast", &toast);
@@ -1195,7 +1406,36 @@ impl Screen<Data> for PlayScreen {
             self.talk_npc = None;
             self.face_yaw = None;
         }
-        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some();
+        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some() || self.life.fade;
+        // ---- the bench: any move gets you up; Q dances (moving stops it) ----
+        let moving = ctx.input.move_axis().length() > 0.2 || self.swipe.on;
+        if self.life.sitting && moving && !self.busy {
+            self.life.sit(&mut data.save.data, false);
+            ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+        }
+        if ctx.input.key_pressed("KeyQ") && !self.busy && !self.life.sitting && !self.fight {
+            self.life.dancing = !self.life.dancing;
+            if self.life.dancing {
+                data.sound.sfx(ctx, Sfx::Fanfare, 1.5, 0.5);
+                self.life.toast("Dance party! Everyone joins in.");
+            }
+        } else if moving || self.busy || self.fight {
+            self.life.dancing = false;
+        }
+        // ---- swipe walking on phones (the menu's CONTROLS: Swipe or Stick) ----
+        self.clock += dt;
+        self.swipe_mode = self.touch_ui && data.save.data.touch_mode == 0;
+        if !self.fight && !self.dive.on {
+            let want_stick = !self.swipe_mode;
+            if ctx.input.touch.stick_enabled() != want_stick {
+                ctx.input.touch.set_stick_enabled(want_stick);
+            }
+            if self.swipe_mode && !menu && !cards_busy {
+                if let Some((p, _)) = self.hero_pos(ctx) {
+                    self.swipe.touch(ctx, p, self.clock, self.area);
+                }
+            }
+        }
 
         // ---- your Voxelmon: it follows you; in the tall grass a fight holds you in place ----
         if let Some((p, _)) = pos {
@@ -1286,6 +1526,7 @@ impl Screen<Data> for PlayScreen {
             }
         }
         self.life.update(dt);
+        self.life_frame(ctx, data);
         if self.area.is_none() {
             let me = self.hero_pos(ctx).map(|h| h.0);
             self.grass.update(ctx, me, dt);
@@ -1313,7 +1554,7 @@ impl Screen<Data> for PlayScreen {
             ctx.ui.set("menubtn", "");
             ctx.ui.set("settings", "");
         } else {
-            data.settings.draw(ctx, &data.save.data, &data.sound);
+            data.settings.draw(ctx, &data.save.data, &data.sound, self.dbg.menu_on);
         }
         let hud = !self.dlg.is_open() && !self.scr.is_open() && !self.zoom.active && !self.fight;
         data.cards.draw(ctx, &data.save, &mut data.faces, hud, self.touch_ui);
@@ -1329,6 +1570,7 @@ impl Screen<Data> for PlayScreen {
         } else {
             self.vox.draw(ctx, self.area.is_none() && !self.dlg.is_open() && !self.zoom.active, night > 0.5, narrow);
         }
+        self.debug_panel(ctx, &actions, menu, dt);
         Trans::None
     }
 
@@ -1337,7 +1579,8 @@ impl Screen<Data> for PlayScreen {
             ("teleport", "Move the hero (studs, like the three.js town). args: {x, z}"),
             ("time", "Set the time of day. args: {hours}"),
             ("talk", "Talk to whoever is in reach (as E). args: {} | {dialog: 'Pip'|'Dex'|'Mom'|'Prof'|'Lumi'|'Gate'|'Machine'|'Knight'|'Baker'} opens that dialog directly"),
-            ("life", "Village life. args: {freeze?: bool, pip_home?: true}"),
+            ("life", "Village life (life.rs). args: {freeze?: bool, pip_home?: true, rain?: bool (a shower now / dry), chest?: true (one appears now, 12..50 studs away), chest_at?: [x, z], seek?: true (as the dialog's hide and seek), tag?: true (Pip flees now), ball?: [x, z, vx?, vz?], dance?: bool, sit?: bool, fish?: true (jumps when you are near), golden?: n (that many collected)}; state in game_state.state.life"),
+            ("debug_pick", "The debug panel's picker at a canvas point (CSS px), as a click with the panel on. args: {x, y} | {copy: 'pick'|'me'} (the Copy buttons) | {menu: bool} (the menu's switch)"),
             ("save_reset", "A new game: the save (progress and menu settings) back to the defaults, intro already seen (see `intro`)."),
             ("intro", "Start a new game's intro: wake up in your room with the thought about the day (as after the first load)."),
             ("enter", "Go into a room as through its door (fade, teleport). args: {room: 'Home'|'Dex'|'Lab'|'Bedroom'}"),
@@ -1390,7 +1633,80 @@ impl Screen<Data> for PlayScreen {
                 if a["pip_home"].as_bool() == Some(true) {
                     self.life.pip_home();
                 }
-                Some(Ok(json!({"frozen": self.life.frozen, "pip": [self.life.pip.x, self.life.pip.y]})))
+                if let Some(r) = a["rain"].as_bool() {
+                    self.life.set_rain(r);
+                }
+                if a["chest"].as_bool() == Some(true) {
+                    self.life.chest_live = false;
+                    self.life.chest_next = 0.0;
+                    self.life.chest_day = None;
+                }
+                if let Some(c) = a["chest_at"].as_array() {
+                    let f = |i: usize| c.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                    self.life.chest_p = Vec3::new(f(0), 0.0, f(1));
+                    self.life.chest_live = true;
+                    self.life.chest_open = false;
+                }
+                if a["seek"].as_bool() == Some(true) {
+                    self.life.hide_seek_start();
+                }
+                if a["tag"].as_bool() == Some(true) {
+                    self.life.pip_mode = life::PipMode::Flee;
+                }
+                if let Some(b) = a["ball"].as_array() {
+                    let f = |i: usize| b.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                    self.life.ball_p = Vec3::new(f(0), 0.6, f(1));
+                    self.life.ball_v = Vec3::new(f(2), 0.0, f(3));
+                }
+                if let Some(d) = a["dance"].as_bool() {
+                    self.life.dancing = d;
+                }
+                if let Some(on) = a["sit"].as_bool() {
+                    if on {
+                        self.use_target(ctx, data, talk::SIT_TARGET);
+                    } else if self.life.sit(&mut data.save.data, false) {
+                        ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+                    }
+                }
+                if let Some(i) = a["to_fly"].as_u64() {
+                    let f = self.life.fly_at[i as usize % self.life.fly_at.len()].0;
+                    self.teleport(ctx, f.x, f.z);
+                }
+                if let Some(i) = a["to_firefly"].as_u64() {
+                    let f = self.life.ff_at[i as usize % self.life.ff_at.len()].0;
+                    self.teleport(ctx, f.x - 0.8, f.z);
+                }
+                if let Some(d) = a["to_pip"].as_f64() {
+                    let (px, pz) = (self.life.pip.x, self.life.pip.y);
+                    self.teleport(ctx, px, pz + d as f32);
+                }
+                if let Some(w) = a["wet"].as_f64() {
+                    self.life.wet = w as f32;
+                }
+                if let Some(t) = a["seek_left"].as_f64() {
+                    self.life.seek_left = t as f32;
+                }
+                if a["fish"].as_bool() == Some(true) {
+                    self.life.fish_next = 0.0;
+                }
+                if let Some(n) = a["golden"].as_u64() {
+                    data.save.data.golden_mask = ((1u64 << n.min(15)) - 1) as u32;
+                    data.save.mark();
+                }
+                Some(Ok(json!({"frozen": self.life.frozen, "pip": [self.life.pip.x, self.life.pip.y], "life": self.life.describe(&data.save.data)})))
+            }
+            "debug_pick" => {
+                if let Some(m) = a["menu"].as_bool() {
+                    self.dbg.menu_on = m;
+                }
+                if let Some(c) = a["copy"].as_str() {
+                    let me = self.hero_pos(ctx).map(|h| h.0 / STUD).unwrap_or_default();
+                    self.dbg.update(ctx, &[format!("dbg_copy:{c}")], me, 0.0);
+                }
+                if let (Some(x), Some(y)) = (a["x"].as_f64(), a["y"].as_f64()) {
+                    self.debug_pick(ctx, Vec2::new(x as f32, y as f32));
+                }
+                Some(Ok(self.dbg.describe()))
             }
             "save_reset" => {
                 data.save.reset(ctx);
@@ -1659,6 +1975,14 @@ impl Screen<Data> for PlayScreen {
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
             "busy": self.busy,
+            "life": self.life.describe(g),
+            "debug_panel": self.dbg.describe(),
+            "swipe": {"mode": self.swipe_mode, "on": self.swipe.on, "dir": [self.swipe.dir.x, self.swipe.dir.y], "started": self.swipe.started, "dodging": self.swipe.dodging},
+            "npc_stops": self.npc_stops,
+            "day": self.day,
+            "day_length": ctx.renderer.settings.day_length_minutes,
+            "fog_density": (ctx.renderer.settings.fog_density * 1000.0).round() / 1000.0,
+            "hero_pose": self.fig.as_ref().map(|f| f.pose),
             "pip": {"x": (self.life.pip.x * 100.0).round() / 100.0, "z": (self.life.pip.y * 100.0).round() / 100.0, "mode": self.life.pip_mode, "wp": self.life.pip_wp, "speed": self.life.pip_speed},
             "toast": if self.life.toast_t > 0.0 { Some(self.life.toast.clone()) } else { None },
             "goal": talk::goal_text(g),

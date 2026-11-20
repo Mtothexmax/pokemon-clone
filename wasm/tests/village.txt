@@ -1,0 +1,152 @@
+# Village life (life.rs, Kaigen st_life.c): golden studs, feeding the ducks, the jumping fish, butterflies, fireflies
+# at night, the ball and the goal, the treasure chest, rain and puddles, the park bench, dancing.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/village.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call time {"hours": 12}
+call life {"freeze": true, "pip_home": true, "rain": false}
+resume
+frames 5
+expect game_state.state.life.golden == 0
+expect game_state.state.life.puddles >= 8
+expect ui.slots.studs contains 0 studs
+# ---- a golden stud (the park's, 15 / -12): walk into it ----
+call teleport {"x": 18.5, "z": -12}
+frames 5
+down KeyA
+wait_for game_state.state.life.golden == 1 3000
+up KeyA
+expect game_state.state.save.studs == 5
+expect game_state.state.toast contains Golden stud! 1/15
+expect game_state.state.sound.last_sfx == "coin"
+frames 3
+expect ui.slots.studs contains 5 studs
+expect ui.slots.studs contains 1/15
+# all of them: the legendary card (the last one in your room upstairs)
+call life {"golden": 14}
+call teleport {"x": 194.5, "z": 43.4}
+frames 5
+expect game_state.state.life.golden == 15
+expect game_state.state.life.legendary == true
+# the legendary Goldbrick comes in a foil pack
+wait_for game_state.state.cards.rewards != null 3000
+action pack:0
+frames 40
+action pack_ok
+frames 10
+expect game_state.state.cards.rewards == null
+# ---- feeding the ducks: five crumbs fly into the pond, the ducks eat them ----
+call teleport {"x": -2.7, "z": 18.5}
+frames 10
+expect game_state.state.nearby == "the ducks"
+expect ui.slots.prompt contains Feed
+key KeyE
+frames 3
+expect game_state.state.life.crumbs == 5
+expect game_state.state.life.duck_feeds == 1
+expect game_state.state.toast contains The ducks love bread
+screenshot shots/village-ducks.png
+wait_for game_state.state.life.crumbs == 0 15000
+expect game_state.state.sound.last_sfx == "quack"
+# ---- the fish jumps when you are near ----
+call life {"fish": true}
+wait_for game_state.state.life.fish_jump > 0 3000
+wait_for game_state.state.life.fish_jump < 0 3000
+# ---- a butterfly: walk under it ----
+call life {"to_fly": 2}
+frames 5
+expect game_state.state.life.butterflies == 1
+expect game_state.state.toast contains A butterfly! (1 caught)
+# ---- fireflies at night: catch one walking ----
+call time {"hours": 23}
+frames 30
+expect game_state.state.life.fireflies_shown > 10
+call life {"to_firefly": 3}
+down KeyD
+frames 10
+up KeyD
+expect game_state.state.life.fireflies == 1
+screenshot shots/village-fireflies.png
+call time {"hours": 12}
+# ---- the ball: run into it, it rolls into the goal ----
+call life {"ball": [15, -5.6]}
+call teleport {"x": 11.5, "z": -5.6}
+frames 5
+down ShiftLeft
+down KeyD
+frames 40
+up KeyD
+up ShiftLeft
+wait_for game_state.state.life.goals == 1 6000
+expect game_state.state.toast contains GOAL!
+# after a while it comes back out
+wait_for game_state.state.life.goal_armed == true 8000
+# ---- the treasure chest ----
+call life {"chest": true}
+wait_for game_state.state.life.chest.live == true 3000
+expect game_state.state.toast contains Something sparkles
+call life {"chest_at": [30, 10]}
+call teleport {"x": 30, "z": 12}
+frames 10
+expect game_state.state.nearby == "the treasure chest"
+screenshot shots/village-chest.png
+key KeyE
+frames 3
+expect game_state.state.life.chests == 1
+expect game_state.state.toast contains Treasure! You found
+wait_for game_state.state.life.chest.live == false 6000
+# ---- rain: drops, haze, the loop on the ambience bus; inside it stops ----
+call life {"rain": true, "wet": 1}
+frames 10
+expect game_state.state.life.drops > 120
+expect game_state.state.fog_density > 0.1
+expect game_state.state.life.rain_level == 1
+screenshot shots/village-rain.png
+call enter {"room": "Home"}
+frames 40
+expect game_state.state.life.drops == 0
+expect game_state.state.life.rain_level == 0
+call teleport {"x": 205, "z": -3}
+frames 5
+key KeyE
+frames 5
+expect game_state.state.screen.weather == 2
+key Escape
+frames 10
+call teleport {"x": 30, "z": 0}
+call life {"rain": false, "wet": 0}
+frames 10
+expect game_state.state.fog_density < 0.06
+# ---- the park bench: time flies until you move ----
+call teleport {"x": 15, "z": -6.5}
+frames 10
+expect game_state.state.nearby == "the park bench"
+key KeyE
+frames 10
+expect game_state.state.life.sitting == true
+expect game_state.state.hero_pose == "Sit"
+expect game_state.state.day_length < 0.3
+expect game_state.state.life.bench_sits == 1
+screenshot shots/village-bench.png
+down KeyS
+frames 5
+up KeyS
+expect game_state.state.life.sitting == false
+expect game_state.state.day_length == 6
+# ---- dancing: Q, the villagers close by join in; moving stops it ----
+call teleport {"x": 52.5, "z": 1.5}
+frames 10
+key KeyQ
+frames 5
+expect game_state.state.life.dancing == true
+expect game_state.state.hero_pose == "Dance"
+expect game_state.state.toast contains Dance party
+screenshot shots/village-dance.png
+down KeyD
+frames 5
+up KeyD
+expect game_state.state.life.dancing == false
+call life {"freeze": false}
+call save_reset

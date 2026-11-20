@@ -64,6 +64,10 @@ pub struct GameSave {
     pub pip_wins: u32,
     pub tag_wins: u32,
     pub bench_sits: u32,
+    /// Butterflies caught (Kaigen `_reserved[0]`).
+    pub butterflies: u32,
+    /// Phones: 0 swipe walking (Kaigen's default), 1 the stick (the menu's CONTROLS).
+    pub touch_mode: u8,
     /// The intro thought was shown (the bedroom start, rooms part).
     pub intro_seen: bool,
 }
@@ -105,6 +109,8 @@ impl Default for GameSave {
             pip_wins: 0,
             tag_wins: 0,
             bench_sits: 0,
+            butterflies: 0,
+            touch_mode: 0,
             intro_seen: false,
         }
     }

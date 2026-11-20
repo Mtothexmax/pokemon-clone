@@ -1200,6 +1200,8 @@ pub struct TownAssets {
     pub creek: MaterialId,
     /// the blades of a tall grass tuft (`tuft_mesh`)
     pub tuft: MeshId,
+    /// the village life's meshes (life.rs, made on the first play screen)
+    pub life: Option<crate::life::LifeArt>,
 }
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
@@ -1258,7 +1260,7 @@ impl TownAssets {
         let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });
         let _ = AlphaMode::Opaque;
         let tuft = ctx.renderer.add_mesh("grass tuft", &tuft_mesh());
-        Self { materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft }
+        Self { materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft, life: None }
     }
 
     pub fn material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
