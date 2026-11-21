@@ -25,11 +25,14 @@ comes from.
   cave and the dive keep studs too; engine positions (`hero_pos`, `npc_pos`) are metres.
 - **Render layers** (`MeshRenderer::layer`, `ctx.set_layer`, `ParticleEmitter::layer`): 0 the hero, 1 the village
   (`rooms::VILLAGE_LAYER`), 2..5 the rooms (`rooms::layer_of`), 6 / 7 / 9 / 10 the north bands (`town::NORTH_BANDS`),
-  8 the cave (`cave::CAVE_LAYER`), 29 the battle table (`arena::LAYER`), 31 drawn by no camera (`rooms::HIDDEN_LAYER`);
-  11+ are free. Anything outside goes on `town::layer_at(x, z)`, or it shows everywhere / nowhere. The play camera
+  8 the cave (`cave::CAVE_LAYER`), 11 / 12 / 13 the island's near chunks, far chunks and sea (`island::LAYER_NEAR`,
+  `LAYER_FAR`, `LAYER_SEA`), 29 the battle table (`arena::LAYER`), 31 drawn by no camera (`rooms::HIDDEN_LAYER`);
+  14..28 are free. Anything outside goes on `town::layer_at(x, z)`, or it shows everywhere / nowhere. The play camera
   draws `1 | town::bands_near(z, 30, 40)` outside (`PlayScreen::outdoor_zone`, every frame), `town::all_bands()` while
   it looks far (a close-up, a fight), `1 | room layer` inside (`show_area`). The engine's z-fighting check does not
-  know layers: a hidden duplicate also moves away (the Deck-o-Matic's screens step 2 m down).
+  know layers: a hidden duplicate also moves away (the Deck-o-Matic's screens step 2 m down). Near the island
+  (`IslandView::layers`) the mask adds 11 | 13 (12 too while looking far); on the island the strip's bands reach only
+  24 studs south (its forest is heavy). `town::layer_at` gives `LAYER_NEAR` north of `island::SOUTH_Z` (z -194).
 - **Randomness:** `crate::lcg` / `lcg_f` (the Kaigen LCG) for every game stream (town layout, `Life` seed 4242,
   battles, Voxelmon, sounds); particles use `ctx.particle_rng` / fixed seeds; `Data::cg_rand` mixes `Math.random`
   into the card game's seed (`battle {seed}` fixes one battle).
@@ -61,6 +64,9 @@ comes from.
 | `grass.rs` | the tall grass bends away from walkers on the GPU (`Material::bend` = `TUFT_BEND`, `ctx.renderer.set_pushers`: the nearest 16 walkers + your wake), the engine's wind with a slow gust (`WIND_STRENGTH`); tuft transforms are never written (don't `batch_static` the tufts) |
 | `fountain.rs` | Stonecrest's fountain water: engine water in the basin and bowl, jet, streams, droplets, spray (seeded particles on the square's band layer), ripple rings |
 | `fade.rs` | `Fader`: buildings / trees between the camera and you fade (`MeshRenderer.opacity`; drawn as their front surface with `solid_fade`) |
+| `island.rs` | the island north of Stonecrest (OPEN_WORLD.md): the height law `natural(x, z)` (coast as a signed distance of capsules between region centres + bays + noise warp, hills, ridged mountains in the north, mesas with cliffs, warmth, forest), `Island::bake` (the lattice of `CELL` 4 studs), `Island::cell` (one stud: lattice + terraces + the flat `PADS` with blend rings + the graded `ROADS` and their valley, rounded to plates; its colour), `PALETTE`, the north gate's spot (`GATE_X`), self-tests (debug builds) |
+| `islandview.rs` | `IslandView` (in `PlayScreen::isle`): the island's 64-stud chunks streamed around you within `budget_ms` per frame (fine: 1-stud cells, colliders; coarse: 4-stud cells, kept until the fine one exists), greedy tops with the baseplate's stud texture per colour, risers as bricks (±3 %, rock strata on big drops) from a palette texture, skirts at chunk borders, real studs within 12 studs (10 on phones), deep water as a wall, the sea (`ocean_mesh`, 170 m, `Ocean` follows the camera) |
+| `worldmap.rs` | the world map: painted once from the lattice (biome tint, hill-shade, inked coast, roads, the strip) on a canvas -> PNG data URL; names, "?" on unfound pads and your arrow as HTML (`map`, `map_me` slots, `worldmap::STYLE`) |
 | `vox.rs` | your Voxelmon (follows you), wild fights in the tall grass (encounters, skills, HP, projectiles, the fight camera made main, rewards), the upgrade showcase, the HP pill; models `assets/beasts/<card id>.glb` |
 | `dive.rs` / `cave.rs` | the lab quest: the suit, sinking into the pond, swimming in the cave (own camera, fog, light; touch: hold / steer / pinch), pearls, the Stud Core; `cave.rs` builds the static cave (basin, tunnel `TUN_*`, deep grotto `DEEP_*`, `Zone`) far east on layer 8 |
 | `cards.rs` | card data (`CARDS`, `card(c)`, `by_id`, kinds, `ZONES`, `DECKS`, `STARTER`), stages and upgrades, EXP, rewards, the collection in the save, pictures from `src/beasts.bin` |
@@ -101,6 +107,12 @@ comes from.
   back in `Dive::stop`. Rain haze: `life_frame` scales `fog_density` / `fog_start`.
 - **Grass pushers:** add walkers in `PlayScreen::grass_pushers` (feet in metres, radius).
 - **Particles:** every emitter on a render layer (outside: `town::layer_at`; battle: `arena::LAYER`).
+- **Island:** `Data::island` (the baked law, `Rc`, once per game), `PlayScreen::isle.update` every frame before
+  `outdoor_zone`; `teleport` north of z -194 builds the chunk under you at once and puts you on its ground
+  (`Island::ground_y`). The north gate: `north_gate` (doors, the blocker, walking into it closed -> the guard's
+  `DialogId::NorthGate`; `DialogAction::OpenNorthGate`), save `north_gate`; pads found by walking onto them
+  (`discover`, save `isle_found` bits). The map: M / the menu's Map row (`map`), M / Esc / a tap (`map_close`) close it
+  (`set_map`); it makes you busy.
 - **Phones:** `Data::ensure_loaded` detects a phone (coarse pointer, or touch points + a mobile UA) for the phone
   profile from the first frame (`phone_quality`: 2 cascades, half resolution, 20 ms budget, no screen-space
   extras). No frame cap: the engine's frame pacing picks the cadence (`stats.render.pacing`). `ctx.renderer.prewarm()`
@@ -115,12 +127,14 @@ comes from.
   `enter {room}`, `flags {any GameSave field}`, `play_sfx {name, pitch}`, `cards {starter, give, exp, level, deck,
   rewards, open, pick}`, `card_face {id, level, big, unknown, back, power, texture}`, `battle {kind, seed, instant,
   start}`, `look {at, yaw, w, h, tilt}` / `look {}`, `tall_grass {wind}`, `vox {force, shiny, skill, run, hp, tired,
-  wild_idle, rate, seed}`, `dive {sink, start, at, yaw, pitch, skip_fade, surface}`, `card_preview {id, level, big,
+  wild_idle, rate, seed}`, `dive {sink, start, at, yaw, pitch, skip_fade, surface}`, `island {gate: open|closed, map,
+  budget, found, cell: [x, z], line: [x0, z0, x1, z1, n], reset_stats}`, `card_preview {id, level, big,
   back} | {clear}`.
 - Battle screen: `battle_play {card|hand, zone}`, `battle_end_turn`, `battle_auto {end}`, `battle_ui {action}`,
   `battle_inspect {card|zone|close}`, `battle_speed {x}`, `battle_cheat {power, foe}`, `battle_continue`.
 - `game_state.state` (play screen) has the hero, npcs (head, pose), area, door, title, zone, bands, indoor,
-  camera_layers, machine, reading, screen, sleeps, mouths, life, grass, fountain, vox, fight, dive, cards, battle
+  camera_layers, island (law: bake_ms, pads, selftest; view: chunks, near tris, studs, colliders, build times; gate;
+  map; found; ground_gap), machine, reading, screen, sleeps, mouths, life, grass, fountain, vox, fight, dive, cards, battle
   transition, battles, save fields, swipe, debug_panel, npc_stops, respawns, gate_stops, rain_volume, menu, and the
   last `pending_action`; the battle screen's `state.battle` has the table (phase, hand, locations, rank, ...).
 - Kaigen's dev keys map to commands: F2 `dive {at}`, F3 `flags`, F6..F9 `vox {force}`, `cards {exp}`, `battle`,
@@ -143,6 +157,7 @@ Drive cards with touch input (`input {touch}`), not the mouse.
 | vox, vox_lose, vox_upgrade, vox_touch | Voxelmon, wild fights, the upgrade showcase |
 | dive, dive_touch | the lab quest and the cave |
 | north, grass, fountain | Route 1 / Stonecrest, the gate, bending grass, the fountain |
+| island, island_touch | the north gate (closed, forced, opened by the guard), the law's self-tests, streaming, ground, terraces, a cliff, the shallows, `zfight` 0 and < 60k triangles at sample spots, the map (desktop and upright phone) |
 | debug_panel | the panel and its picker |
 
 ## Tools (`tools/`)

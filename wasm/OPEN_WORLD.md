@@ -1,4 +1,4 @@
-# Brickhollow: Open-World-Insel (Plan, noch nicht begonnen)
+# Brickhollow: Open-World-Insel (Plan; Meilenstein 1 fertig)
 
 ## Rahmen
 - Brickhollow, Route 1 und Stonecrest bleiben **unverändert**. Sie liegen künftig an der Südspitze einer großen Insel.
@@ -90,6 +90,8 @@
 4. **Feinschliff:** Wasser und Strände, Atmosphäre pro Region, Leistungsrunde auf dem Handy.
 
 Jeder Meilenstein: Tests, Bildschirmfotos, Messung auf dem Handy, Commit.
+
+**Stand Meilenstein 1 (21.11.2026, fertig):** Nordtor hinter Stonecrest (Wache, Bedingung „erstes Voxelmon“, Tür-Animation, `island {gate}`), Höhengesetz `island.rs` (Gitter in ~50 ms gebacken, Selbsttests), drei flache Plätze (Brickton, Port Saltwick, Dewmere) mit gestufter Hauptstraße, Brick-Chunks mit grober/feiner Stufe, Noppen nah, Kollision, Meer mit Watzone (`islandview.rs`), Weltkarte v1 (`worldmap.rs`, M / Menü). Tests `tests/island.txt`, `tests/island_touch.txt`. Gemessen (Desktop, Debug-Build): Backen ~50 ms, Chunk fertigstellen ≤ 3,3 ms, Bau pro Bild ≤ 4,7 ms, 40–50 Tsd. Dreiecke (Handy-Ansicht 19–31 Tsd.). Noch offen: Messung auf dem echten Handy (`?measure`), Seen/Flüsse, Vegetation, Brücken (Meilenstein 2).
 
 ## Entscheidungen (21.11.2026)
 - **Tor:** Bedingung ist „erstes Voxelmon freigeschaltet“. Das braucht viel EXP, egal aus welchen Kämpfen (Dex, Lumi oder Pip).
