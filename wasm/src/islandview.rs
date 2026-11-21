@@ -149,7 +149,7 @@ struct Built {
 fn quad(md: &mut MeshData, p: [Vec3; 4], n: Vec3, uv: [[f32; 2]; 4]) {
     let base = md.vertices.len() as u32;
     for i in 0..4 {
-        md.vertices.push(Vertex { pos: p[i].into(), normal: n.into(), uv: uv[i] });
+        md.vertices.push(Vertex { pos: p[i].into(), normal: n.into(), uv: uv[i], color: Vertex::WHITE });
     }
     md.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
@@ -368,8 +368,8 @@ fn stud_tile(grid: &Grid, x0: f32, z0: f32, a0: usize, b0: usize) -> MeshData {
             let base = md.vertices.len() as u32;
             for &(cx, sz) in &ring {
                 let n = [cx, 0.0, sz];
-                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y, c.z + sz * r], normal: n, uv });
-                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y + h, c.z + sz * r], normal: n, uv });
+                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y, c.z + sz * r], normal: n, uv, color: Vertex::WHITE });
+                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y + h, c.z + sz * r], normal: n, uv, color: Vertex::WHITE });
             }
             for k in 0..8u32 {
                 let k1 = (k + 1) % 8;
@@ -378,7 +378,7 @@ fn stud_tile(grid: &Grid, x0: f32, z0: f32, a0: usize, b0: usize) -> MeshData {
             }
             let cap = md.vertices.len() as u32;
             for &(cx, sz) in &ring {
-                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y + h, c.z + sz * r], normal: [0.0, 1.0, 0.0], uv });
+                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y + h, c.z + sz * r], normal: [0.0, 1.0, 0.0], uv, color: Vertex::WHITE });
             }
             for k in 1..7u32 {
                 md.indices.extend_from_slice(&[cap, cap + k + 1, cap + k]);

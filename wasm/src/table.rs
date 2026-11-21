@@ -103,7 +103,7 @@ fn outline(w: f32, h: f32, r: f32) -> Vec<Vec2> {
 }
 
 fn vert(p: Vec3, n: Vec3, uv: Vec2) -> Vertex {
-    Vertex { pos: p.into(), normal: n.into(), uv: uv.into() }
+    Vertex { pos: p.into(), normal: n.into(), uv: uv.into(), color: Vertex::WHITE }
 }
 
 /// A slab: (the front face at +z with the texture's uv, the back face at -z (u mirrored, or v for `flip_v`) and
