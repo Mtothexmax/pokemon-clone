@@ -51,7 +51,7 @@ action use
 frames 5
 expect game_state.state.dialog == null
 call teleport {"x": -10, "z": 0.5}
-# (the camera comes back from the close-up first)
+frames 20
 wait_for ui.slots.touch contains >Jump< 3000
 expect game_state.state.nearby == null
 # the ☰ button opens the menu on phones too, and closes it
@@ -62,3 +62,17 @@ expect ui.slots.settings contains Voices
 action menu_close
 frames 3
 expect game_state.state.menu.open == false
+# ---- a sign by touch: the close-up keeps Use (and the stick), Use closes it again ----
+call teleport {"x": 5.9, "z": 23}
+frames 30
+expect game_state.state.nearby == "the village sign"
+action use
+frames 10
+expect game_state.state.reading == 0
+wait_for game_state.state.talk_cam == 1 3000
+expect ui.slots.touch contains >Use<
+expect game_state.state.stick == true
+action use
+frames 10
+expect game_state.state.reading == null
+wait_for game_state.state.talk_cam == 0 3000

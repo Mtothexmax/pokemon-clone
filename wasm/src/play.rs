@@ -842,9 +842,10 @@ impl PlayScreen {
         data.settings.applied = None;
     }
 
-    /// A dialog, a screen (computer, TV) or a close-up has the screen: no walking controls.
+    /// A dialog or a screen (computer, TV: they have their own close button) has the screen: no walking controls.
+    /// (not a sign's close-up: the Use button or walking off closes it, so it keeps the buttons and the stick)
     fn talking(&self) -> bool {
-        self.dlg.is_open() || self.scr.is_open() || self.zoom.active
+        self.dlg.is_open() || self.scr.is_open()
     }
 
     /// The touch buttons: Use only in reach of someone or in a dialog (Kaigen touch button 0).
