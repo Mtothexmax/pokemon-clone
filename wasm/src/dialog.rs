@@ -29,6 +29,8 @@ pub enum DialogAction {
     BattlePractice,
     DexScared,
     OpenGate,
+    /// the guard opens the north gate to the island
+    OpenNorthGate,
     QuestPart,
     BattlePip,
 }
@@ -57,6 +59,8 @@ pub enum DialogId {
     PipNotYet,
     PipWon,
     PipLost,
+    /// the guard at the north gate behind Stonecrest
+    NorthGate,
 }
 
 #[derive(Clone, Debug)]
@@ -83,6 +87,7 @@ fn d(id: DialogId, speaker: &'static str, lines: Vec<Line>) -> Dialog {
 }
 
 const QUILL: &str = "Prof. Hazel Quill";
+const GUARD: &str = "Gate guard";
 
 /// The lines as the three.js version had them before the first cards (Kaigen `dialog_script`).
 pub fn dialog_script(id: DialogId) -> Dialog {
@@ -256,6 +261,23 @@ pub fn dialog_for(id: DialogId, s: &GameSave) -> Dialog {
         LumiWon => dl = d(id, "Lumi", vec![l("Wow, you learn fast! Here, keep that card.", "f8de2d54")]),
         LumiLost => dl = d(id, "Lumi", vec![l("Good try! Watch which zones you can still win and focus there.", "2a3279f7")]),
         Lumi if s.has_deck => dl.choices = vec![("Practice battle", A::BattlePractice), ("Thanks!", A::None)],
+        NorthGate if !has_voxelmon => {
+            dl = d(id, GUARD, vec![
+                l("Halt! The north gate stays shut.", ""),
+                l("Beyond it lies a whole island: wild hills, cold mountains, the sea. No place for a trainer without a partner.", ""),
+                l("Raise one of your cards into a real Voxelmon first. Then I will open the gate for you.", ""),
+            ]);
+        }
+        NorthGate if !s.north_gate => {
+            dl = d(id, GUARD, vec![
+                l("Is that... a real Voxelmon at your side? Then you are ready for the island.", ""),
+                l("Stand back. Opening the north gate!", ""),
+            ]);
+            dl.on_end = A::OpenNorthGate;
+        }
+        NorthGate => {
+            dl = d(id, GUARD, vec![l("The road north leads to the island. Press M for your map. Safe travels!", "")]);
+        }
         Gate if s.has_deck && !has_voxelmon => {
             dl.lines = vec![
                 l("Hold on! Cards alone won't protect you out there.", "eeac3b70"),

@@ -59,7 +59,8 @@ pub fn layer_of(area: Option<RoomId>) -> u8 {
 
 /// The room you are in at (x, z) studs (Kaigen `world_area_at`), None outside.
 pub fn area_at(x: f32, z: f32) -> Option<RoomId> {
-    if x < 150.0 {
+    // (the island north of Stonecrest reaches far east too: never a room)
+    if x < 150.0 || z < crate::island::SOUTH_Z {
         return None;
     }
     if z > 25.0 {

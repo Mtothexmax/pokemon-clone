@@ -70,6 +70,11 @@ pub struct GameSave {
     pub touch_mode: u8,
     /// The intro thought was shown (the bedroom start, rooms part).
     pub intro_seen: bool,
+    // ---- the island (OPEN_WORLD.md) ----
+    /// The north gate behind Stonecrest is open (its guard opens it once you have a Voxelmon).
+    pub north_gate: bool,
+    /// The island's places you have found (bits: `island::PADS`).
+    pub isle_found: u32,
 }
 
 impl Default for GameSave {
@@ -112,6 +117,8 @@ impl Default for GameSave {
             butterflies: 0,
             touch_mode: 0,
             intro_seen: false,
+            north_gate: false,
+            isle_found: 0,
         }
     }
 }

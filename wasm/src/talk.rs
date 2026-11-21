@@ -56,7 +56,7 @@ const fn thing(kind: Use, x: f32, z: f32, verb: &'static str, label: &'static st
 
 /// Everything you can do something with (Kaigen `world_target`): the villagers, the signs and the
 /// mailbox, the TVs, the piano, the computers, your bed. Pip's spot follows him.
-pub const TARGETS: [Target; 27] = [
+pub const TARGETS: [Target; 28] = [
     Target { kind: Use::Talk, x: 193.4, z: -2.8, verb: "Talk to", label: "Mom", dialog: DialogId::Mom, npc: "mom" },
     Target { kind: Use::Talk, x: 335.4, z: -1.2, verb: "Talk to", label: "Prof. Quill", dialog: DialogId::Prof, npc: "lab-prof" },
     Target { kind: Use::Talk, x: 52.5, z: -1.8, verb: "Talk to", label: "Dex", dialog: DialogId::Dex, npc: "rival" },
@@ -91,7 +91,12 @@ pub const TARGETS: [Target; 27] = [
     thing(Use::Feed, -2.7, 18.5, "Feed", "the ducks"),
     thing(Use::Sit, 15.0, -7.4, "Sit on", "the park bench"),
     thing(Use::Chest, 0.0, 0.0, "Open", "the treasure chest"),
+    // the guard at the north gate behind Stonecrest (island.rs)
+    Target { kind: Use::Talk, x: GUARD_AT[0], z: GUARD_AT[1] + 1.2, verb: "Talk to", label: "the gate guard", dialog: DialogId::NorthGate, npc: "guard" },
 ];
+/// The guard at the north gate (studs, yaw): beside the west pillar, facing south.
+pub const GUARD_AT: [f32; 3] = [crate::island::GATE_X - crate::island::GATE_HALF - 2.6, -188.2, 0.0];
+pub const GUARD_TARGET: usize = 27;
 pub const CHEST_TARGET: usize = 26;
 pub const SIT_TARGET: usize = 25;
 pub const SUIT_TARGET: usize = 19;
@@ -176,6 +181,7 @@ pub fn marker_big(id: &str, s: &GameSave, mom_talked: bool, kid_talked: bool) ->
         "rival" => s.has_deck && s.rival_wins == 0,
         "kid" => s.golden_count() < 15 && !kid_talked,
         "gate-prof" => s.voxelmon > 0 && !s.gate_open,
+        "guard" => s.voxelmon > 0 && !s.north_gate,
         "mom" => !s.has_deck && !mom_talked,
         "lumi" => s.has_deck && s.wins == 0,
         "lab-prof" => !s.has_deck && (!s.quest_part || s.has_part),

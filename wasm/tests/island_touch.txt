@@ -1,0 +1,42 @@
+# The island on an upright phone (viewport 390x844 at dpr 3, touch): the phone profile, fewer real studs, the triangle
+# budget at sample spots, the world map from the ☰ menu's Map row and closed with a tap.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/island_touch.txt --port 9223 --url http://localhost:8091/
+viewport 390 844 3 touch
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+call save_reset
+call clock {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 10
+expect game_state.state.menu.shadow_cascades == 2
+call island {"gate": "open"}
+call teleport {"x": 35, "z": -240}
+frames 90
+expect game_state.state.island.view.active == true
+expect game_state.state.hero.grounded == true
+expect game_state.state.island.view.stud_tris < 12000
+expect stats.render.triangles < 60000
+call stats
+screenshot shots/island-touch-road.png
+call teleport {"x": -66, "z": -999.5}
+frames 90
+expect stats.render.triangles < 60000
+call stats
+call teleport {"x": 530, "z": -620}
+frames 90
+expect stats.render.triangles < 60000
+call stats
+screenshot shots/island-touch-coast.png
+# ---- the map from the menu, closed with a tap ----
+action menu
+frames 5
+action map
+frames 10
+expect game_state.state.island.map.open == true
+screenshot shots/island-touch-map.png
+action map_close
+frames 5
+expect game_state.state.island.map.open == false
+call save_reset

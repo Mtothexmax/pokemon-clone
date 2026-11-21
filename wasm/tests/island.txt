@@ -1,0 +1,189 @@
+# The island north of Stonecrest (island.rs, islandview.rs, worldmap.rs; OPEN_WORLD.md milestone 1): the height law's
+# bake and self-tests, the north gate (closed: its guard explains and sends you back; forced open; opened by the guard
+# for a trainer with a Voxelmon), walking through it onto the island, chunks streaming in, standing on the ground,
+# walking up plate terraces, a cliff and the deep sea stopping you, zero z-fighting and the triangle budget at sample
+# spots, the world map (M, the menu row, Esc, a tap), a pad found.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/island.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+call save_reset
+call clock {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 10
+# ---- the law: baked once, fast, its self-tests pass (pads apart and inland, roads graded and connected) ----
+expect game_state.state.island.law.selftest.ok == true
+expect game_state.state.island.law.bake_ms < 500
+expect game_state.state.island.law.selftest.road_max_step <= 1
+# (the village draws no island layer)
+expect game_state.state.island.view.active == false
+expect game_state.state.bands == 2
+# ---- the north gate is closed: walking into it sends you back to the guard, who explains ----
+expect game_state.state.island.gate.open == false
+expect game_state.state.island.gate.blocked == true
+expect game_state.state.npcs.8.id == "guard"
+call teleport {"x": 35, "z": -184}
+frames 10
+down KeyW
+frames 90
+up KeyW
+frames 5
+expect game_state.state.island.gate.stops == 1
+expect game_state.state.dialog.id == "NorthGate"
+expect game_state.state.dialog.text contains Halt
+expect game_state.state.talk_npc == "guard"
+expect game_state.state.hero.z > -190
+key KeyE
+frames 5
+key KeyE
+frames 5
+key KeyE
+frames 30
+expect game_state.state.dialog == null
+expect game_state.state.island.gate.open == false
+screenshot shots/island-gate-closed.png
+# ---- forced open (debug), closed again ----
+call island {"gate": "open"}
+frames 120
+expect game_state.state.island.gate.open == true
+expect game_state.state.island.gate.blocked == false
+expect game_state.state.island.gate.angle > 1.6
+call island {"gate": "closed"}
+frames 120
+expect game_state.state.island.gate.blocked == true
+expect game_state.state.island.gate.angle < 0.1
+# ---- with a Voxelmon the guard opens it: the doors swing north, a toast, the fanfare ----
+call cards {"give": ["titanoak"], "level": {"titanoak": 4}}
+call flags {"voxelmon": 32}
+call teleport {"x": 35, "z": -184}
+frames 5
+wait_for game_state.state.npcs.8.marker == "!" 3000
+down KeyW
+frames 90
+up KeyW
+frames 5
+expect game_state.state.island.gate.stops == 2
+expect game_state.state.dialog.text contains a real Voxelmon
+key KeyE
+frames 5
+key KeyE
+frames 30
+expect game_state.state.save.gate_open == false
+expect game_state.state.island.gate.open == true
+expect game_state.state.toast contains north gate is open
+expect game_state.state.sound.last_sfx == "fanfare"
+frames 120
+expect game_state.state.island.gate.angle > 1.6
+expect game_state.state.island.gate.blocked == false
+screenshot shots/island-gate-open.png
+# ---- through the gate onto the island: the road climbs plate by plate, chunks stream in around you ----
+call teleport {"x": 35, "z": -186}
+frames 10
+down KeyW
+frames 420
+up KeyW
+frames 30
+expect game_state.state.hero.z < -230
+expect game_state.state.zone == "Brick Isle"
+expect game_state.state.hero.grounded == true
+expect game_state.state.hero.y > 0.7
+expect game_state.state.island.ground_gap < 0.2
+expect game_state.state.island.ground_gap > -0.2
+expect game_state.state.island.view.active == true
+expect game_state.state.island.view.fine >= 4
+expect game_state.state.island.view.near >= 2
+expect game_state.state.island.view.stud_tiles > 0
+expect game_state.state.island.view.colliders > 100
+expect game_state.state.island.view.sea == true
+expect game_state.state.bands > 2048
+expect zfight{"center": [13.3, 0.4, -92], "radius": 12, "exclude": "hero"}.pairs == 0
+expect stats.render.triangles < 60000
+call stats
+screenshot shots/island-road.png
+# ---- on the ground at spots across the island (a teleport builds the chunk under you at once) ----
+call teleport {"x": -20, "z": -440}
+frames 40
+expect game_state.state.hero.grounded == true
+expect game_state.state.island.ground_gap < 0.2
+expect game_state.state.island.ground_gap > -0.2
+expect zfight{"center": [-7.6, 0.8, -167.2], "radius": 12, "exclude": "hero"}.pairs == 0
+expect stats.render.triangles < 60000
+call stats
+call teleport {"x": -100, "z": -800}
+frames 100
+expect game_state.state.hero.grounded == true
+expect game_state.state.island.ground_gap < 0.2
+expect game_state.state.island.ground_gap > -0.2
+screenshot shots/island-city-pad.png
+# ---- a pad is found by walking onto it: title, toast, its name on the map ----
+expect game_state.state.island.found == 1
+expect game_state.state.toast contains Brickton
+# ---- a cliff (2 risers of a brick and more) stops you; you only walk down it ----
+call teleport {"x": -66, "z": -999.5}
+frames 40
+expect game_state.state.hero.y > 15.0
+expect game_state.state.hero.y < 15.4
+down KeyD
+frames 150
+up KeyD
+frames 10
+expect game_state.state.hero.x < -58
+expect game_state.state.hero.y < 15.4
+expect zfight{"center": [-22.8, 6, -380], "radius": 12, "exclude": "hero"}.pairs == 0
+expect stats.render.triangles < 60000
+call stats
+screenshot shots/island-cliff.png
+# ---- the coast: you wade into the shallows and stop where it gets deep ----
+call teleport {"x": 530, "z": -620}
+frames 40
+down KeyD
+frames 240
+up KeyD
+frames 30
+expect game_state.state.hero.x > 548
+expect game_state.state.hero.x < 576
+expect game_state.state.hero.y < -1.4
+expect game_state.state.hero.y > -2.6
+expect game_state.state.hero.grounded == true
+expect zfight{"center": [210, -0.6, -235.6], "radius": 12, "exclude": "hero"}.pairs == 0
+expect stats.render.triangles < 60000
+call stats
+screenshot shots/island-coast.png
+# ---- the world map: M opens and closes it, the menu's row opens it, Esc and a tap close it ----
+key KeyM
+frames 10
+expect game_state.state.island.map.open == true
+expect game_state.state.island.map.painted == true
+expect ui.slots.map contains Brick Isle
+expect ui.slots.map contains Brickton
+expect ui.slots.map contains bh-mapq
+expect ui.slots.map_me contains bh-mapme
+expect game_state.state.busy == true
+screenshot shots/island-map.png
+key KeyM
+frames 5
+expect game_state.state.island.map.open == false
+expect ui.slots.map == ""
+action menu
+frames 5
+action map
+frames 5
+expect game_state.state.island.map.open == true
+expect game_state.state.menu.open == false
+key Escape
+frames 5
+expect game_state.state.island.map.open == false
+expect game_state.state.menu.open == false
+key KeyM
+frames 5
+action map_close
+frames 5
+expect game_state.state.island.map.open == false
+# ---- back to the village: the island unloads ----
+call teleport {"x": -15, "z": -2.5}
+frames 30
+expect game_state.state.island.view.active == false
+expect game_state.state.island.view.fine == 0
+expect game_state.state.bands == 2
+call save_reset

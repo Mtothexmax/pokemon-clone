@@ -105,12 +105,16 @@ pub const CREEK: Rect = Rect::new(-46.0, 56.0, -75.0, -71.0);
 pub const BRIDGE: Rect = Rect::new(-3.4, 3.4, -76.2, -69.8);
 /// The dirt trail from the first patch of grass to the town.
 pub const TRAIL: Rect = Rect::new(-2.5, 2.5, -111.0, -42.0);
+/// The trail from Stonecrest's square around the castle to the north gate (east, then north).
+pub const GATE_TRAILS: [Rect; 2] = [Rect::new(10.0, 33.0, -146.0, -143.0), Rect::new(33.0, 37.0, -194.0, -143.0)];
 /// Stonecrest begins north of here, Route 1 north of -27 (three.js `zoneLabel`).
 pub const STONECREST_Z: f32 = -111.0;
 pub const ROUTE_Z: f32 = -27.0;
-/// The zone you are in outside: 0 Brickhollow, 1 Route 1, 2 Stonecrest.
+/// The zone you are in outside: 0 Brickhollow, 1 Route 1, 2 Stonecrest, 3 the island north of it.
 pub fn zone_at(z: f32) -> usize {
-    if z < STONECREST_Z {
+    if z < crate::island::SOUTH_Z {
+        3
+    } else if z < STONECREST_Z {
         2
     } else if z < ROUTE_Z {
         1
@@ -118,7 +122,7 @@ pub fn zone_at(z: f32) -> usize {
         0
     }
 }
-pub const ZONE_NAMES: [&str; 3] = ["Brickhollow", "Route 1", "Stonecrest"];
+pub const ZONE_NAMES: [&str; 4] = ["Brickhollow", "Route 1", "Stonecrest", "Brick Isle"];
 
 /// Render layers of the land north of the village, in bands of z (studs, south edge first): only the bands
 /// near you are drawn (`bands_near`), the village's own layer stops at the plate's edge (z -47).
@@ -126,6 +130,9 @@ pub const NORTH_BANDS: [(f32, f32, u8); 4] = [(-79.0, -47.0, 6), (-111.0, -79.0,
 pub const NORTH_EDGE: f32 = -47.0;
 /// The render layer of something outside at (x, z) studs (the rooms far east keep theirs: groups).
 pub fn layer_at(x: f32, z: f32) -> u8 {
+    if z < crate::island::SOUTH_Z {
+        return crate::island::LAYER_NEAR;
+    }
     if x >= 150.0 || z >= NORTH_EDGE {
         return rooms::VILLAGE_LAYER;
     }
@@ -1183,6 +1190,9 @@ pub struct TownAssets {
     pub materials: HashMap<u32, MaterialId>,
     pub stud: MeshId,
     pub ground: MaterialId,
+    /// the baseplate's stud pattern (colour shading, normal map): the island's tops use it too
+    pub stud_tex: Option<engine::renderer::TextureId>,
+    pub stud_nrm: Option<engine::renderer::TextureId>,
     /// the tan dirt trail of Route 1 (the baseplate's studs in tan)
     pub trail: MaterialId,
     pub table: MaterialId,
@@ -1276,7 +1286,7 @@ impl TownAssets {
         let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });
         let _ = AlphaMode::Opaque;
         let tuft = ctx.renderer.add_mesh("grass tuft", &tuft_mesh());
-        Self { deferred: vec![], materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
+        Self { deferred: vec![], materials: HashMap::new(), stud, ground, stud_tex: tex, stud_nrm: nrm, trail, table, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
     }
 
     pub fn material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
@@ -1321,6 +1331,14 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             let (tz0, tz1) = (z0.max(TRAIL.z0), z1.min(TRAIL.z1));
             if tz1 > tz0 {
                 mb.part("trail").cuboid(m(TRAIL.x0, 0.0, tz0), m(TRAIL.x1, 0.04, tz1));
+            }
+            // (the gate trail's two pieces meet at a corner: tops only, so no two side faces share a plane)
+            for tr in GATE_TRAILS {
+                let (tz0, tz1) = (z0.max(tr.z0), z1.min(tr.z1));
+                if tz1 > tz0 {
+                    let y = 0.04;
+                    mb.part("trail").quad(m(tr.x0, y, tz1), m(tr.x1, y, tz1), m(tr.x1, y, tz0), m(tr.x0, y, tz0));
+                }
             }
             let parts = mb.finish();
             let (g, tr) = (assets.ground, assets.trail);

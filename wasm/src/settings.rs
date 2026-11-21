@@ -221,7 +221,7 @@ impl Settings {
              <button class='bh-row' data-action='set_voices'><b>Voices</b><span>{}</span></button>\
              <div class='bh-cap'>MUSIC</div><div class='bh-seg'>{}</div>\
              <div class='bh-cap'>GRAPHICS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>{}{}\
-             <button class='bh-row' data-action='dbg_toggle'><b>Debug panel</b><span>{}</span></button><button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
+             <button class='bh-row' data-action='map'><b>Map</b><span>M</span></button>             <button class='bh-row' data-action='dbg_toggle'><b>Debug panel</b><span>{}</span></button><button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
             g.golden_count(),
             g.studs,
             if g.voices_off { "off" } else { "on" },

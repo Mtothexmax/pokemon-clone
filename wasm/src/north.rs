@@ -69,6 +69,25 @@ impl Town {
         self.block(x - 3.3, x + 3.3, z - 3.3, z + 3.3);
     }
 
+    /// The north gate (OPEN_WORLD.md milestone 1): two stone pillars and a lintel in Stonecrest's north wall where the
+    /// trail leaves for the island. The doors and the blocker between the pillars are the play screen's (they open).
+    fn north_gate(&mut self) {
+        use crate::island::{GATE_HALF, GATE_X, GATE_Z};
+        for s in [-1.0f32, 1.0] {
+            let x = GATE_X + s * (GATE_HALF + 1.0);
+            self.brick(0x8a8f93, 2.2, 0.4, 2.2, x, 0.0, GATE_Z, false);
+            for k in 0..6 {
+                let hex = if k % 2 == 0 { C_GRAY } else { 0x8a8f93 };
+                self.brick(hex, 2.0, 1.2, 2.0, x, 0.4 + k as f32 * 1.2, GATE_Z, false);
+            }
+            self.brick(C_DARK_GRAY, 2.4, 0.4, 2.4, x, 7.6, GATE_Z, true);
+            self.block(x - 1.1, x + 1.1, GATE_Z - 1.1, GATE_Z + 1.1);
+        }
+        // the lintel over the opening, with a red banner plate on its south face
+        self.brick(C_GRAY, GATE_HALF * 2.0 + 0.4, 1.2, 1.6, GATE_X, 6.4, GATE_Z, false);
+        self.brick(C_RED, 3.0, 0.8, 0.2, GATE_X, 6.6, GATE_Z + 0.95, false);
+    }
+
     pub(crate) fn build_north(&mut self) {
         // ---- the three patches of tall grass up the route (the first one is the village's) ----
         let greens = [0x58ab41, C_GREEN, 0x7fc04a, 0x3c8c3a];
@@ -192,16 +211,27 @@ impl Town {
             self.spruce(x, z + 1.8, s);
             z -= 3.6;
         }
+        // (the row's random numbers are drawn for the trees left out at the north gate too, so the rest stays as it was)
+        let at_gate = |x: f32, front: bool| (x - crate::island::GATE_X).abs() < crate::island::GATE_HALF + if front { 6.0 } else { 3.2 };
         let mut x = -40.0f32;
         while x <= 50.0 {
             let (xx, s) = (x + (self.rand() - 0.5) * 1.2, 8.5 + self.rand() * 2.5);
-            self.spruce(xx, -191.5, s);
+            if !at_gate(xx, false) {
+                self.spruce(xx, -191.5, s);
+            } else {
+                let _ = self.rot(); // (the tree's turn)
+            }
             if !(-24.0..=24.0).contains(&x) {
                 let (xx, s) = (x + 1.8 + (self.rand() - 0.5) * 1.2, 8.5 + self.rand() * 2.5);
-                self.spruce(xx, -187.5, s);
+                if !at_gate(xx, true) {
+                    self.spruce(xx, -187.5, s);
+                } else {
+                    let _ = self.rot();
+                }
             }
             x += 3.6;
         }
+        self.north_gate();
 
         self.prop_lod = 0.0;
 
@@ -239,7 +269,8 @@ impl Town {
             [9.4, 20.0, -42.6, -41.6],
             [-43.0, -42.0, -191.0, -111.0], // Stonecrest, west
             [48.0, 49.0, -191.0, -111.0],   //             east
-            [-42.0, 48.0, -191.0, -190.0],  //             north
+            [-42.0, crate::island::GATE_X - crate::island::GATE_HALF - 1.0, -191.0, -190.0], // north, beside the gate
+            [crate::island::GATE_X + crate::island::GATE_HALF + 1.0, 48.0, -191.0, -190.0],
             [-42.0, -20.0, -112.0, -111.0], //             south, beside the route
             [20.0, 48.0, -112.0, -111.0],
         ] {

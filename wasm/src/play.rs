@@ -15,6 +15,10 @@ use crate::talk::{self, CamZoom, Use, TARGETS};
 use crate::town::rooms::{self, RoomId};
 use crate::town::{self, TownAssets, TownStats, STUD};
 use crate::vox::Vox;
+use crate::island::{self, Island};
+use crate::islandview::IslandView;
+use crate::worldmap;
+use std::rc::Rc;
 use crate::{day_colours, setup_look, Data, Title};
 use engine::prelude::*;
 use serde_json::{json, Value};
@@ -205,15 +209,33 @@ pub struct PlayScreen {
     golden_seen: u32,
     /// R / falls (tests)
     respawns: u32,
+    // ---- the island north of Stonecrest (island.rs, islandview.rs, worldmap.rs) ----
+    /// the baked height law (shared with `Data`) and its chunks, studs, colliders and sea
+    law: Option<Rc<Island>>,
+    isle: IslandView,
+    /// the north gate's doors (hinge roots), their opening angle (None before the first frame), the closed blocker
+    gate_doors: Option<(Entity, Entity)>,
+    gate_angle: Option<f32>,
+    gate_block: Option<engine::physics::rapier::prelude::ColliderHandle>,
+    /// times the closed north gate sent you back (tests)
+    north_stops: u32,
+    /// the world map: open, its painted picture (once), the arrow's last html, times opened (tests)
+    map_open: bool,
+    map_url: Option<String>,
+    map_me: String,
+    maps_opened: u32,
 }
+
+/// The north gate's doors swing this far open (radians, both northwards).
+const GATE_OPEN: f32 = 1.75;
 
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
 const POND_EXIT: [f32; 2] = [-5.5, 13.6];
 const SURFACE_FADE: f32 = 0.5;
 /// The village HUD slots (cleared under a battle and when the screen ends).
-const HUD_SLOTS: [&str; 18] = ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"];
+const HUD_SLOTS: [&str; 20] = ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug", "map", "map_me"];
 /// The village HUD slots that go while you dive.
-const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "settings", "title", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "fade", "seekfade", "debug"];
+const DIVE_HIDES: [&str; 17] = ["help", "touch", "goal", "prompt", "menubtn", "settings", "title", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "fade", "seekfade", "debug", "map", "map_me"];
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
@@ -312,10 +334,13 @@ impl PlayScreen {
         let zone = town::zone_at(z);
         if zone != self.zone {
             self.zone = zone;
-            self.title = ["Back in Brickhollow", "Route 1", "Welcome to Stonecrest!"][zone];
+            self.title = ["Back in Brickhollow", "Route 1", "Welcome to Stonecrest!", "Brick Isle"][zone];
             self.title_t = 3.5;
         }
-        let bands = if self.zoom.active || self.fight || self.vox.cam_on { town::all_bands() } else { town::bands_near(z, 30.0, 40.0) };
+        let far = self.zoom.active || self.fight || self.vox.cam_on;
+        // (on the island the strip behind you only matters as far as the camera sees south: its forest is heavy)
+        let south = if z < island::SOUTH_Z { 24.0 } else { 40.0 };
+        let bands = if far { town::all_bands() } else { town::bands_near(z, 30.0, south) } | self.isle.layers(far);
         if bands != self.bands {
             self.bands = bands;
             if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut Camera>(c).ok()) {
@@ -390,6 +415,144 @@ impl PlayScreen {
         n.fig.animate(ctx, dt, true, 0.8);
     }
 
+    /// The island's state for tests: the law (bake, pads, self-test), the view (chunks, studs, colliders, build
+    /// times), the north gate, the map.
+    fn island_state(&self, _ctx: &Ctx, data: &Data) -> Value {
+        json!({
+            "law": self.law.as_ref().map(|l| l.describe()),
+            "view": self.isle.describe(),
+            "gate": {"open": data.save.data.north_gate, "angle": self.gate_angle.map(|a| (a * 100.0).round() / 100.0), "blocked": self.gate_block.is_some(), "stops": self.north_stops},
+            "map": {"open": self.map_open, "painted": self.map_url.is_some(), "opened": self.maps_opened},
+            "found": data.save.data.isle_found,
+            // your feet over the island's ground there (studs; 0 = standing on it)
+            "ground_gap": self.hero_pos(_ctx).filter(|(p, _)| p.z / STUD < island::SOUTH_Z).and_then(|(p, _)| self.law.as_ref().map(|l| ((p.y / STUD - l.ground_y(p.x / STUD, p.z / STUD)) * 100.0).round() / 100.0)),
+        })
+    }
+
+    /// The north gate's two doors (hinged at the pillars, planks with iron bands), closed.
+    fn spawn_gate_doors(ctx: &mut Ctx, assets: &mut TownAssets) -> (Entity, Entity) {
+        let w = island::GATE_HALF - 0.04;
+        let mut mb = engine::geom::MeshBuilder::new();
+        mb.part("c8a5a32").cuboid(town::m(0.0, 0.1, -0.25), town::m(w, 6.25, 0.25));
+        for y in [1.2, 4.6] {
+            mb.part("c6c6e68").cuboid(town::m(0.15, y, -0.31), town::m(w - 0.15, y + 0.4, 0.31));
+        }
+        // a dark ring handle by the middle
+        mb.part("c6c6e68").cuboid(town::m(w - 0.7, 2.9, -0.36), town::m(w - 0.4, 3.3, 0.36));
+        let parts = mb.finish();
+        let (wood, iron) = (assets.material(ctx, 0x8a5a32), assets.material(ctx, town::C_DARK_GRAY));
+        let layer = town::layer_at(island::GATE_X, island::GATE_Z);
+        let mut leaf = |x: f32, yaw: f32, name: &str| {
+            let e = ctx.spawn_parts(name, &parts, |p| if p == "c8a5a32" { wood } else { iron }, Transform::from_translation(town::m(x, 0.0, island::GATE_Z)).with_rotation(Quat::from_rotation_y(yaw)));
+            ctx.set_layer(e, layer);
+            e
+        };
+        let l = leaf(island::GATE_X - island::GATE_HALF, 0.0, "north gate west door");
+        let r = leaf(island::GATE_X + island::GATE_HALF, std::f32::consts::PI, "north gate east door");
+        (l, r)
+    }
+
+    /// The north gate behind Stonecrest (OPEN_WORLD.md): shut (a blocker between the pillars) until its guard opens it
+    /// for a trainer with a Voxelmon (`north_gate` in the save); walking into it closed sends you back to the guard,
+    /// who explains. Open, the doors swing north.
+    fn north_gate(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) {
+        if !data.save.loaded {
+            return;
+        }
+        let open = data.save.data.north_gate;
+        let want = if open { GATE_OPEN } else { 0.0 };
+        let a = match self.gate_angle {
+            None => want,
+            Some(a) => a + (want - a) * (dt * 2.2).min(1.0),
+        };
+        if self.gate_angle != Some(a) {
+            self.gate_angle = Some(a);
+            if let Some((l, r)) = self.gate_doors {
+                for (e, yaw) in [(l, a), (r, std::f32::consts::PI - a)] {
+                    if let Ok(mut t) = ctx.world.get::<&mut Transform>(e) {
+                        t.rotation = Quat::from_rotation_y(yaw);
+                    }
+                }
+            }
+        }
+        match (open, self.gate_block) {
+            (true, Some(h)) => {
+                ctx.physics.world.remove_collider(h);
+                self.gate_block = None;
+            }
+            (false, None) => {
+                let half = Vec3::new(island::GATE_HALF * STUD, 1.6, 0.5 * STUD);
+                self.gate_block = Some(ctx.physics.add_static(engine::physics::rapier::prelude::ColliderBuilder::cuboid(half.x, half.y, half.z), town::m(island::GATE_X, 0.0, island::GATE_Z) + Vec3::Y * half.y));
+            }
+            _ => {}
+        }
+        if open || self.busy || self.fight || self.area.is_some() || self.door.is_some() {
+            return;
+        }
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let (x, z) = (p.x / STUD, p.z / STUD);
+        if (x - island::GATE_X).abs() < island::GATE_HALF && z < island::GATE_Z + 1.6 && z > island::GATE_Z - 2.0 {
+            self.teleport(ctx, island::GATE_X - island::GATE_HALF + 0.5, island::GATE_Z + 4.4);
+            self.north_stops += 1;
+            self.talk(ctx, data, talk::GUARD_TARGET);
+        }
+    }
+
+    /// The island's places: walking onto a pad finds it (title, toast, its name on the map).
+    fn discover(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let (x, z) = (p.x / STUD, p.z / STUD);
+        if z > island::SOUTH_Z || self.busy {
+            return;
+        }
+        for (i, pad) in island::PADS.iter().enumerate() {
+            let bit = 1u32 << i;
+            if data.save.data.isle_found & bit == 0 && (x - pad.x).abs() < pad.hx && (z - pad.z).abs() < pad.hz {
+                data.save.data.isle_found |= bit;
+                data.save.mark();
+                data.sound.sfx(ctx, Sfx::Fanfare, 1.2, 0.6);
+                self.life.toast(&format!("Discovered: {}!", pad.name));
+                self.title = pad.name;
+                self.title_t = 3.5;
+                if self.map_open {
+                    self.set_map(ctx, data, true);
+                }
+            }
+        }
+    }
+
+    /// Opens (painting the picture the first time) or closes the world map.
+    fn set_map(&mut self, ctx: &mut Ctx, data: &Data, open: bool) {
+        self.map_open = open;
+        self.map_me.clear();
+        if !open {
+            ctx.ui.set("map", "");
+            ctx.ui.set("map_me", "");
+            return;
+        }
+        if self.map_url.is_none() {
+            if let Some(law) = &self.law {
+                self.map_url = worldmap::paint(law);
+            }
+        }
+        self.maps_opened += 1;
+        ctx.ui.set("map", &worldmap::html(self.map_url.as_deref().unwrap_or(""), data.save.data.isle_found));
+        self.map_arrow(ctx);
+    }
+
+    /// Your arrow on the open map.
+    fn map_arrow(&mut self, ctx: &mut Ctx) {
+        if !self.map_open {
+            return;
+        }
+        let Some((p, yaw)) = self.hero_pos(ctx) else { return };
+        let html = worldmap::me_html(p.x / STUD, p.z / STUD, yaw);
+        if html != self.map_me {
+            ctx.ui.set("map_me", &html);
+            self.map_me = html;
+        }
+    }
+
     /// A card face from command args {id, level, big, unknown, back, power}.
     fn face_arg(a: &Value) -> Option<crate::cardface::Face> {
         use crate::cardface::Face;
@@ -418,10 +581,19 @@ impl PlayScreen {
     }
 
     fn teleport(&mut self, ctx: &mut Ctx, x: f32, z: f32) {
+        // on the island: the ground there is built at once and you stand on it
+        // (metres above the ground's level; the strip's ground is at 0)
+        let mut ground = 0.0;
+        if z < island::SOUTH_Z {
+            if let Some(law) = self.law.clone() {
+                self.isle.ensure_at(ctx, &law, x, z);
+                ground = law.ground_y(x, z).max(island::SEA_Y) * STUD;
+            }
+        }
         if let Some(h) = self.hero {
             let off = ctx.world.get::<&CharacterController>(h).map(|c| c.foot_offset()).unwrap_or(0.85);
             if let Ok(mut t) = ctx.world.get::<&mut Transform>(h) {
-                t.translation = Vec3::new(x * STUD, 0.6 + off, z * STUD);
+                t.translation = Vec3::new(x * STUD, ground + 0.6 + off, z * STUD);
             }
             if let Ok(mut cc) = ctx.world.get::<&mut CharacterController>(h) {
                 cc.velocity = Vec3::ZERO;
@@ -445,7 +617,8 @@ impl PlayScreen {
             if !self.zoom.active {
                 // the pivot: your feet + 1.5 studs (the feet stand 0.6 studs up after `teleport`)
                 let off = CAM_OFFSET * ZOOM * STUD;
-                let target = town::m(x, 0.6, z) + Vec3::Y * (1.5 * STUD);
+                let ground = if z < island::SOUTH_Z { self.law.as_ref().map(|l| l.ground_y(x, z)).unwrap_or(0.0) } else { 0.0 };
+                let target = town::m(x, 0.6 + ground, z) + Vec3::Y * (1.5 * STUD);
                 if let Ok(mut c) = ctx.world.get::<&mut ThirdPersonCamera>(cam) {
                     c.pivot = None;
                 }
@@ -672,6 +845,12 @@ impl PlayScreen {
                 data.save.mark();
                 data.sound.sfx(ctx, Sfx::Fanfare, 1.0, 0.8);
                 self.life.toast("The way to Route 1 is open!");
+            }
+            DialogAction::OpenNorthGate => {
+                s.north_gate = true;
+                data.save.mark();
+                data.sound.sfx(ctx, Sfx::Fanfare, 1.0, 0.8);
+                self.life.toast("The north gate is open! The island lies beyond. (M: map)");
             }
             DialogAction::QuestPart => {
                 s.quest_part = true; // now find the suit (lab quest part)
@@ -1227,6 +1406,8 @@ impl Screen<Data> for PlayScreen {
             .iter()
             .map(|n| (n.id, n.style, n.x, if town::on_road(n.x, n.z) { 0.4 } else { 0.0 }, n.z, n.rot))
             .chain(rooms::ROOM_NPCS.iter().map(|n| (n.0, n.1, n.2, rooms::FLOOR, n.3, n.4)))
+            // (the north gate's guard last: the others keep their indices)
+            .chain(std::iter::once(("guard", "knight", talk::GUARD_AT[0], 0.0, talk::GUARD_AT[1], talk::GUARD_AT[2])))
             .collect();
         for (id, style, x, y, z, rot) in all {
             let f = Figure::spawn(ctx, style, Transform::from_translation(town::m(x, y, z)).with_rotation(Quat::from_rotation_y(rot)), None);
@@ -1285,6 +1466,13 @@ impl Screen<Data> for PlayScreen {
         ctx.ui.set("help", &self.help());
         self.vox.init(ctx);
         self.dive.init(ctx, data.town.as_mut().unwrap());
+        // ---- the island: the height law baked once per game, its view per play screen, the north gate's doors ----
+        if data.island.is_none() {
+            data.island = Some(Rc::new(Island::bake()));
+        }
+        self.law = data.island.clone();
+        self.isle.init(ctx, data.town.as_ref().unwrap());
+        self.gate_doors = Some(Self::spawn_gate_doors(ctx, data.town.as_mut().unwrap()));
     }
 
     fn pause(&mut self, ctx: &mut Ctx, _data: &mut Data) {
@@ -1307,6 +1495,7 @@ impl Screen<Data> for PlayScreen {
     }
 
     fn exit(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        self.isle.clear(ctx);
         data.trans = None;
         ctx.ui.set("bt_trans", "");
         data.save.data.time_of_day = ctx.renderer.settings.time_of_day;
@@ -1483,7 +1672,28 @@ impl Screen<Data> for PlayScreen {
         let cards_before = data.cards.busy();
         // Esc: the dialog's (it closes it), else the menu
         // (a screen, a sign's text and the card screens close with Esc themselves)
-        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !cards_before && !self.fight;
+        let esc_free = !self.dlg.is_open() && !self.scr.is_open() && self.reading.is_none() && !cards_before && !self.fight && !self.map_open;
+        // the world map: M or the menu's Map row opens it; M, Esc or a tap closes it
+        let map_ok = !self.dlg.is_open() && !self.scr.is_open() && !cards_before && !self.fight && data.trans.is_none();
+        let mut map_want = self.map_open;
+        if ctx.input.key_pressed("KeyM") && (map_ok || self.map_open) {
+            map_want = !self.map_open;
+        } else if self.map_open && ctx.input.key_pressed("Escape") {
+            map_want = false;
+        }
+        for a in &actions {
+            match a.as_str() {
+                "map" if map_ok => {
+                    map_want = true;
+                    data.settings.open = false;
+                }
+                "map_close" => map_want = false,
+                _ => {}
+            }
+        }
+        if map_want != self.map_open {
+            self.set_map(ctx, data, map_want);
+        }
         if ctx.input.key_pressed("Escape") && esc_free {
             data.settings.toggle();
         }
@@ -1541,7 +1751,7 @@ impl Screen<Data> for PlayScreen {
             self.talk_npc = None;
             self.face_yaw = None;
         }
-        self.busy = self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some() || self.life.fade;
+        self.busy = self.map_open || self.dlg.is_open() || menu || self.door.is_some() || self.scr.is_open() || self.reading.is_some() || data.cards.busy() || data.trans.is_some() || self.life.fade;
         // ---- R (or a fall off the world) puts you back at the start (Kaigen GAME_SPAWN, R respawn) ----
         let fell = self.hero_pos(ctx).is_some_and(|(p, _)| p.y < -20.0);
         if (ctx.input.key_pressed("KeyR") && !self.busy && !self.fight) || (fell && !self.dive.on && self.sink_t <= 0.0) {
@@ -1623,8 +1833,17 @@ impl Screen<Data> for PlayScreen {
             }
         }
         self.show_area(ctx);
+        // the island streams around you (within its frame budget) before the camera's layers are chosen
+        if let (Some(law), Some((p, _))) = (self.law.clone(), self.hero_pos(ctx)) {
+            self.isle.phone = data.settings.touch;
+            let far = self.zoom.active || self.fight || self.vox.cam_on;
+            self.isle.update(ctx, &law, Vec2::new(p.x, p.z) / STUD, far);
+        }
         self.outdoor_zone(ctx);
         self.gate(ctx, data);
+        self.north_gate(ctx, data, dt);
+        self.discover(ctx, data);
+        self.map_arrow(ctx);
         self.indoor_light(ctx, dt);
         self.title_t = (self.title_t - dt).max(0.0);
         self.machine_screen(ctx, data.save.data.has_deck);
@@ -1736,6 +1955,7 @@ impl Screen<Data> for PlayScreen {
             ("tall_grass", "The tall grass tufts (grass.rs, engine bend pushers). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
+            ("island", "The island north of Stonecrest (island.rs, islandview.rs, worldmap.rs). args: {gate?: 'open'|'closed' (forces the north gate), map?: bool (the world map), budget?: ms (chunk building per frame), found?: n (pad bits found), cell?: [x, z] (the law there: plates, colour, road, pad), reset_stats?: true}; state in game_state.state.island"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
         ]
     }
@@ -2019,6 +2239,43 @@ impl Screen<Data> for PlayScreen {
                 self.previews.push(e);
                 Some(Ok(json!({"texture": tex.0, "entity": e.id()})))
             }
+            "island" => {
+                if let Some(g) = a["gate"].as_str() {
+                    data.save.data.north_gate = g == "open";
+                    data.save.mark();
+                }
+                if let Some(f) = a["found"].as_u64() {
+                    data.save.data.isle_found = f as u32;
+                    data.save.mark();
+                }
+                if let Some(b) = a["budget"].as_f64() {
+                    self.isle.budget_ms = b as f32;
+                }
+                if a["reset_stats"].as_bool() == Some(true) {
+                    self.isle.stats = Default::default();
+                }
+                if let Some(m) = a["map"].as_bool() {
+                    self.set_map(ctx, data, m);
+                }
+                let mut out = self.island_state(ctx, data);
+                if let (Some(c), Some(law)) = (a["cell"].as_array(), self.law.as_ref()) {
+                    let f = |i: usize| c.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                    let k = law.cell(f(0).floor() + 0.5, f(1).floor() + 0.5);
+                    out["cell"] = json!({"plates": k.plates, "y": k.plates as f32 * island::PLATE, "colour": k.colour, "road": k.road, "pad": k.pad, "warm": k.warm, "coast": law.lerp(f(0), f(1)).coast});
+                }
+                if let (Some(l), Some(law)) = (a["line"].as_array(), self.law.as_ref()) {
+                    // the plates along a line (finding terraces and cliffs for tests): [x0, z0, x1, z1, n]
+                    let f = |i: usize| l.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                    let n = (f(4) as usize).clamp(2, 400);
+                    let v: Vec<i32> = (0..n).map(|i| {
+                        let t = i as f32 / (n - 1) as f32;
+                        let (x, z) = (f(0) + (f(2) - f(0)) * t, f(1) + (f(3) - f(1)) * t);
+                        law.cell(x.floor() + 0.5, z.floor() + 0.5).plates
+                    }).collect();
+                    out["line"] = json!(v);
+                }
+                Some(Ok(out))
+            }
             "play_sfx" => {
                 let n = a["name"].as_str()?;
                 let s = sound::ALL_SFX.into_iter().find(|s| s.name() == n)?;
@@ -2077,6 +2334,7 @@ impl Screen<Data> for PlayScreen {
             "zone": town::ZONE_NAMES[self.zone],
             "bands": self.bands,
             "gate_stops": self.gate_stops,
+            "island": self.island_state(ctx, data),
             "indoor": (self.indoor * 100.0).round() / 100.0,
             "camera_layers": self.camera.and_then(|c| ctx.world.get::<&Camera>(c).ok().map(|c| c.layers)),
             "room_lights_on": self.room_lights.iter().filter(|(_, e, _)| ctx.world.get::<&PointLight>(*e).map(|l| l.intensity > 0.0).unwrap_or(false)).count(),

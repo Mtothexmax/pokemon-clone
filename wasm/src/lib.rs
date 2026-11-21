@@ -18,6 +18,8 @@ mod fade;
 mod figure;
 mod fountain;
 mod grass;
+mod island;
+mod islandview;
 mod life;
 mod play;
 mod save;
@@ -29,6 +31,7 @@ mod table;
 mod talk;
 mod town;
 mod vox;
+mod worldmap;
 
 use engine::prelude::*;
 use play::PlayScreen;
@@ -59,6 +62,8 @@ pub(crate) struct Data {
     pub settings: Settings,
     loaded: bool,
     pub town: Option<TownAssets>,
+    /// the island's height law, baked once (island.rs)
+    pub island: Option<std::rc::Rc<island::Island>>,
     /// the card faces (canvas -> textures / PNG urls), kept for every screen
     pub faces: cardface::CardFaces,
     /// the deck screen, the foil packs, the upgrade moment
@@ -158,6 +163,7 @@ impl Data {
             ctx.ui.set("style_vox", vox::STYLE);
             ctx.ui.set("style_dive", dive::STYLE);
             ctx.ui.set("style_debug", debugpanel::STYLE);
+            ctx.ui.set("style_map", worldmap::STYLE);
             ctx.ui.set("style_loadbar", LOADBAR_STYLE);
             self.cards = deck::CardUi::new();
             // a phone (a coarse primary pointer, or touch points and a mobile browser) gets the phone profile from the
