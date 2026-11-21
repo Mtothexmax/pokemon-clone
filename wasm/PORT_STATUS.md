@@ -95,6 +95,10 @@ comes from.
   plates (`strip_sd`, `STRIP_LAND`), a beach, the sea; the plates and the rooms far east are holes (`island::hole`,
   no tops, sides or colliders; a coarse cell only when all of it is). No table under the plates any more. The island
   view is active everywhere outdoors (not in the rooms), so the bands outside include layers 11 and 13.
+- **Studs on the ground:** the engine's analytic stud relief (`StudRelief::lego(1.0)`, one stud per world UV) on the
+  baseplate, the trail and every island top; the stud maps still show far away; phones use `stud_relief = 1` (3x3).
+- **Start screen:** `Title` shows assets/title/title_wide.webp (landscape) / title_tall.webp (portrait), the title and
+  Play over the sky; music `Track::Title` (assets/music/title.ogg).
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
   of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Each building its own entity

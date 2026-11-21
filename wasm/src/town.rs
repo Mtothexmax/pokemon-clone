@@ -1328,8 +1328,10 @@ impl TownAssets {
         engine::geom::smooth_normals(&mut md, 50.0);
         let stud = ctx.renderer.add_mesh("lego stud", &md);
         let (tex, nrm) = stud_maps(ctx);
-        let ground = ctx.renderer.add_material(Material { name: "baseplate".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, ..lego(C_GREEN) });
-        let trail = ctx.renderer.add_material(Material { name: "trail".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, ..lego(0xc8a46a) });
+        // (the engine's analytic studs on top, one per stud of the world UVs: they stand up seen from the side; the
+        // stud maps still show where a stud is too small for them, far away)
+        let ground = ctx.renderer.add_material(Material { name: "baseplate".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, studs: Some(StudRelief::lego(1.0)), ..lego(C_GREEN) });
+        let trail = ctx.renderer.add_material(Material { name: "trail".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, studs: Some(StudRelief::lego(1.0)), ..lego(0xc8a46a) });
         // a small, murky village pond: low calm waves, little clarity
         let water = ctx.renderer.add_material(Material { name: "pond water".into(), wave_height: 0.015, wave_scale: 2.0, water_chop: 0.3, water_clarity: 0.8, water_foam: 0.0, water_vertex_spacing: 0.1, ..Material::water(0x1d4a5e, C_WATER) });
         let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });

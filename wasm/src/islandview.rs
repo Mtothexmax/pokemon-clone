@@ -408,7 +408,7 @@ impl IslandView {
     pub fn init(&mut self, ctx: &mut Ctx, town: &TownAssets) {
         self.budget_ms = 3.0;
         for (i, hex) in PALETTE.iter().enumerate() {
-            let mat = Material { name: format!("isle top {i} {hex:06x}"), texture: town.stud_tex, normal_texture: town.stud_nrm, normal_scale: 1.0, ..Material::color(*hex).rough(crate::PLASTIC_ROUGH) };
+            let mat = Material { name: format!("isle top {i} {hex:06x}"), texture: town.stud_tex, normal_texture: town.stud_nrm, normal_scale: 1.0, studs: Some(StudRelief::lego(1.0)), ..Material::color(*hex).rough(crate::PLASTIC_ROUGH) };
             self.tops.push(ctx.renderer.add_material(mat));
         }
         let mut px = vec![0u8; (PAL_N * PAL_N * 4) as usize];

@@ -318,6 +318,8 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     s.bloom = false;
     s.water_ssr = false;
     s.lens_flare = 0.0;
+    // (the analytic studs: the 3x3 search, about as cheap as 5x5 but a little less work per pixel)
+    s.stud_relief = 1;
     // a tight budget keeps the resolution at half, which holds up in the heavy parts of the village; it starts there
     // (at full resolution a phone measured 235-307 ms per frame, and every adaptation step down is a hitch).
     // No frame cap: the engine's frame pacing picks the fastest even cadence the GPU holds
