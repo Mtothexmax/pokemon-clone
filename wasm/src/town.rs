@@ -1179,6 +1179,9 @@ pub const LAMPS: [[f32; 2]; 6] = [[-4.0, -4.0], [4.0, 4.0], [-4.0, 10.0], [4.0, 
 
 /// GPU resources shared by every town build (created once).
 pub struct TownAssets {
+    /// Stonecrest's models (the castle alone is 4 MB) load after the village is up (`load_deferred`): their roots
+    /// (placed, on their layer, already occluders) and what to load under each
+    pub deferred: Vec<(Entity, String, f32)>,
     pub materials: HashMap<u32, MaterialId>,
     pub stud: MeshId,
     pub ground: MaterialId,
@@ -1197,6 +1200,24 @@ pub struct TownAssets {
 
 /// How far in front of a sign board's centre its picture hangs (studs; `Town::sign_board`).
 pub const SIGN_FACE: f32 = 0.26;
+
+/// Loads the deferred models (`TownAssets::deferred`) under their roots, once nothing else is loading (call every frame;
+/// does nothing after the first time). Returns how many it started.
+pub fn load_deferred(ctx: &mut Ctx, assets: &mut TownAssets) -> usize {
+    if assets.deferred.is_empty() || ctx.assets_pending() > 0 {
+        return 0;
+    }
+    let list = std::mem::take(&mut assets.deferred);
+    for (root, path, lod) in &list {
+        let opts = engine::gltf_loader::GltfOpts { auto_lod: *lod > 0.0, lod_distance: if *lod > 0.0 { *lod } else { 1.0 } };
+        let opts = if *lod > 0.0 { opts } else { ctx.gltf_defaults };
+        let e = ctx.load_gltf_with(path, Transform::default(), opts);
+        let _ = ctx.world.insert_one(e, Parent(*root));
+        let layer = ctx.world.get::<&engine::scene::RenderLayer>(*root).map(|l| l.0).unwrap_or(0);
+        ctx.set_layer(e, layer);
+    }
+    list.len()
+}
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
 fn lego(hex: u32) -> Material {
@@ -1257,7 +1278,7 @@ impl TownAssets {
         let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });
         let _ = AlphaMode::Opaque;
         let tuft = ctx.renderer.add_mesh("grass tuft", &tuft_mesh());
-        Self { materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
+        Self { deferred: vec![], materials: HashMap::new(), stud, ground, trail, table, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
     }
 
     pub fn material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
@@ -1399,7 +1420,17 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
     // ---- models (the trees can fade too) ----
     for p in &t.props {
         let t = Transform::from_translation(p.pos).with_rotation(Quat::from_rotation_y(p.rot)).with_scale(Vec3::splat(p.scale));
-        let root = if p.lod > 0.0 { ctx.load_gltf_with(&p.path, t, engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: p.lod }) } else { ctx.load_gltf(&p.path, t) };
+        // Stonecrest's (far north, out of sight at the start): an empty root now, the model once the village is loaded
+        let later = p.area < 0 && zone_at(p.pos.z / STUD) == 2;
+        let root = if later {
+            let root = ctx.world.spawn((t, Name(format!("later:{}", p.path))));
+            assets.deferred.push((root, p.path.clone(), p.lod));
+            root
+        } else if p.lod > 0.0 {
+            ctx.load_gltf_with(&p.path, t, engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: p.lod })
+        } else {
+            ctx.load_gltf(&p.path, t)
+        };
         ctx.set_layer(root, if p.area < 0 { layer_at(p.pos.x / STUD, p.pos.z / STUD) } else { layer(p.area) });
         if p.path.contains("tree") || p.path.contains("spruce") || p.path.contains("cypress") || p.path.contains("pine") || p.path.contains("castle") {
             occluders.push(OccluderSpec::Model { root });

@@ -11,7 +11,9 @@ authority certificate is offered at /brickhollow-test-ca.crt for a phone that do
 """
 
 import functools
+import gzip
 import os
+import threading
 import socket
 import ssl
 import sys
@@ -23,6 +25,26 @@ CERT_DIR = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'KaigenProjects', 'p
 CA_CRT = os.path.join(CERT_DIR, 'brickhollow-test-ca.crt')
 # what the phone's console sends (tools/phone_log.js)
 PHONE_LOG = os.path.join(os.path.dirname(HERE), 'logs', 'phone.log')  # (logs/: the dev watcher ignores it)
+
+
+# Compressible files go out gzipped (the wasm 6.4 -> 2 MB, a glTF ~3.5x smaller): made once per file version and kept
+# in memory. Music / voices (.ogg) are compressed already and streamed with range requests: left alone.
+GZIP_TYPES = ('.wasm', '.glb', '.js', '.mjs', '.html', '.json', '.css', '.svg', '.txt')
+_gz_cache = {}
+_gz_lock = threading.Lock()
+
+
+def gzipped(path):
+    st = os.stat(path)
+    key = (path, st.st_mtime_ns, st.st_size)
+    with _gz_lock:
+        hit = _gz_cache.get(key)
+    if hit is None:
+        with open(path, 'rb') as f:
+            hit = gzip.compress(f.read(), 6)
+        with _gz_lock:
+            _gz_cache[key] = hit
+    return hit
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -47,6 +69,20 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def do_GET(self):
+        path = self.translate_path(self.path)
+        if (path.endswith(GZIP_TYPES) and os.path.isfile(path) and 'gzip' in (self.headers.get('Accept-Encoding') or '')
+                and not self.headers.get('Range')):
+            data = gzipped(path)
+            self.send_response(200)
+            self.send_header('Content-Type', self.guess_type(path))
+            self.send_header('Content-Encoding', 'gzip')
+            self.send_header('Content-Length', str(len(data)))
+            # the page's loading bar counts the unpacked bytes (web/index.html)
+            self.send_header('X-Raw-Length', str(os.path.getsize(path)))
+            self.send_header('Vary', 'Accept-Encoding')
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/brickhollow-test-ca.crt' and os.path.exists(CA_CRT):
             with open(CA_CRT, 'rb') as f:
                 data = f.read()

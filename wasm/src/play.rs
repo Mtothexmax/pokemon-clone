@@ -1367,6 +1367,12 @@ impl Screen<Data> for PlayScreen {
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
         data.loadbar(ctx);
+        // Stonecrest's models once the village is loaded (they don't hold up the start)
+        if let Some(t) = data.town.as_mut() {
+            if !t.deferred.is_empty() {
+                town::load_deferred(ctx, t);
+            }
+        }
         // the help line fades out (CSS) and goes
         if self.help_t < HELP_S {
             self.help_t += dt;

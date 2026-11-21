@@ -65,8 +65,10 @@
     async function download(url) {
       const res = await fetch(url);
       if (!res.ok || !res.body) return res;
-      // without a length (compressed transfer): an estimate that never reaches the end
-      const total = +res.headers.get('content-length') || 0;
+      // the unpacked size (tools/serve_lan.py sends it with gzip; Content-Length is then the packed size), else the
+      // plain length; without either an estimate that never reaches the end
+      const packed = (res.headers.get('content-encoding') || '').length > 0;
+      const total = +res.headers.get('x-raw-length') || (packed ? 0 : +res.headers.get('content-length') || 0);
       const reader = res.body.getReader();
       const parts = [];
       let got = 0;
@@ -75,7 +77,7 @@
         if (done) break;
         parts.push(value);
         got += value.length;
-        const f = total ? got / total : 1 - Math.exp(-got / 8e6);
+        const f = total ? Math.min(1, got / total) : 1 - Math.exp(-got / 8e6);
         show(f * 0.85, `loading the game … ${Math.round(f * 100)} %`);
       }
       const bytes = new Uint8Array(got);
