@@ -103,3 +103,19 @@ Jeder Meilenstein: Tests, Bildschirmfotos, Messung auf dem Handy, Commit.
   - ein **verträumtes, stilles Dorf**;
   - der **Norden** in einer anderen Klimazone (kühl, Nadelwald, Schnee auf den Höhen), der **Süden** warm (Strand, Palmen).
 - **Lebendige Welt** statt Masse: Bewohner mit Tagesablauf und Reaktionen auf den Spieler (wie das Dorfleben in life.rs); Aufgaben, die man in der Welt findet. Die prozeduralen Teile (Häuser-Regeln, Vegetation, Geländedetails) dienen als Füllung, nicht als Inhalt.
+
+## Musik (assets/music, für Meilenstein 2)
+| Wo | Tag | Nacht |
+|---|---|---|
+| Brickton (Stadt) | brickton.ogg | brickton.ogg |
+| Einkaufszentrum | mall.ogg | mall.ogg |
+| Port Saltwick (Hafen) | saltwick.ogg | saltwick.ogg |
+| Dewmere (Dorf) | dewmere.ogg | dewmere.ogg |
+| Süden, Strand | beach_day.ogg | beach_night.ogg |
+| Küste nachts | – | sea_night.ogg / sea_night_2.ogg (abwechselnd) |
+| Mitte, Wiesen und Hügel | meadows_day.ogg | meadows_night.ogg |
+| Norden, Nadelwald und Schnee | north_day.ogg | north_night.ogg |
+| Felsen und Klippen | cliffs_day.ogg | cliffs_night.ogg |
+| noch frei | ridge.ogg („Beyond the Ridge“) | |
+
+Die Zuordnung Tag/Nacht wurde nach der Klanghelligkeit (Spektralschwerpunkt) gewählt: die hellere Version am Tag. Beim Wechsel von Zone oder Tageszeit wird übergeblendet.
