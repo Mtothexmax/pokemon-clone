@@ -55,7 +55,15 @@ pub struct Figure {
     /// within 7 m while standing) and where it is now
     pub head_want: f32,
     head_yaw: f32,
+    /// the folder in assets/minifig, and the finer head while it loads (`want_detail`)
+    style: String,
+    hi: Option<Entity>,
+    detailed: bool,
 }
+
+/// The finer head (`head_hi.glb`, made by tools/subdivide.mjs: 16x the triangles, round silhouettes) is drawn while the
+/// camera is closer than this to the head (metres): only in close-ups, the play camera is ~16 m away.
+const HI_DIST: f32 = 3.0;
 
 impl Figure {
     /// Spawns figure `style` (a folder in assets/minifig) with its root at `t`, or as a child of `parent`.
@@ -69,9 +77,50 @@ impl Figure {
             let _ = ctx.world.insert_one(e, Parent(root));
             e
         });
-        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0 };
+        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0, style: style.to_string(), hi: None, detailed: false };
         f.apply(ctx);
         f
+    }
+
+    /// Close-ups (call every frame while one may come; cheap once done): loads the finer head once, out of sight,
+    /// and when both heads are there makes each of its primitives LOD 0 of the head's (matched by material name)
+    /// within `HI_DIST`, then drops the loaded copy. The head keeps its own materials, the engine picks the mesh.
+    pub fn want_detail(&mut self, ctx: &mut Ctx) {
+        if self.detailed {
+            return;
+        }
+        let Some(hi) = self.hi else {
+            let opts = engine::gltf_loader::GltfOpts { auto_lod: false, ..Default::default() };
+            self.hi = Some(ctx.load_gltf_with(&format!("assets/minifig/{}/head_hi.glb", self.style), Transform::from_xyz(0.0, -1000.0, 0.0), opts));
+            return;
+        };
+        let prims = |ctx: &Ctx, root: Entity| -> Vec<(Entity, MeshId, String)> {
+            engine::scene::descendants(&ctx.world, root)
+                .into_iter()
+                .filter_map(|e| {
+                    let mr = ctx.world.get::<&MeshRenderer>(e).ok()?;
+                    Some((e, mr.mesh, ctx.renderer.material(mr.material)?.name.clone()))
+                })
+                .collect()
+        };
+        let low = prims(ctx, self.parts[0]);
+        let fine = prims(ctx, hi);
+        if low.is_empty() || fine.len() < low.len() {
+            return; // still loading
+        }
+        for (e, mesh, mat) in &low {
+            if let Some((_, hi_mesh, _)) = fine.iter().find(|f| &f.2 == mat) {
+                let _ = ctx.world.insert_one(*e, engine::renderer::Lod { meshes: vec![*hi_mesh, *mesh], distances: vec![HI_DIST], cull_beyond: false });
+            }
+        }
+        ctx.despawn(hi);
+        self.hi = None;
+        self.detailed = true;
+    }
+
+    /// The finer head is in use (debug).
+    pub fn detailed(&self) -> bool {
+        self.detailed
     }
 
     /// Each part: its pivot turned by the spin and moved by the offset, then its own swing (Kaigen `fig_set_part`).

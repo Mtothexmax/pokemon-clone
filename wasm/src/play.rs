@@ -1520,6 +1520,15 @@ impl Screen<Data> for PlayScreen {
         }
         self.dive.lab(ctx, &data.save.data);
 
+        // a villager within talking reach (or talking) gets the finer head for the close-up (loaded once, ahead)
+        if let Some((p, _)) = pos {
+            for i in 0..self.npcs.len() {
+                let near = self.npc_pos(ctx, i).is_some_and(|q| (q - p).length() < 4.0) && self.npcs[i].area == self.area;
+                if near || self.talk_npc == Some(i) {
+                    self.npcs[i].fig.want_detail(ctx);
+                }
+            }
+        }
         // the camera at your eyes, looking at whom you talk to (head and shoulders, above the dialog box)
         let board = match (self.dlg.is_open(), self.talk_npc, pos) {
             (true, Some(i), Some((p, _))) => self.npc_pos(ctx, i).map(|q| talk::face_board(q, p)),
@@ -2007,6 +2016,7 @@ impl Screen<Data> for PlayScreen {
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
+            "fine_heads": self.npcs.iter().filter(|n| n.fig.detailed()).map(|n| n.id.clone()).collect::<Vec<_>>(),
             "busy": self.busy,
             "life": self.life.describe(g),
             "rain_volume": self.life_view.rain_volume(ctx),

@@ -200,8 +200,8 @@ pub struct Board {
 /// Eases the camera from where the orbit camera has it to a [`Board`] and back (`ZOOM_S`, smootherstep).
 /// The eye moves on a straight line and the point it looks at slides from what the orbit camera looked at (your
 /// head) to the board's centre, the rotation always `looking_at` that point: the face stays in the picture all the
-/// way (a slerped rotation against a lerped position let it swing out mid-way). The lens closes to `ZOOM_FOV` (a
-/// longer focal length: a flatter, calmer portrait). While active the `ThirdPersonCamera` has no target (the engine
+/// way (a slerped rotation against a lerped position let it swing out mid-way). The lens opens to `ZOOM_FOV` (a
+/// wide angle from close by: the head big and round in front, the scene stretching away behind it). While active the `ThirdPersonCamera` has no target (the engine
 /// leaves the camera alone) and gets it back when the camera has returned.
 #[derive(Default)]
 pub struct CamZoom {
@@ -217,7 +217,7 @@ pub struct CamZoom {
 
 /// Seconds of the way in (and out), and the close-up's vertical field of view (degrees; the play camera has 38).
 const ZOOM_S: f32 = 0.85;
-pub const ZOOM_FOV: f32 = 30.0;
+pub const ZOOM_FOV: f32 = 55.0;
 
 impl CamZoom {
     /// Every frame (after moving things, before the engine's camera update). Returns true while it owns the camera.
@@ -286,12 +286,12 @@ impl CamZoom {
 }
 
 /// The board for talking to someone standing at `npc` (feet, metres) while you stand at `me`: their
-/// head and shoulders from about your eyes (a little behind them for the longer lens). Kaigen aimed at the chin (3.3 studs
-/// up) with a wider lens; with this camera's narrower lens (`ZOOM_FOV`) that cut the face off, so it aims at the face
+/// head and shoulders, close up through a wide lens. Kaigen aimed at the chin (3.3 studs up); this aims at the face
 /// (4 studs).
 pub fn face_board(npc: Vec3, me: Vec3) -> Board {
     let to_me = Vec2::new(me.x - npc.x, me.z - npc.z);
     let yaw = if to_me.length() > 0.01 { to_me.x.atan2(to_me.y) } else { 0.0 };
-    // the longer lens (`ZOOM_FOV`) needs a step more room than where you stand (your figure is hidden by then)
-    Board { c: npc + Vec3::Y * 4.0 * STUD, yaw, w: 4.6, h: 5.6, max_dist: (to_me.length() + 0.6).max(1.9), tilt: 0.0 }
+    // head and shoulders (about 1.1 m high) through the wide lens (`ZOOM_FOV`) from about a metre: never farther
+    // than a step behind where you stand (your figure is hidden by then)
+    Board { c: npc + Vec3::Y * 4.0 * STUD, yaw, w: 2.0, h: 2.3, max_dist: (to_me.length() + 0.6).max(1.9), tilt: 0.0 }
 }
