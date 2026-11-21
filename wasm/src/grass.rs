@@ -20,7 +20,7 @@ const WIND_DIR: Vec2 = Vec2::new(0.83, 0.55);
 const WIND_STRENGTH: f32 = 0.3;
 const MAX_PUSHERS: usize = 16;
 /// Your wake: where you were (a point every `WAKE_EVERY` s, `WAKE_N` of them) keeps pushing with a radius that shrinks
-/// to nothing over `WAKE_LIFE` s, so the tufts behind you rise again instead of snapping up (the old spring's look).
+/// to nothing over `WAKE_LIFE` s, so the tufts behind you rise again instead of snapping up.
 const WAKE_N: usize = 3;
 const WAKE_EVERY: f32 = 0.12;
 const WAKE_LIFE: f32 = 0.45;
@@ -133,6 +133,6 @@ impl Grass {
             v.into_iter().take(6).map(|(d, b)| json!([r(d), r(b)])).collect::<Vec<_>>()
         });
         json!({"tufts": self.tufts.len(), "patches": self.patches, "bent": bent, "max_bend": r(max), "near": near, "pushers": self.pushers.len(), "wake": self.wake.len(),
-               "sent": self.sent.len(), "wind": self.wind, "wind_strength": r(self.wind_strength()), "bend": TUFT_BEND, "writes": 0})
+               "sent": self.sent.len(), "wind": self.wind, "wind_strength": r(self.wind_strength()), "bend": TUFT_BEND})
     }
 }

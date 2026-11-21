@@ -16,7 +16,6 @@ frames 75
 expect game_state.state.grass.tufts > 600
 expect game_state.state.grass.patches.0 > 150
 expect game_state.state.grass.bent == 0
-expect game_state.state.grass.writes == 0
 # the bending materials (one per green), the pushers the renderer has (you at least) and the wind
 expect bend.materials.length >= 4
 expect bend.materials.0.bend ~= 1.1
