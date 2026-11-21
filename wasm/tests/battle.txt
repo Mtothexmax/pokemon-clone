@@ -133,17 +133,47 @@ screenshot shots/battle-zone.png
 key Escape
 frames 5
 expect game_state.state.battle.inspect == null
-# ---- the rest: you only end your turns, Lumi wins ----
-call battle_speed {"x": 4}
+# ---- End Turn with nothing played although a card fits: "Are you sure?" (No / Esc go back, Yes / Enter end it) ----
+expect game_state.state.battle.no_moves == false
 key Enter
+frames 3
+expect game_state.state.battle.confirm_end == true
+expect game_state.state.battle.phase == "Plan"
+expect ui.slots.bt_over contains Are you sure?
+screenshot shots/battle-confirm.png
+action bt_end_no
+frames 3
+expect game_state.state.battle.confirm_end == false
+expect game_state.state.battle.phase == "Plan"
+action bt_end
+frames 3
+expect game_state.state.battle.confirm_end == true
+key Escape
+frames 3
+expect game_state.state.battle.confirm_end == false
+expect game_state.state.battle.phase == "Plan"
+action bt_end
+frames 3
+action bt_end_yes
+frames 3
+expect game_state.state.battle.confirm_end == false
+expect game_state.state.battle.phase == "Reveal"
+# ---- the rest: you only end your turns (Enter, Enter = Yes), Lumi wins ----
+call battle_speed {"x": 4}
 wait_for game_state.state.battle.turn == 3 6000
 wait_for game_state.state.battle.phase == "Plan" 6000
+key Enter
+frames 2
 key Enter
 wait_for game_state.state.battle.turn == 4 6000
 wait_for game_state.state.battle.phase == "Plan" 6000
 key Enter
+frames 2
+key Enter
 wait_for game_state.state.battle.turn == 5 6000
 wait_for game_state.state.battle.phase == "Plan" 6000
+key Enter
+frames 2
 key Enter
 wait_for game_state.state.battle.turn == 6 6000
 wait_for game_state.state.battle.phase == "Plan" 6000
@@ -158,6 +188,8 @@ expect game_state.state.battle.locations.2.power.1 > 0
 expect game_state.state.battle.rank == "foe"
 expect ui.slots.bt_top contains >1st<
 expect ui.slots.bt_bottom contains >2nd<
+key Enter
+frames 2
 key Enter
 wait_for game_state.state.battle.phase == "Over" 8000
 expect game_state.state.battle.result == "Lose"

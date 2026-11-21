@@ -197,6 +197,8 @@ pub const STYLE: &str = "<style>
 .bt-endp{display:flex;flex-direction:column;align-items:center;gap:14px;padding:22px 30px;border-radius:20px;background:linear-gradient(#2a3a5ae8,#1b2a34ee);border:4px solid rgba(255,255,255,.3);color:#fff;animation:btpop .35s ease-out;max-width:calc(100vw - 24px);box-sizing:border-box}
 .bt-endp h2{margin:0;font-size:44px;font-weight:900}.bt-endp h2.win{color:#fde047;text-shadow:0 0 18px rgba(253,224,71,.6)}
 .bt-sc{display:flex;gap:18px}.bt-sc div{display:flex;flex-direction:column;align-items:center;gap:2px}.bt-sc small{font-size:12px;opacity:.8}.bt-sc b{font-size:24px}.bt-sc i{font-style:normal;font-size:20px;font-weight:900}
+.bt-ask .bt-endp h2{font-size:32px}.bt-ask p{margin:0;font-size:16px;font-weight:600;opacity:.9;text-align:center}
+.bt-askb{display:flex;gap:12px}#ui .bt-askb .bt-btn{min-width:110px;font-size:20px;padding:10px 16px}
 .bt-studs{display:flex;gap:8px;align-items:center;font-size:20px;font-weight:700}.bt-studs i{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff3a8,#d9a300)}
 #ui .world-label.bt-fx{background:none;padding:0;border-radius:0;pointer-events:none}
 #ui .bt-fx span{display:block;transform:translateY(50%);font-size:26px;font-weight:900;color:#fff;text-shadow:0 0 6px #000,0 2px 0 #000}
@@ -471,6 +473,8 @@ pub struct BattleScreen {
     last_pos: Vec2,
     touch_ui: bool,
     log_open: bool,
+    /// End Turn without a card played although one could be: "Are you sure?" (Yes / No) is open
+    confirm_end: bool,
     // ---- around the battle (Kaigen CardGame) ----
     taunt: Option<(&'static str, f32)>,
     rng: u32,
@@ -580,6 +584,7 @@ impl BattleScreen {
             last_pos: Vec2::ZERO,
             touch_ui: false,
             log_open: false,
+            confirm_end: false,
             taunt: None,
             rng: seed.wrapping_mul(2654435761) | 1,
             last_turn: 0,
@@ -1046,7 +1051,27 @@ impl BattleScreen {
         }
     }
 
+    /// End Turn from the button / Enter: asks first when you played nothing this turn although a card in your
+    /// hand could go somewhere (an easy slip on a phone); else ends the turn.
+    fn want_end_turn(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        let b = self.b();
+        if b.phase != Phase::Plan || self.confirm_end {
+            return;
+        }
+        let played = b.c.iter().any(|c| c.staged && c.owner == SIDE_P);
+        let could = b.hand[SIDE_P].iter().any(|&h| (0..3).any(|z| b.can_play(h, z)));
+        if !played && could {
+            self.confirm_end = true;
+            self.selected = None;
+            self.inspect = None;
+            data.sound.sfx(ctx, Sfx::Blip, 1.3, 0.35);
+        } else {
+            self.end_turn(ctx, data);
+        }
+    }
+
     fn end_turn(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        self.confirm_end = false;
         let b = self.b.as_mut().unwrap();
         if b.phase != Phase::Plan {
             return;
@@ -1243,7 +1268,8 @@ impl BattleScreen {
 
     fn input(&mut self, ctx: &mut Ctx, data: &mut Data, actions: &[String]) {
         let (down, pos, quick) = self.pointer(ctx);
-        let busy = data.trans.is_some();
+        // (the confirm holds the table: taps go to its buttons only)
+        let busy = data.trans.is_some() || self.confirm_end;
         if !busy {
             if down && !self.was_down {
                 self.on_press(ctx, pos);
@@ -1277,7 +1303,9 @@ impl BattleScreen {
         for a in actions {
             let a = a.as_str();
             match a {
-                "bt_end" | "bt_suggest" => self.end_turn(ctx, data),
+                "bt_end" | "bt_suggest" => self.want_end_turn(ctx, data),
+                "bt_end_yes" => self.end_turn(ctx, data),
+                "bt_end_no" => self.confirm_end = false,
                 "bt_undo" => {
                     let b = self.b.as_mut().unwrap();
                     for i in 0..b.c.len() {
@@ -1327,23 +1355,33 @@ impl BattleScreen {
                 }
             }
         }
-        if ctx.input.key_pressed("Escape") {
-            if self.inspect.is_some() {
-                self.inspect = None;
-            } else if self.log_open {
-                self.log_open = false;
-            } else {
-                self.selected = None;
-            }
-        }
-        if ctx.input.key_pressed("Enter") {
-            if phase == Phase::Over {
-                self.done = true;
-            } else if self.inspect.is_none() && self.press.is_none() {
+        if self.confirm_end {
+            // the confirm: Enter = Yes, Escape = No
+            if ctx.input.key_pressed("Enter") {
                 self.end_turn(ctx, data);
+            } else if ctx.input.key_pressed("Escape") {
+                self.confirm_end = false;
+            }
+        } else {
+            if ctx.input.key_pressed("Escape") {
+                if self.inspect.is_some() {
+                    self.inspect = None;
+                } else if self.log_open {
+                    self.log_open = false;
+                } else {
+                    self.selected = None;
+                }
+            }
+            if ctx.input.key_pressed("Enter") {
+                if phase == Phase::Over {
+                    self.done = true;
+                } else if self.inspect.is_none() && self.press.is_none() {
+                    self.want_end_turn(ctx, data);
+                }
             }
         }
         if self.b().phase != Phase::Plan {
+            self.confirm_end = false;
             if matches!(self.press, Some(Press::Card { .. })) {
                 self.press = None;
             }
@@ -2190,6 +2228,11 @@ impl BattleScreen {
             }
             ov.push_str(&format!("<div class='bt-insp' style='top:{:.0}px'>{inner}</div>", cy + h * 0.5 + 10.0));
         }
+        if self.confirm_end && plan {
+            ov.push_str(
+                "<div class='bt-end bt-ask'><div class='bt-endp'><h2>Are you sure?</h2><p>You have not played a card this turn.</p>                 <div class='bt-askb'><button class='bt-btn blue' data-action='bt_end_yes'>Yes</button><button class='bt-btn' data-action='bt_end_no'>No</button></div></div></div>",
+            );
+        }
         if over && b.result != Outcome::Retreat {
             let title = match b.result {
                 Outcome::Win => "VICTORY!",
@@ -2272,7 +2315,7 @@ impl BattleScreen {
             "result": b.result, "p_snapped": b.p_snapped, "ai_snapped": b.ai_snapped,
             "hand": hand, "hand_n": b.hand[SIDE_P].len(), "ai_hand_n": b.hand[SIDE_AI].len(),
             "deck_n": b.deck[SIDE_P].len(), "ai_deck_n": b.deck[SIDE_AI].len(),
-            "locations": locs, "log": b.log, "no_moves": b.no_moves(), "step": b.step_i,
+            "locations": locs, "log": b.log, "no_moves": b.no_moves(), "confirm_end": self.confirm_end, "step": b.step_i,
             "selected": self.selected.map(|c| cards::card(b.c[c].id).id),
             "inspect": self.inspect.map(|i| format!("{i:?}")),
             "dragging": matches!(self.press, Some(Press::Card { moved: true, .. })),
@@ -2444,7 +2487,7 @@ impl Screen<Data> for BattleScreen {
             ("battle_play", "Play a hand card of yours to a location (the UI's path). args: {card: 'id' | hand: index, zone: 0..2}"),
             ("battle_end_turn", "End Turn (as the button / Enter)."),
             ("battle_auto", "Play this turn as the AI would for you (stages through the UI's path), then optionally end the turn. args: {end?: bool}"),
-            ("battle_ui", "Press a HUD button. args: {action: bt_end|bt_undo|bt_snap|bt_retreat|bt_log|bt_continue|bt_close|bt_play:z|bt_take_back|bt_activate}"),
+            ("battle_ui", "Press a HUD button. args: {action: bt_end|bt_end_yes|bt_end_no|bt_undo|bt_snap|bt_retreat|bt_log|bt_continue|bt_close|bt_play:z|bt_take_back|bt_activate}"),
             ("battle_inspect", "Open the big card or location. args: {card: id} | {zone: 0..2} | {close: true}"),
             ("battle_speed", "The battle's speed (reveal pauses, animations). args: {x: 1}"),
             ("battle_cheat", "Change power: every card of yours gets +n (or the opponent's with foe: true). args: {power: n, foe?: bool}"),

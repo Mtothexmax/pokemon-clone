@@ -87,6 +87,22 @@ frames 2
 call input {"touch": {"id": 7, "x": 200, "y": 700, "phase": "end"}}
 frames 5
 expect game_state.state.battle.inspect == null
+# ---- End Turn with nothing played: "Are you sure?"; a tap on the table does nothing, No goes back ----
+action bt_end
+frames 5
+expect game_state.state.battle.confirm_end == true
+expect ui.slots.bt_over contains bt_end_yes
+call input {"touch": {"id": 8, "x": 85, "y": 330, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 8, "x": 85, "y": 330, "phase": "end"}}
+frames 5
+expect game_state.state.battle.inspect == null
+frames 20
+screenshot shots/battle-touch-confirm.png
+action bt_end_no
+frames 3
+expect game_state.state.battle.confirm_end == false
+expect game_state.state.battle.phase == "Plan"
 # ---- Flee: -1 stud, +5 EXP, back in the village ----
 action bt_retreat
 frames 5
