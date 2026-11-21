@@ -40,6 +40,27 @@ const PAL_N: u32 = 64;
 /// Rectangles around you (studs: west, east, north, south of you).
 const FINE_R: [f32; 4] = [96.0, 96.0, 96.0, 64.0];
 const COARSE_R: [f32; 4] = [256.0, 256.0, 256.0, 128.0];
+/// The camera can turn (a PC: right mouse button): the rectangles reach as far south as north, and chunks get their
+/// north-facing risers too (a fixed camera looking north never sees those). Set by the play screen (`set_turning`).
+static TURNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_turning(on: bool) {
+    TURNING.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn turning() -> bool {
+    TURNING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `r` as it applies now: every side as far as the farthest while the camera can turn.
+fn reach(r: [f32; 4]) -> [f32; 4] {
+    if turning() {
+        let m = r.iter().cloned().fold(0.0, f32::max);
+        [m; 4]
+    } else {
+        r
+    }
+}
 /// What the play camera can see (zoomed out, plus the shadows reaching in): these chunks go on `LAYER_NEAR`.
 const VIEW_R: [f32; 4] = [64.0, 64.0, 56.0, 36.0];
 
@@ -252,9 +273,9 @@ fn mesh(job: &Job) -> Built {
                         if hidden > FLOOR {
                             segs.push((FLOOR, hidden, entry(island::ROCK_DARK, 2)));
                         }
-                    } else if me.plates > nb.plates && dir != 3 {
-                        // (no north-facing risers inside a chunk: the camera looks north and never sees their front,
-                        // the sun lights them from the south; a quarter of the sides saved)
+                    } else if me.plates > nb.plates && (dir != 3 || turning()) {
+                        // (no north-facing risers inside a chunk while the camera looks north: it never sees their
+                        // front; a quarter of the sides saved. A turning PC camera needs them)
                         riser(&mut segs, me.plates, nb.plates, me, abs_along, abs_line);
                     }
                 }
@@ -622,9 +643,9 @@ impl IslandView {
         let mut converted = false;
         for k in keys {
             let ch = &self.chunks[&k];
-            if !rect_hits(k, hero, COARSE_R, 64.0) {
+            if !rect_hits(k, hero, reach(COARSE_R), 64.0) {
                 self.drop_all(ctx, k);
-            } else if ch.fine.is_some() && !rect_hits(k, hero, FINE_R, 32.0) && !converted {
+            } else if ch.fine.is_some() && !rect_hits(k, hero, reach(FINE_R), 32.0) && !converted {
                 // (one per frame: a fine chunk a little too far does no harm meanwhile)
                 converted = true;
                 // (the coarse version first, so it never leaves a hole)
@@ -673,7 +694,7 @@ impl IslandView {
         if self.sorted != Some((cell, far)) {
             self.sorted = Some((cell, far));
             for (k, ch) in self.chunks.iter_mut() {
-                let layer = if rect_hits(*k, hero, VIEW_R, 0.0) { island::LAYER_NEAR } else { island::LAYER_FAR };
+                let layer = if rect_hits(*k, hero, reach(VIEW_R), 0.0) { island::LAYER_NEAR } else { island::LAYER_FAR };
                 if layer != ch.layer {
                     ch.layer = layer;
                     for p in [&ch.fine, &ch.coarse].into_iter().flatten() {
@@ -691,25 +712,25 @@ impl IslandView {
     }
 
     fn next_job(&self, hero: Vec2) -> Option<Job> {
-        let lo = (((hero.x - COARSE_R[0] - X0) / CHUNK).floor() as i32).max(0);
-        let hi = (((hero.x + COARSE_R[1] - X0) / CHUNK).floor() as i32).min(island::CX - 1);
-        let zlo = (((hero.y - COARSE_R[2] - Z0) / CHUNK).floor() as i32).max(0);
-        let zhi = (((hero.y + COARSE_R[3] - Z0) / CHUNK).floor() as i32).min(island::CZ - 1);
+        let lo = (((hero.x - reach(COARSE_R)[0] - X0) / CHUNK).floor() as i32).max(0);
+        let hi = (((hero.x + reach(COARSE_R)[1] - X0) / CHUNK).floor() as i32).min(island::CX - 1);
+        let zlo = (((hero.y - reach(COARSE_R)[2] - Z0) / CHUNK).floor() as i32).max(0);
+        let zhi = (((hero.y + reach(COARSE_R)[3] - Z0) / CHUNK).floor() as i32).min(island::CZ - 1);
         let mut best: Option<(f32, (i32, i32), bool)> = None;
         for ck in zlo..=zhi {
             for ci in lo..=hi {
                 let k = (ci, ck);
-                if !rect_hits(k, hero, COARSE_R, 0.0) {
+                if !rect_hits(k, hero, reach(COARSE_R), 0.0) {
                     continue;
                 }
                 let ch = self.chunks.get(&k);
                 let has_fine = ch.is_some_and(|c| c.fine.is_some());
                 let has_any = has_fine || ch.is_some_and(|c| c.coarse.is_some());
                 let d = chunk_dist(k, hero);
-                let in_view = rect_hits(k, hero, VIEW_R, 16.0);
+                let in_view = rect_hits(k, hero, reach(VIEW_R), 16.0);
                 let cand = if !has_any && in_view {
                     Some((d - 1000.0, false)) // a hole in view: the cheap version first
-                } else if !has_fine && rect_hits(k, hero, FINE_R, 0.0) {
+                } else if !has_fine && rect_hits(k, hero, reach(FINE_R), 0.0) {
                     Some((d, true))
                 } else if !has_any {
                     Some((d + 500.0, false))

@@ -6,6 +6,7 @@
 reload
 screen play
 wait_for game_state.state.assets_pending == 0 15000
+call save_reset
 call clock {"hours": 12}
 call life {"freeze": true, "pip_home": true}
 resume

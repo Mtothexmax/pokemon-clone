@@ -163,6 +163,8 @@ pub struct PlayScreen {
     help_t: f32,
     /// `ctx.renderer.prewarm()` asked for (once the village is loaded)
     prewarmed: bool,
+    /// the camera can turn (a PC; `cam_free`), as last applied to the island's chunk ranges and the bands
+    cam_turns: bool,
     // ---- the lab quest's dive (dive.rs, cave.rs) ----
     dive: Dive,
     /// > 0: you jumped into the pond with the suit and sink in (seconds; then the dive)
@@ -246,6 +248,8 @@ const SWIPE_HELP: &str = "<div class='panel bh-thelp bh-help'>swipe: walk that w
 const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Seconds the help line stays (it fades out over its last 1.2 s, CSS `bh-help`).
 const HELP_S: f32 = 9.0;
+/// How fast the right mouse button turns the PC camera (radians per CSS px).
+const CAM_TURN: f32 = 0.005;
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
@@ -340,7 +344,9 @@ impl PlayScreen {
         let far = self.zoom.active || self.fight || self.vox.cam_on;
         // (on the island the strip behind you only matters as far as the camera sees south: its forest is heavy)
         let south = if z < island::SOUTH_Z { 24.0 } else { 40.0 };
-        let bands = if far { town::all_bands() } else { town::bands_near(z, 30.0, south) } | self.isle.layers(far);
+        // (a turning PC camera may look south as far as north: both sides as far as the farther)
+        let (north, south) = if self.cam_turns { (40.0, 40.0) } else { (30.0, south) };
+        let bands = if far { town::all_bands() } else { town::bands_near(z, north, south) } | self.isle.layers(far);
         if bands != self.bands {
             self.bands = bands;
             if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut Camera>(c).ok()) {
@@ -1162,6 +1168,11 @@ impl PlayScreen {
         ctx.ui.set("toast", &toast);
     }
 
+    /// The camera turns (a PC: right mouse button); phones keep the fixed view (a touch device, or one seen).
+    pub(crate) fn cam_free(&self, data: &Data) -> bool {
+        !(self.touch_ui || data.settings.touch)
+    }
+
     /// A dialog or a screen (computer, TV: they have their own close button) has the screen: no walking controls.
     /// (not a sign's close-up: the Use button or walking off closes it, so it keeps the buttons and the stick)
     fn talking(&self) -> bool {
@@ -1454,8 +1465,8 @@ impl Screen<Data> for PlayScreen {
             max_distance: off.length() * 1.4,
             collide: false,
             follow_rate: 4.0,
-            // the view never turns: no look from fingers or the mouse (a swipe to walk turned it for a frame or more
-            // until fixed_update put the yaw back, the picture wobbled); pinch / wheel still zoom
+            // phones: the view never turns (a swipe to walk turned it for a frame until fixed_update put the yaw back,
+            // the picture wobbled); on a PC the right mouse button turns it (`cam_free`, set every frame)
             sensitivity: 0.0,
             ..ThirdPersonCamera::following(hero)
         };
@@ -1517,9 +1528,20 @@ impl Screen<Data> for PlayScreen {
     }
 
     fn fixed_update(&mut self, ctx: &mut Ctx, data: &mut Data) {
-        // the camera never turns (the original's fixed view): W is always north (-z)
+        // phones: the camera never turns (the original's fixed view: up on the screen is north); on a PC it turns
+        // with the right mouse button and the keys walk the way it looks
+        let cam_free = self.cam_free(data);
+        if cam_free != self.cam_turns {
+            self.cam_turns = cam_free;
+            crate::islandview::set_turning(cam_free);
+        }
+        let mut cam_yaw = 0.0;
         if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut ThirdPersonCamera>(c).ok()) {
-            c.yaw = 0.0;
+            c.sensitivity = if cam_free { CAM_TURN } else { 0.0 };
+            if !cam_free {
+                c.yaw = 0.0;
+            }
+            cam_yaw = c.yaw;
         }
         let dt = ctx.time.fixed_dt;
         let space = ctx.input.key_down_or_pressed("Space");
@@ -1527,6 +1549,11 @@ impl Screen<Data> for PlayScreen {
             self.jump_block = false;
         }
         let mut axis = ctx.input.move_axis();
+        // the keys walk the way the camera looks (a turned PC camera): the axis into the world frame (x east, y north)
+        if cam_yaw != 0.0 && axis.length() > 0.0 {
+            let (sn, cs) = cam_yaw.sin_cos();
+            axis = Vec2::new(cs * axis.x - sn * axis.y, sn * axis.x + cs * axis.y);
+        }
         let mut jump = (space && !self.jump_block) || std::mem::take(&mut self.jump_tap);
         let mut run = ctx.input.key("ShiftLeft") || ctx.input.key("ShiftRight") || ctx.input.touch.axis.length() > TOUCH_RUN;
         self.sprinting = run && axis.length() > 0.2;

@@ -52,7 +52,7 @@ comes from.
 | module | what it does |
 |---|---|
 | `lib.rs` | `main`, `Data` (shared by all screens: save, sound, settings, town assets, card faces, card UI, battle art, the battle transition, the card game's seed), `Title`, `setup_look` (sky, fog, sun, shadows, plastic, solid fade, day cycle: `DAY_MINUTES` 6, `START_HOUR`), `day_colours`, `phone_quality`, `loadbar` (asset bar + plastic pass), `lcg`, `esc` |
-| `play.rs` | `PlayScreen`: the village, you (character controller + `Figure`), the villagers (`Npc`, kinematic capsules, markers), the fixed top-down camera (`CAM_OFFSET`, never turns), talking, doors and rooms, indoor light, the colour grade (`set_grade`, `DAY` / `NIGHT`, `NIGHT_FILL`), the pond and the dive hand-off, the gate, the HUD (help line, goal, prompt, toast, title, studs, markers, touch buttons), battles in and out, the debug commands |
+| `play.rs` | `PlayScreen`: the village, you (character controller + `Figure`), the villagers (`Npc`, kinematic capsules, markers), the top-down camera (`CAM_OFFSET`; phones: fixed, never turns; a PC turns it with the right mouse button, `cam_free` / `CAM_TURN`, the keys walk the way it looks), talking, doors and rooms, indoor light, the colour grade (`set_grade`, `DAY` / `NIGHT`, `NIGHT_FILL`), the pond and the dive hand-off, the gate, the HUD (help line, goal, prompt, toast, title, studs, markers, touch buttons), battles in and out, the debug commands |
 | `town.rs` | the town built in code (chunks of bricks per colour, instanced studs, glTF props, roads, the pond, lamps, clouds, tall-grass tufts), `TownAssets` (meshes / materials made once, `deferred` Stonecrest models via `load_deferred`), `NPCS`, `GRASSES`, `ROADS`, `POND`, `LAMPS`, zones (`zone_at`, `ZONE_NAMES`), layers (`layer_at`, `bands_near`, `all_bands`), the gate spots |
 | `rooms.rs` (`town::rooms`) | the interiors far east (x >= 187): `RoomId`, `ROOMS`, `room_def`, `area_at`, `door_at`, `ROOM_NPCS` (Mom, Lumi, the lab Prof), `room_lights`, `MACHINE_SCREEN`, layers |
 | `north.rs` | `Town::build_north`: Route 1 (trail, creek + bridge, three grass patches, forest with LODs `FOREST_LOD`), Stonecrest (roads, six houses, the fountain's stone, castle), signs, walls |
@@ -118,7 +118,7 @@ comes from.
 - **Phones:** `Data::ensure_loaded` detects a phone (coarse pointer, or touch points + a mobile UA) for the phone
   profile from the first frame (`phone_quality`: 2 cascades, half resolution, 20 ms budget, no screen-space
   extras). No frame cap: the engine's frame pacing picks the cadence (`stats.render.pacing`). `ctx.renderer.prewarm()`
-  runs once the village is loaded. The play camera never turns (`sensitivity` 0). `PlayScreen::talking()` hides the
+  runs once the village is loaded. The play camera never turns on phones (`sensitivity` 0, yaw reset every step); on a PC it turns with the right mouse button (`cam_free`): the keys' axis is rotated into the world, the island chunk rectangles and the strip's bands reach as far in every direction, island chunks get their north-facing risers (`islandview::set_turning`). `PlayScreen::talking()` hides the
   touch buttons and the stick.
 - **Page:** `web/index.html` replaces the engine's page (no text selection / callout, a brick loading bar for the
   wasm download): keep the engine's page changes in sync by hand.
@@ -150,6 +150,7 @@ Drive cards with touch input (`input {touch}`), not the mouse.
 
 | test | covers |
 |---|---|
+| camera_turn | the PC camera: the mouse alone doesn't turn it, the right button does, W walks the way it looks |
 | savefile | the menu's Export / Import row, export JSON, an import persists over a reload, non-saves refused |
 | smoke, town | the village loads, walking, jumping, collision, studs, LODs (`lods_village == 0`) |
 | touch, phone_start, swipe | the stick, Jump, the phone profile from the first frame, swipe walking |
