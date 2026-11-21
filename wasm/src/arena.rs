@@ -133,6 +133,15 @@ pub const STYLE: &str = "<style>
 @keyframes bttopp{0%{opacity:1;transform:translate(60vw,12%) rotate(-4deg)}20%{transform:translate(0,12%) rotate(-4deg)}78%{opacity:1;transform:translate(0,12%) rotate(-4deg)}100%{opacity:1;transform:translate(60vw,12%) rotate(-4deg)}}
 .btt-vs{position:absolute;left:50%;top:50%;width:clamp(100px,23vh,195px);aspect-ratio:1;margin:calc(clamp(100px,23vh,195px) / -2) 0 0 calc(clamp(100px,23vh,195px) / -2);border-radius:50%;background:radial-gradient(circle at 50% 40%,#fff3a0,#f2a705);border:5px solid #fff;box-sizing:border-box;display:grid;place-items:center;font-weight:800;color:#c91a09;font-size:clamp(40px,9.6vh,80px);text-shadow:0 2px 0 #fff;box-shadow:0 6px 20px rgba(0,0,0,.5);opacity:0;animation:bttvs .92s linear .95s forwards}
 @keyframes bttvs{0%{opacity:0;transform:scale(2.6) rotate(-8deg)}10%{opacity:1}24%{transform:scale(.9) rotate(0)}32%{transform:scale(1)}73%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.4)}}
+/* portrait (phones): the two names one above the other, full width, the VS badge between them; sizes from the width */
+@media (max-aspect-ratio:1/1){
+.btt-you,.btt-opp{width:100%;height:14vh;min-height:64px;max-height:120px;justify-content:center;padding:0 5vw;font-size:clamp(26px,9vw,48px);white-space:nowrap;overflow:hidden}
+.btt-you{top:calc(50% - 15vw - 10px - 14vh);transform:translate(-110vw,0) rotate(-4deg);animation-name:bttyoup}
+.btt-opp{top:calc(50% + 15vw + 10px);transform:translate(110vw,0) rotate(-4deg);animation-name:bttoppp}
+.btt-vs{width:30vw;margin:-15vw 0 0 -15vw;font-size:13vw;border-width:4px}
+@keyframes bttyoup{0%{opacity:1;transform:translate(-110vw,0) rotate(-4deg)}20%{transform:translate(0,0) rotate(-4deg)}78%{opacity:1;transform:translate(0,0) rotate(-4deg)}100%{opacity:1;transform:translate(-110vw,0) rotate(-4deg)}}
+@keyframes bttoppp{0%{opacity:1;transform:translate(110vw,0) rotate(-4deg)}20%{transform:translate(0,0) rotate(-4deg)}78%{opacity:1;transform:translate(0,0) rotate(-4deg)}100%{opacity:1;transform:translate(110vw,0) rotate(-4deg)}}
+}
 .btt-flash{position:absolute;inset:0;background:#fff;opacity:0;animation:bttfl 1.35s linear forwards}
 @keyframes bttfl{0%{opacity:0}12%{opacity:.85}24%{opacity:0}86.6%{opacity:0}86.7%{opacity:.55}100%{opacity:0}}
 #ui [data-slot^=bt_]{pointer-events:none}

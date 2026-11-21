@@ -28,7 +28,7 @@ expect game_state.state.dialog.id == "IntroKeys"
 expect game_state.state.dialog.speaker == "You"
 expect game_state.state.title == "Your Room"
 expect game_state.state.camera_layers == 33
-expect game_state.state.room_lights_on == 3
+expect game_state.state.room_lights_on == 4
 wait_for game_state.state.indoor > 0.95 3000
 wait_for game_state.state.sound.last_voice == "assets/voices/91b19939.ogg" 5000
 expect game_state.state.hero.x ~= 197.4
@@ -50,7 +50,7 @@ frames 30
 expect game_state.state.door == null
 expect game_state.state.hero.x ~= 210.6
 expect game_state.state.camera_layers == 5
-expect game_state.state.room_lights_on == 3
+expect game_state.state.room_lights_on == 6
 # Mom (in the kitchen) has the "!" now that you are in her room
 expect game_state.state.npcs.5.id == "mom"
 expect game_state.state.npcs.5.marker == "!"
@@ -147,7 +147,7 @@ down KeyW
 wait_for game_state.state.area == "Lab" 3000
 up KeyW
 frames 30
-expect game_state.state.room_lights_on == 4
+expect game_state.state.room_lights_on == 8
 expect game_state.state.machine == "missing"
 call teleport {"x": 333, "z": 1.8}
 frames 20

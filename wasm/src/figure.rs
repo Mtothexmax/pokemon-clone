@@ -59,6 +59,12 @@ pub struct Figure {
     style: String,
     hi: Option<Entity>,
     detailed: bool,
+    /// talking: the face material and its prints (closed = the head's own, half open, open; `want_detail` loads
+    /// them from head_mouth{1,2}.glb, made by tools/mouths.py), the copies still loading, the print shown
+    face_mat: Option<MaterialId>,
+    mouths: Vec<TextureId>,
+    mouth_load: Vec<Entity>,
+    mouth: usize,
 }
 
 /// The finer head (`head_hi.glb`, made by tools/subdivide.mjs: 16x the triangles, round silhouettes) is drawn while the
@@ -77,7 +83,7 @@ impl Figure {
             let _ = ctx.world.insert_one(e, Parent(root));
             e
         });
-        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0, style: style.to_string(), hi: None, detailed: false };
+        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0, style: style.to_string(), hi: None, detailed: false, face_mat: None, mouths: vec![], mouth_load: vec![], mouth: 0 };
         f.apply(ctx);
         f
     }
@@ -86,6 +92,7 @@ impl Figure {
     /// and when both heads are there makes each of its primitives LOD 0 of the head's (matched by material name)
     /// within `HI_DIST`, then drops the loaded copy. The head keeps its own materials, the engine picks the mesh.
     pub fn want_detail(&mut self, ctx: &mut Ctx) {
+        self.want_mouths(ctx);
         if self.detailed {
             return;
         }
@@ -116,6 +123,65 @@ impl Figure {
         ctx.despawn(hi);
         self.hi = None;
         self.detailed = true;
+    }
+
+    /// Loads the open-mouth prints once (out of sight) and keeps their textures; the face material is the head's
+    /// primitive whose material name ends in `_face`.
+    fn want_mouths(&mut self, ctx: &mut Ctx) {
+        if self.mouths.len() == 3 {
+            return;
+        }
+        let opts = engine::gltf_loader::GltfOpts { auto_lod: false, ..Default::default() };
+        if self.mouth_load.is_empty() {
+            for n in 1..=2 {
+                let e = ctx.load_gltf_with(&format!("assets/minifig/{}/head_mouth{n}.glb", self.style), Transform::from_xyz(0.0, -1000.0, 0.0), opts);
+                self.mouth_load.push(e);
+            }
+            return;
+        }
+        let face_of = |ctx: &Ctx, root: Entity| -> Option<(MaterialId, TextureId)> {
+            engine::scene::descendants(&ctx.world, root).into_iter().find_map(|e| {
+                let mr = ctx.world.get::<&MeshRenderer>(e).ok()?;
+                let m = ctx.renderer.material(mr.material)?;
+                if m.name.ends_with("_face") { Some((mr.material, m.texture?)) } else { None }
+            })
+        };
+        let Some((mat, closed)) = face_of(ctx, self.parts[0]) else { return };
+        let opened: Vec<TextureId> = self.mouth_load.iter().filter_map(|e| face_of(ctx, *e).map(|f| f.1)).collect();
+        if opened.len() < 2 {
+            return; // still loading
+        }
+        self.face_mat = Some(mat);
+        self.mouths = vec![closed, opened[0], opened[1]];
+        for e in std::mem::take(&mut self.mouth_load) {
+            ctx.despawn(e);
+        }
+    }
+
+    /// Talking: how open the mouth is (0..1, the voice's loudness), shown as the closed, half or open print (a
+    /// little hysteresis so it does not flicker between two).
+    pub fn set_mouth(&mut self, ctx: &mut Ctx, open: f32) {
+        let (Some(mat), true) = (self.face_mat, self.mouths.len() == 3) else { return };
+        let up = [0.0, 0.18, 0.55];
+        let down = [0.0, 0.1, 0.42];
+        let mut f = self.mouth;
+        while f < 2 && open > up[f + 1] {
+            f += 1;
+        }
+        while f > 0 && open < down[f] {
+            f -= 1;
+        }
+        if f != self.mouth {
+            self.mouth = f;
+            if let Some(m) = ctx.renderer.material_mut(mat) {
+                m.texture = Some(self.mouths[f]);
+            }
+        }
+    }
+
+    /// The print shown (0 closed, 1 half, 2 open; debug).
+    pub fn mouth(&self) -> usize {
+        self.mouth
     }
 
     /// The finer head is in use (debug).

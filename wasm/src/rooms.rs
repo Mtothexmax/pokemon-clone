@@ -92,12 +92,18 @@ pub fn door_at(area: Option<RoomId>, x: f32, z: f32) -> Option<(Vec2, f32)> {
     }
 }
 
-/// The warm ceiling lights (studs, 8.5 up) of a room: two or three over the back, one over the front.
+/// The warm ceiling lights (studs, 10 up, weight): a grid over the room, a lamp about every 9 studs across and two
+/// rows (the front row a little softer), so the light is even, without one hot spot per lamp and dark corners.
 pub fn room_lights(id: RoomId) -> Vec<(Vec3, f32)> {
     let r = room_def(id);
-    let n = if r.w > 30.0 { 3 } else { 2 };
-    let mut v: Vec<(Vec3, f32)> = (0..n).map(|k| (Vec3::new(r.ox - r.w * 0.5 + r.w * (k as f32 + 0.5) / n as f32, 8.5, r.oz - r.d * 0.15), 1.0)).collect();
-    v.push((Vec3::new(r.ox, 8.5, r.oz + r.d * 0.3), 0.6));
+    let cols = (r.w / 9.0).ceil().max(2.0) as usize;
+    let mut v = vec![];
+    for (row, z, k) in [(0, -0.22, 1.0), (1, 0.25, 0.8)] {
+        let _ = row;
+        for c in 0..cols {
+            v.push((Vec3::new(r.ox - r.w * 0.5 + r.w * (c as f32 + 0.5) / cols as f32, 10.0, r.oz + r.d * z), k));
+        }
+    }
     v
 }
 

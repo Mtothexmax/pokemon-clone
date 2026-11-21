@@ -293,6 +293,18 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   `head_flat.glb` (the flat-shaded original, the source: change that one and rerun). `Figure::want_detail` loads it once (out of sight) and makes
   it LOD 0 of the head within `HI_DIST` 3 m (matched by material name); play.rs calls it for villagers within 4 m
   and the one you talk to; `game_state.state.fine_heads`.
+- Weather / night: rain haze `fog_density` x (1 + 0.6 rain), `fog_start` x (1 - 0.15 rain) (the old 1.5 / 0.5 put the
+  village in milk under the 16 m camera); at night outside `ambient_scale` x (1 + `NIGHT_FILL` 1.4 x night); street
+  lamps 8 x night, range 24 studs.
+- Talking mouths: `tools/mouths.py` (Pillow) erases the printed mouth and paints the half / fully open one over each
+  face print
+  (`head_mouth{1,2}.glb`: head_flat.glb with only the image swapped). `Figure::want_detail` also loads them and keeps
+  their textures; `Figure::set_mouth(open 0..1)` swaps the face material's texture (closed / half / open, hysteresis).
+  play.rs drives the talking villager from `Sound::voice_mouth` (engine 75f86fb `audio.voice_level`, smoothstep
+  0.15..0.6); `game_state.state.mouths`.
+- Rooms: `rooms::room_lights` is a grid (a lamp about every 9 studs, two rows, 10 studs up; 6 in the houses, 8 in
+  the lab) at `ROOM_LAMP` 6, range 11 m; `INDOOR_SKY` 0.45. Cards in the battle: `table::CARD_TINT` 0.72 (they went
+  past white). VS screen: a portrait layout (names stacked, sizes from the width).
 - Asset bar: `Data::loadbar(ctx)` every frame from Title, PlayScreen and BattleScreen (call it from any new screen):
   slot `loadbar` (top centre) while `ctx.assets_pending() > 0`, percent of the most pending at once.
 - Plastic: `Data::plastic` (inside `loadbar`) gives every new opaque lit material the plastic look (engine 12f937f):

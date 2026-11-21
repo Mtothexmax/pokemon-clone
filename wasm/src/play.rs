@@ -31,7 +31,11 @@ const DOOR_OUT: f32 = 0.15;
 const DOOR_IN: f32 = 0.25;
 /// Indoors the sun is a soft remainder and the sky light dims: the warm ceiling lights carry the room.
 const INDOOR_SUN: f32 = 0.04;
-const INDOOR_SKY: f32 = 0.3;
+/// A room lamp's intensity (`rooms::room_lights`: 6 to 8 per room, soft and even).
+const ROOM_LAMP: f32 = 6.0;
+const INDOOR_SKY: f32 = 0.45;
+/// At night outside the sky light is (1 + this) times the day cycle's (too dark away from the lamps on a phone).
+const NIGHT_FILL: f32 = 1.4;
 
 /// A villager in the town: id (as `town::NPCS`), figure, the way it faces (yaw, figures face +z at 0),
 /// its "!" / "…" marker (a `WorldLabel` child) and that marker's current html.
@@ -439,7 +443,7 @@ impl PlayScreen {
         }
         for (r, e, k) in &self.room_lights {
             if let Ok(mut l) = ctx.world.get::<&mut PointLight>(*e) {
-                l.intensity = if Some(*r) == self.area { 9.0 * k } else { 0.0 };
+                l.intensity = if Some(*r) == self.area { ROOM_LAMP * k } else { 0.0 };
             }
         }
         self.title = self.area.map(|r| rooms::room_def(r).label).unwrap_or(town::ZONE_NAMES[self.zone]);
@@ -487,9 +491,11 @@ impl PlayScreen {
             self.indoor = want; // behind the black: no visible fade
         }
         let k = self.indoor;
+        // night outside: more of the (moonlit, blue) sky light, so the village away from the lamps stays readable
+        let night = ctx.renderer.sky.night * (1.0 - k);
         let s = &mut ctx.renderer.settings;
         s.sun_scale = 1.0 + (INDOOR_SUN - 1.0) * k;
-        s.ambient_scale = 1.0 + (INDOOR_SKY - 1.0) * k;
+        s.ambient_scale = (1.0 + (INDOOR_SKY - 1.0) * k) * (1.0 + NIGHT_FILL * night);
     }
 
     fn npc_index(&self, id: &str) -> Option<usize> {
@@ -915,12 +921,13 @@ impl PlayScreen {
             }
         }
         self.last_hours = Some(h);
-        // rain: the air gets hazy (Kaigen: the stylized sky's haze 0.6 + 0.9 x rain)
+        // rain: the air gets a little hazy (Kaigen: the stylized sky's haze 0.6 + 0.9 x rain). The haze starts well past
+        // the camera (~16 m above you): halving the start put the whole village in milk on a phone
         if !self.dive.on {
             let k = self.life.rain_level;
             let s = &mut ctx.renderer.settings;
-            s.fog_density = 0.055 * (1.0 + 1.5 * k);
-            s.fog_start = 90.0 * STUD * (1.0 - 0.5 * k);
+            s.fog_density = 0.055 * (1.0 + 0.6 * k);
+            s.fog_start = 90.0 * STUD * (1.0 - 0.15 * k);
         }
         self.life_view.frame(ctx, &self.life);
         self.golden_seen = data.save.data.golden_mask;
@@ -1021,7 +1028,7 @@ impl Screen<Data> for PlayScreen {
         self.fader = crate::fade::Fader::new(occluders);
         self.stats = stats;
         for l in town::LAMPS {
-            self.lamps.push(ctx.world.spawn((Transform::from_translation(town::m(l[0], 5.6, l[1])), PointLight { color: engine::renderer::srgb_hex(0xffd27a).truncate(), intensity: 0.0, range: 16.0 * STUD })));
+            self.lamps.push(ctx.world.spawn((Transform::from_translation(town::m(l[0], 5.6, l[1])), PointLight { color: engine::renderer::srgb_hex(0xffd27a).truncate(), intensity: 0.0, range: 24.0 * STUD })));
         }
 
         // you: a capsule the size of the minifig (1.86 m), walking 8.5 studs/s like the original
@@ -1065,7 +1072,7 @@ impl Screen<Data> for PlayScreen {
         // the rooms' warm ceiling lights (on only in the room you are in)
         for r in rooms::ROOMS {
             for (p, k) in rooms::room_lights(r) {
-                let e = ctx.world.spawn((Transform::from_translation(town::m(p.x, p.y, p.z)), PointLight { color: Vec3::new(1.0, 0.84, 0.62), intensity: 0.0, range: 9.0 }));
+                let e = ctx.world.spawn((Transform::from_translation(town::m(p.x, p.y, p.z)), PointLight { color: Vec3::new(1.0, 0.86, 0.68), intensity: 0.0, range: 11.0 }));
                 self.room_lights.push((r, e, k));
             }
         }
@@ -1520,7 +1527,8 @@ impl Screen<Data> for PlayScreen {
         }
         self.dive.lab(ctx, &data.save.data);
 
-        // a villager within talking reach (or talking) gets the finer head for the close-up (loaded once, ahead)
+        // a villager within talking reach (or talking) gets the finer head and the talking prints for the close-up
+        // (loaded once, ahead); whoever talks moves the mouth with the voice
         if let Some((p, _)) = pos {
             for i in 0..self.npcs.len() {
                 let near = self.npc_pos(ctx, i).is_some_and(|q| (q - p).length() < 4.0) && self.npcs[i].area == self.area;
@@ -1528,6 +1536,11 @@ impl Screen<Data> for PlayScreen {
                     self.npcs[i].fig.want_detail(ctx);
                 }
             }
+        }
+        let speaking = if self.dlg.is_open() { data.sound.voice_mouth(ctx) } else { 0.0 };
+        for i in 0..self.npcs.len() {
+            let open = if self.talk_npc == Some(i) { speaking } else { 0.0 };
+            self.npcs[i].fig.set_mouth(ctx, open);
         }
         // the camera at your eyes, looking at whom you talk to (head and shoulders, above the dialog box)
         let board = match (self.dlg.is_open(), self.talk_npc, pos) {
@@ -1565,7 +1578,7 @@ impl Screen<Data> for PlayScreen {
         let night = ctx.renderer.sky.night;
         for l in &self.lamps {
             if let Ok(mut p) = ctx.world.get::<&mut PointLight>(*l) {
-                p.intensity = night * 6.0;
+                p.intensity = night * 8.0;
             }
         }
         self.life.update(dt);
@@ -2017,6 +2030,7 @@ impl Screen<Data> for PlayScreen {
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
             "fine_heads": self.npcs.iter().filter(|n| n.fig.detailed()).map(|n| n.id.clone()).collect::<Vec<_>>(),
+            "mouths": self.npcs.iter().filter(|n| n.fig.mouth() > 0).map(|n| (n.id.clone(), n.fig.mouth())).collect::<Vec<_>>(),
             "busy": self.busy,
             "life": self.life.describe(g),
             "rain_volume": self.life_view.rain_volume(ctx),

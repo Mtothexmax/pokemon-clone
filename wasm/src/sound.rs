@@ -342,6 +342,15 @@ impl Sound {
         }
     }
 
+    /// How open a speaker's mouth is now (0..1) while a voice line plays: the line's loudness where it is heard
+    /// (engine 75f86fb `audio.voice_level`: its RMS envelope, 1 = the loudest moment of that line), quiet bits shut.
+    pub fn voice_mouth(&self, ctx: &Ctx) -> f32 {
+        let Some((_, Some(v), _, _)) = &self.voice else { return 0.0 };
+        let l = ctx.audio.voice_level(*v).unwrap_or(0.0);
+        let x = ((l - 0.15) / 0.45).clamp(0.0, 1.0);
+        x * x * (3.0 - 2.0 * x)
+    }
+
     /// The voice line being played or waiting (url).
     pub fn voice_url_now(&self) -> Option<&str> {
         self.voice.as_ref().map(|v| v.2.as_str())

@@ -15,6 +15,10 @@ use std::collections::HashMap;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d as C2d, HtmlCanvasElement, HtmlImageElement};
 
+/// The printed cards' tint (linear): the sun (3.2) plus the sky light took a white card face past white (washed-out
+/// art, a glow from the bloom); a little darker, the prints keep their colours.
+const CARD_TINT: Vec4 = Vec4::new(0.72, 0.72, 0.72, 1.0);
+
 /// Card slab: width 1 (scale the entity by the card's width), height 1.4, this thick (local units).
 pub const CARD_H: f32 = 1.4;
 pub const CARD_T: f32 = 0.024;
@@ -285,13 +289,13 @@ impl TableArt {
 
     /// The material of a textured face (cards, tiles; opaque, double-sided for the shards).
     pub fn face_mat(&mut self, ctx: &mut Ctx, tex: TextureId) -> MaterialId {
-        *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face".into(), texture: Some(tex), double_sided: true, ..Material::color(0xffffff).rough(0.6) }))
+        *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face".into(), texture: Some(tex), double_sided: true, base_color: CARD_TINT, ..Material::color(0xffffff).rough(0.6) }))
     }
 
     pub fn back_mat(&mut self, ctx: &mut Ctx, faces: &mut crate::cardface::CardFaces) -> Option<MaterialId> {
         if self.back_mat.is_none() {
             let t = faces.texture(ctx, crate::cardface::Face::back())?;
-            self.back_mat = Some(ctx.renderer.add_material(Material { name: "card back".into(), texture: Some(t), ..Material::color(0xffffff).rough(0.6) }));
+            self.back_mat = Some(ctx.renderer.add_material(Material { name: "card back".into(), texture: Some(t), base_color: CARD_TINT, ..Material::color(0xffffff).rough(0.6) }));
         }
         self.back_mat
     }
