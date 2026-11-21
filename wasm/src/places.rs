@@ -70,6 +70,18 @@ impl Bld {
         self.lo = self.lo.min(c - Vec3::splat(r));
         self.hi = self.hi.max(c + Vec3::splat(r));
     }
+    /// A tapered round (studs): from radius `rb` at its foot `c` to `rt` `h` above, `seg` sides.
+    fn cone(&mut self, hex: u32, c: Vec3, rb: f32, rt: f32, h: f32, seg: u32) {
+        let t = Mat4::from_translation(m(c.x, c.y, c.z));
+        let prof = [Vec2::new(0.0, 0.0), Vec2::new(rb * STUD, 0.0), Vec2::new(rt * STUD, h * STUD), Vec2::new(0.0, h * STUD)];
+        self.mb.part(&format!("c{hex:06x}"));
+        self.mb.with(t, |mb| {
+            mb.lathe(&prof, seg);
+        });
+        let r = rb.max(rt);
+        self.lo = self.lo.min(c - Vec3::new(r, 0.0, r));
+        self.hi = self.hi.max(c + Vec3::new(r, h, r));
+    }
     fn cyl(&mut self, hex: u32, c: Vec3, r: f32, h: f32) {
         let t = Mat4::from_translation(m(c.x, c.y, c.z));
         self.mb.part(&format!("c{hex:06x}"));
@@ -642,17 +654,93 @@ fn fir_parts() -> Vec<(String, engine::mesh::MeshData)> {
 /// The fir's height in model units (its tip's top).
 const FIR_H: f32 = 6.76;
 
+/// The harbour's lighthouse (after the user's picture): a stepped stone plinth, a round tower tapering a little in
+/// red and white bands with small dark windows and a red door, a dark gallery with railing posts, the lantern room
+/// glowing yellow between dark frame posts, a dark dome with a ball on top.
 fn lighthouse(b: &mut Bld, c: Vec3) {
-    b.bx(0xa0a5a9, Vec3::new(c.x - 3.0, c.y, c.z - 3.0), Vec3::new(c.x + 3.0, c.y + 1.2, c.z + 3.0));
-    for i in 0..6 {
-        let col = if i % 2 == 0 { 0xf4f4f4 } else { 0xc91a09 };
-        let r = 2.2 - i as f32 * 0.15;
-        b.cyl(col, Vec3::new(c.x, c.y + 1.2 + i as f32 * 3.0, c.z), r, 3.0);
+    let (stone, stone_dark, red, white, dark, glow) = (0xd9c08a, 0xa0a5a9, 0xc91a09, 0xf4f4f4, 0x2b3440, 0xffd23d);
+    // the plinth: two steps of stone
+    b.bx(stone_dark, Vec3::new(c.x - 6.0, c.y, c.z - 6.0), Vec3::new(c.x + 6.0, c.y + 1.2, c.z + 6.0));
+    b.bx(stone, Vec3::new(c.x - 4.8, c.y + 1.2, c.z - 4.8), Vec3::new(c.x + 4.8, c.y + 2.4, c.z + 4.8));
+    // the tower: seven bands, red at the foot
+    let (y0, band, rb, rt) = (c.y + 2.4, 4.0, 3.8, 3.0);
+    let n = 7;
+    for i in 0..n {
+        let (r0, r1) = (rb + (rt - rb) * i as f32 / n as f32, rb + (rt - rb) * (i + 1) as f32 / n as f32);
+        b.cone(if i % 2 == 0 { red } else { white }, Vec3::new(c.x, y0 + i as f32 * band, c.z), r0, r1, band, 20);
     }
-    let top = c.y + 1.2 + 18.0;
-    b.bx(0x1b2a34, Vec3::new(c.x - 1.8, top, c.z - 1.8), Vec3::new(c.x + 1.8, top + 0.4, c.z + 1.8));
-    b.cyl(0xf2cd37, Vec3::new(c.x, top + 0.4, c.z), 1.1, 2.0);
-    b.cyl(0xc91a09, Vec3::new(c.x, top + 2.4, c.z), 1.4, 0.8);
+    let top = y0 + n as f32 * band;
+    // windows up the front (south) and the door
+    for k in [1, 3, 5] {
+        let y = y0 + k as f32 * band + 1.0;
+        let r = rb + (rt - rb) * (k as f32 + 0.5) / n as f32;
+        b.bx(dark, Vec3::new(c.x - 0.6, y, c.z + r - 0.3), Vec3::new(c.x + 0.6, y + 1.8, c.z + r + 0.12));
+        b.bx(white, Vec3::new(c.x - 0.8, y - 0.25, c.z + r - 0.2), Vec3::new(c.x + 0.8, y, c.z + r + 0.25));
+    }
+    b.bx(0x82422a, Vec3::new(c.x - 1.0, y0, c.z + rb - 0.4), Vec3::new(c.x + 1.0, y0 + 3.4, c.z + rb + 0.15));
+    b.bx(white, Vec3::new(c.x - 1.3, y0 + 3.4, c.z + rb - 0.3), Vec3::new(c.x + 1.3, y0 + 3.8, c.z + rb + 0.3));
+    // the gallery: a dark disc wider than the tower, railing posts and a rail round it
+    b.cone(dark, Vec3::new(c.x, top, c.z), rt + 0.4, rt + 1.6, 0.8, 24);
+    let gr = rt + 1.4;
+    for k in 0..16 {
+        let a = k as f32 / 16.0 * std::f32::consts::TAU;
+        let (px, pz) = (c.x + a.cos() * gr, c.z + a.sin() * gr);
+        b.bx(dark, Vec3::new(px - 0.12, top + 0.8, pz - 0.12), Vec3::new(px + 0.12, top + 2.2, pz + 0.12));
+    }
+    b.cone(dark, Vec3::new(c.x, top + 2.2, c.z), gr + 0.15, gr + 0.15, 0.25, 24);
+    // the lantern room: a glowing yellow round between dark posts, a dark band
+    b.cone(dark, Vec3::new(c.x, top + 0.8, c.z), rt - 0.6, rt - 0.6, 0.6, 20);
+    b.cone(glow, Vec3::new(c.x, top + 1.4, c.z), rt - 0.9, rt - 0.9, 3.2, 20);
+    for k in 0..8 {
+        let a = k as f32 / 8.0 * std::f32::consts::TAU;
+        let (px, pz) = (c.x + a.cos() * (rt - 0.85), c.z + a.sin() * (rt - 0.85));
+        b.bx(dark, Vec3::new(px - 0.15, top + 1.4, pz - 0.15), Vec3::new(px + 0.15, top + 4.6, pz + 0.15));
+    }
+    // the dome and its ball
+    let dy = top + 4.6;
+    b.cone(dark, Vec3::new(c.x, dy, c.z), rt - 0.2, rt - 0.2, 0.4, 20);
+    b.cone(dark, Vec3::new(c.x, dy + 0.4, c.z), rt - 0.3, 1.2, 1.6, 20);
+    b.cone(dark, Vec3::new(c.x, dy + 2.0, c.z), 1.2, 0.3, 0.8, 16);
+    b.cone(dark, Vec3::new(c.x, dy + 2.8, c.z), 0.15, 0.15, 0.6, 8);
+    b.cone(dark, Vec3::new(c.x, dy + 3.4, c.z), 0.45, 0.45, 0.6, 12);
+    b.body = Some((Vec3::new(c.x - 6.0, c.y, c.z - 6.0), Vec3::new(c.x + 6.0, dy + 4.0, c.z + 6.0)));
+}
+
+/// Brickton's TV tower (after the user's picture): a slender white shaft tapering up, the pod three quarters up (a cone
+/// widening to an orange band with a ring of dark windows, white rims above and below, a smaller white ring on top),
+/// a thinner shaft above, and the red and white antenna.
+fn tv_tower(b: &mut Bld, c: Vec3) {
+    let (white, concrete, orange, window, red) = (0xf4f4f4, 0xe0e2e4, 0xfe8a18, 0x0a3463, 0xc91a09);
+    // the foot: a low round plinth
+    b.cone(0xa0a5a9, Vec3::new(c.x, c.y, c.z), 9.0, 8.0, 1.2, 28);
+    b.cone(concrete, Vec3::new(c.x, c.y + 1.2, c.z), 6.0, 5.4, 3.0, 24);
+    // the shaft
+    let (s0, s1) = (c.y + 4.2, c.y + 120.0);
+    b.cone(white, Vec3::new(c.x, s0, c.z), 4.6, 2.6, s1 - s0, 24);
+    // a light stripe up the front
+    // the pod
+    let py = s1;
+    b.cone(white, Vec3::new(c.x, py, c.z), 2.6, 9.0, 4.0, 32);
+    b.cone(white, Vec3::new(c.x, py + 4.0, c.z), 9.4, 9.4, 0.6, 32);
+    b.cone(orange, Vec3::new(c.x, py + 4.6, c.z), 9.0, 9.0, 1.4, 32);
+    b.cone(window, Vec3::new(c.x, py + 6.0, c.z), 9.05, 9.05, 2.4, 32);
+    b.cone(orange, Vec3::new(c.x, py + 8.4, c.z), 9.0, 9.0, 1.2, 32);
+    b.cone(white, Vec3::new(c.x, py + 9.6, c.z), 9.6, 9.6, 0.6, 32);
+    b.cone(white, Vec3::new(c.x, py + 10.2, c.z), 8.6, 5.0, 2.0, 32);
+    // a smaller ring above (the restaurant's roof terrace)
+    b.cone(white, Vec3::new(c.x, py + 12.2, c.z), 3.4, 3.0, 4.0, 24);
+    b.cone(orange, Vec3::new(c.x, py + 16.2, c.z), 5.2, 5.2, 1.6, 28);
+    b.cone(white, Vec3::new(c.x, py + 17.8, c.z), 5.4, 3.0, 1.2, 28);
+    // the thin upper shaft and the antenna in red and white bands
+    let a0 = py + 19.0;
+    b.cone(white, Vec3::new(c.x, a0, c.z), 2.2, 1.6, 10.0, 16);
+    let mut y = a0 + 10.0;
+    for k in 0..6 {
+        b.cone(if k % 2 == 0 { red } else { white }, Vec3::new(c.x, y, c.z), 1.0 - k as f32 * 0.1, 0.9 - k as f32 * 0.1, 4.0, 12);
+        y += 4.0;
+    }
+    b.cone(red, Vec3::new(c.x, y, c.z), 0.4, 0.4, 1.0, 10);
+    b.body = Some((Vec3::new(c.x - 5.5, c.y, c.z - 5.5), Vec3::new(c.x + 5.5, s1, c.z + 5.5)));
 }
 
 // ------------------------------------------------------------------------------------------------ the towns
@@ -678,6 +766,11 @@ fn brickton(y: f32) -> Plan {
     let plaza = 18.0;
     // the mall: north-east of the plaza, its front toward the cross street
     let mall_c = Vec3::new(p.x + 34.0, y, p.z - 36.0);
+    // the TV tower north-west of the plaza (the lots round it stay free)
+    let tv_c = Vec3::new(p.x - 34.0, y, p.z - 36.0);
+    let mut b = Bld::new();
+    tv_tower(&mut b, tv_c);
+    plan.blds.push(b);
     let (mw, md) = (52.0, 30.0);
     let mut b = Bld::new();
     mall(&mut b, mall_c, mw, md);
@@ -694,6 +787,9 @@ fn brickton(y: f32) -> Plan {
                 x += lot + 3.0;
                 // the plaza and the mall keep their room
                 if (c.x - p.x).abs() < plaza + lot * 0.5 && (c.z - p.z).abs() < plaza + lot * 0.5 {
+                    continue;
+                }
+                if Vec2::new(c.x - tv_c.x, c.z - tv_c.z).length() < 9.5 + lot * 0.75 {
                     continue;
                 }
                 if (c.x - mall_c.x).abs() < mw * 0.5 + lot * 0.5 + 1.0 && (c.z - mall_c.z).abs() < md * 0.5 + lot * 0.5 + 6.0 {

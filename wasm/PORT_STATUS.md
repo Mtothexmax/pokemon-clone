@@ -111,8 +111,9 @@ comes from.
   town's people walk their ways (`people_ways`: Brickton's sidewalks and plaza, Saltwick's street and pier, across
   Dewmere's green), resting at the ends; drawn and moved only within `PEOPLE_R` 90 studs. Test: people.
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
-  (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
-  of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)
+  (towers taller toward the middle, the mall north-east of the plaza, the TV tower `tv_tower` north-west of it, shops /
+  offices south), Port Saltwick (two rows
+  of houses, pier, boat, the striped `lighthouse` after the user's picture), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)
   in the Brick Ages manner: running-bond brick walls with openings, framed windows with shutters and flower boxes,
   doors with frame / step / lamp, stepped gable or hip roofs, chimneys, Dewmere's with picket-fenced gardens. The fishing cutter (`boat`, 47 bricks after the user's model, `BOAT_K`
   4.5 studs per unit) at the pier's end; Dewmere's firs (`fir_parts`: trunk, five tiers of a core and bevelled
