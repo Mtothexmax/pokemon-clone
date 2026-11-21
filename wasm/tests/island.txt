@@ -134,8 +134,8 @@ expect zfight{"center": [-22.8, 6, -380], "radius": 12, "exclude": "hero"}.pairs
 expect stats.render.triangles < 60000
 call stats
 screenshot shots/island-cliff.png
-# ---- the coast: you wade into the shallows and stop where it gets deep ----
-call teleport {"x": 530, "z": -620}
+# ---- the coast (south of the harbour pier): you wade into the shallows and stop where it gets deep ----
+call teleport {"x": 530, "z": -645}
 frames 40
 down KeyD
 frames 240
