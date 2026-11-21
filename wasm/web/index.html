@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brickhollow</title>
+  <!-- Brickhollow's page (tools/dev.mjs takes web/index.html over the engine's): the engine's page plus a loading bar
+       (the game download here, then the game's own asset bar, lib.rs `loadbar`) and no text selection in the game. -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2433; font: 14px/1.4 system-ui, sans-serif; color: #f2f2f2; }
+    /* a game, not a document: no text selection, no long-press callout or drag on phones */
+    html, body, #ui, #canvas { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+    #ui img { -webkit-user-drag: none; }
+    #ui input, #ui textarea, #ui [contenteditable] { -webkit-user-select: text; user-select: text; }
+    #canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+    /* UI overlay: transparent to pointer events; interactive children opt in. */
+    #ui { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+    #ui .hud { position: absolute; inset: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    #ui .panel { background: rgba(10, 14, 22, .62); backdrop-filter: blur(6px); border-radius: 10px; padding: 8px 12px; }
+    #ui .score { font-size: 22px; font-weight: 700; }
+    #ui .score small { font-size: 13px; font-weight: 400; opacity: .7; }
+    #ui .fps { font: 12px ui-monospace, monospace; opacity: .75; }
+    #ui button { pointer-events: auto; margin-top: 6px; border: 0; border-radius: 6px; padding: 5px 10px; background: #ffc93c; color: #222; font-weight: 600; cursor: pointer; }
+    #ui button:hover { background: #ffd866; }
+    #ui kbd { background: rgba(255,255,255,.14); border-radius: 4px; padding: 0 4px; font-size: 12px; }
+    #ui .world-label { position: absolute; left: 0; top: 0; padding: 2px 8px; border-radius: 999px; background: rgba(10,14,22,.7); font-size: 12px; white-space: nowrap; will-change: transform; }
+    /* touch: virtual joystick drawn by the engine (crates/engine/src/touch.rs) */
+    #ui .touch-stick { position: absolute; left: 0; top: 0; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); background: rgba(10,14,22,.25); display: none; }
+    #ui .touch-knob { position: absolute; left: 0; top: 0; width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.55); display: none; }
+    #ui [data-slot="touch"] { position: fixed; right: 20px; bottom: 24px; }
+    #ui .touch-buttons button { width: 84px; height: 84px; border-radius: 50%; font-size: 15px; opacity: .85; }
+    /* centred menus (title / pause) and cards */
+    #ui [data-slot="menu"] { position: fixed; inset: 0; display: grid; place-items: center; }
+    #ui .menu { min-width: 280px; text-align: center; padding: 18px 26px; }
+    #ui .menu h1 { margin: 0 0 6px; font-size: 34px; letter-spacing: .5px; }
+    #ui .menu button { display: block; width: 100%; font-size: 16px; padding: 9px 12px; margin-top: 10px; }
+    #engine-error { position: fixed; left: 12px; right: 12px; bottom: 12px; background: #5c1520; color: #fff; padding: 12px 16px; border-radius: 10px; font-size: 13px; z-index: 10; }
+    #engine-error pre { white-space: pre-wrap; margin: 6px 0 0; font-size: 12px; }
+    /* the loading bar: a row of LEGO bricks filling up (same look as the game's asset bar, lib.rs LOADBAR_STYLE) */
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #1b2433; z-index: 5; transition: opacity .35s; }
+    #loading.done { opacity: 0; pointer-events: none; }
+    .lb { width: min(420px, calc(100vw - 48px)); text-align: center; }
+    .lb h1 { margin: 0 0 18px; font-size: 34px; letter-spacing: .5px; color: #ffc93c; text-shadow: 0 3px 0 #a3700f; }
+    .lb .track { position: relative; height: 22px; border-radius: 6px; background: #0e1420; box-shadow: inset 0 2px 4px rgb(0 0 0 / .6); overflow: hidden; }
+    .lb .fill { position: absolute; inset: 0 auto 0 0; width: 0%; border-radius: 6px; transition: width .15s linear;
+      background: radial-gradient(circle at 50% 38%, rgb(255 255 255 / .45) 0 3px, transparent 4px) 0 0 / 22px 22px, linear-gradient(#e3343a, #b5161c); }
+    .lb .label { margin-top: 10px; font-size: 14px; opacity: .8; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui"><div class="hud"></div></div>
+  <div id="loading"><div class="lb"><h1>Brickhollow</h1><div class="track"><div class="fill"></div></div><div class="label">loading …</div></div></div>
+  <script type="module">
+    import init from './pkg/game.js';
+    const box = document.getElementById('loading');
+    const fill = box.querySelector('.fill');
+    const label = box.querySelector('.label');
+    const show = (f, text) => { fill.style.width = (Math.max(0, Math.min(1, f)) * 100).toFixed(1) + '%'; label.textContent = text; };
+    // window.engine.call(name, args) is installed by the engine once ready (AI/debug API); from then on the game
+    // shows its own bar while its models load (lib.rs loadbar), so this one fades out
+    window.addEventListener('engine-ready', () => { show(1, 'ready'); box.classList.add('done'); setTimeout(() => box.remove(), 400); });
+    // the game download with progress (0..85 %), then compiling and starting (85..100 %)
+    async function download(url) {
+      const res = await fetch(url);
+      if (!res.ok || !res.body) return res;
+      // without a length (compressed transfer): an estimate that never reaches the end
+      const total = +res.headers.get('content-length') || 0;
+      const reader = res.body.getReader();
+      const parts = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value);
+        got += value.length;
+        const f = total ? got / total : 1 - Math.exp(-got / 8e6);
+        show(f * 0.85, `loading the game … ${Math.round(f * 100)} %`);
+      }
+      const bytes = new Uint8Array(got);
+      let o = 0;
+      for (const p of parts) { bytes.set(p, o); o += p.length; }
+      return bytes;
+    }
+    (async () => {
+      const wasm = await download(new URL('./pkg/game_bg.wasm', import.meta.url));
+      show(0.9, 'starting …');
+      await init({ module_or_path: wasm });
+    })().catch((e) => {
+      console.error(e);
+      label.textContent = 'WASM start failed: ' + e;
+      (window.engine ??= {}).fatal = String(e);
+    });
+    // Live reload from tools/dev.mjs watch
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      try { new EventSource('/__events').addEventListener('reload', () => location.reload()); } catch {}
+    }
+  </script>
+</body>
+</html>

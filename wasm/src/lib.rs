@@ -70,6 +70,11 @@ pub(crate) struct Data {
     pub battle_out: Option<arena::BattleOut>,
     /// the card game's generator (battle seeds, reward cards; Kaigen `cg->seed`)
     pub cg_seed: u32,
+    /// the asset bar (`loadbar`): the most models pending at once since it showed, the percent last shown
+    load_max: usize,
+    load_pct: Option<u32>,
+    /// materials the plastic pass (`plastic`) has seen
+    plastic_seen: usize,
 }
 
 impl Data {
@@ -95,6 +100,48 @@ impl Data {
         self.cg_seed >> 8
     }
 
+    /// Every frame (title, play, battle): while models load, a brick bar at the top shows how far it is (the page's
+    /// own bar, web/index.html, covers the game download before that).
+    pub fn loadbar(&mut self, ctx: &mut Ctx) {
+        self.plastic(ctx);
+        let pending = ctx.assets_pending();
+        let pct = if pending > 0 {
+            self.load_max = self.load_max.max(pending);
+            Some((100 * (self.load_max - pending) / self.load_max.max(1)) as u32)
+        } else {
+            self.load_max = 0;
+            None
+        };
+        if pct != self.load_pct {
+            self.load_pct = pct;
+            ctx.ui.set("loadbar", &pct.map(|p| format!("<div class='lbar'><div class='track'><div class='fill' style='width:{p}%'></div></div><div class='label'>loading bricks … {p} %</div></div>")).unwrap_or_default());
+        }
+    }
+
+    /// LEGO is shiny ABS plastic: every new opaque lit material (the code's bricks and the glTF minifigs, trees,
+    /// props, beasts; the glTFs come with 0.72) gets the plastic look of engine 12f937f: a smooth base
+    /// (`PLASTIC_ROUGH`) under a clear coat (the sharp white highlight, the sky in it with `ambient_specular`) and a
+    /// little subsurface light (`PLASTIC_SSS`: a softer terminator, the shade side lighter, light through thin edges).
+    /// Not: cloth / wood / paper / rock (`NOT_PLASTIC` in the name, or rougher than 0.85), water, terrain, unlit,
+    /// glowing, transparent or metal materials. Runs whenever materials were added (models arrive over time).
+    fn plastic(&mut self, ctx: &mut Ctx) {
+        let n = ctx.renderer.material_count();
+        for i in self.plastic_seen..n {
+            if let Some(m) = ctx.renderer.material_mut(engine::renderer::MaterialId(i as u32)) {
+                let name = m.name.to_lowercase();
+                let skip = m.unlit || m.ui || m.water || m.terrain || m.metallic > 0.5 || m.roughness > 0.85 || m.emissive.max_element() > 0.0
+                    || m.alpha_mode == engine::renderer::AlphaMode::Blend || NOT_PLASTIC.iter().any(|w| name.contains(w));
+                if !skip {
+                    m.roughness = PLASTIC_ROUGH;
+                    m.clearcoat = 1.0;
+                    m.clearcoat_roughness = PLASTIC_COAT_ROUGH;
+                    m.subsurface = PLASTIC_SSS;
+                }
+            }
+        }
+        self.plastic_seen = n;
+    }
+
     pub fn ensure_loaded(&mut self, ctx: &mut Ctx) {
         if !self.loaded {
             self.loaded = true;
@@ -107,10 +154,24 @@ impl Data {
             ctx.ui.set("style_vox", vox::STYLE);
             ctx.ui.set("style_dive", dive::STYLE);
             ctx.ui.set("style_debug", debugpanel::STYLE);
+            ctx.ui.set("style_loadbar", LOADBAR_STYLE);
             self.cards = deck::CardUi::new();
         }
     }
 }
+
+/// LEGO plastic (`Data::plastic`): the base's roughness, the clear coat's, the subsurface amount; and the materials
+/// that are not plastic.
+pub(crate) const PLASTIC_ROUGH: f32 = 0.3;
+const PLASTIC_COAT_ROUGH: f32 = 0.06;
+const PLASTIC_SSS: f32 = 0.3;
+pub(crate) const AMBIENT_SPECULAR: f32 = 0.8;
+/// The phones' frame cap (`phone_quality`): 45 fps = every 2nd refresh at 90 Hz.
+pub(crate) const PHONE_MAX_FPS: f32 = 45.0;
+const NOT_PLASTIC: [&str; 7] = ["wood", "felt", "card", "cave", "paper", "rock", "sand"];
+
+/// The asset bar's look (as the page's loading bar in web/index.html: red bricks with studs filling a dark track).
+const LOADBAR_STYLE: &str = "<style>#ui [data-slot=loadbar]{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translateX(-50%);z-index:4}#ui .lbar{width:min(320px,calc(100vw - 48px));text-align:center;padding:8px 12px;border-radius:10px;background:rgb(10 14 22/.6)}#ui .lbar .track{position:relative;height:14px;border-radius:5px;background:#0e1420;box-shadow:inset 0 2px 4px rgb(0 0 0/.6);overflow:hidden}#ui .lbar .fill{position:absolute;inset:0 auto 0 0;border-radius:5px;transition:width .2s linear;background:radial-gradient(circle at 50% 38%,rgb(255 255 255/.45) 0 2px,transparent 3px) 0 0/14px 14px,linear-gradient(#e3343a,#b5161c)}#ui .lbar .label{margin-top:4px;font-size:12px;opacity:.8;font-variant-numeric:tabular-nums}</style>";
 
 /// The sky and light of the three.js town: a pale blue background with fog, a warm sun, a soft hemisphere.
 pub(crate) fn setup_look(ctx: &mut Ctx) {
@@ -138,6 +199,9 @@ pub(crate) fn setup_look(ctx: &mut Ctx) {
     // the sun moves 1 degree before the shadows follow (default 0.5): every step re-renders all
     // cascades, at a 6-minute day that was once a second
     s.shadow_step_deg = 1.0;
+    // LEGO plastic (with `PLASTIC_ROUGH` bricks): the sky's sheen and a rim on the sides away from the sun, not only
+    // the sun's highlight (engine a928c1f)
+    s.ambient_specular = AMBIENT_SPECULAR;
     // the day/night cycle of the original: 6 minutes per day, starting in the morning. The engine
     // places the sun and moon and lights the scene; the sky and fog keep the original's flat colours
     // (day_colours, every frame)
@@ -185,7 +249,8 @@ impl Screen<Data> for Title {
     fn exit(&mut self, ctx: &mut Ctx, _data: &mut Data) {
         ctx.ui.set("menu", "");
     }
-    fn update(&mut self, ctx: &mut Ctx, _data: &mut Data, _dt: f32) -> Trans<Data> {
+    fn update(&mut self, ctx: &mut Ctx, data: &mut Data, _dt: f32) -> Trans<Data> {
+        data.loadbar(ctx);
         let clicked = ctx.ui.take_actions().iter().any(|a| a == "play");
         if clicked || ctx.input.key_pressed("Enter") {
             return Trans::Switch(Box::new(PlayScreen::default()));
@@ -208,6 +273,9 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     // aim for ~30 fps instead of the desktop budget, resolution may drop to half
     s.frame_budget_ms = 30.0;
     s.min_render_scale = 0.5;
+    // an even frame rate: a phone that nearly makes 90 Hz drew 11 / 22 ms frames in turn (walking juddered); every 2nd
+    // refresh instead (engine a928c1f; Settings::update lifts it again on a 60 Hz display)
+    s.max_fps = PHONE_MAX_FPS;
     s.auto_resolution = true;
 }
 

@@ -1191,7 +1191,7 @@ pub struct TownAssets {
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
 fn lego(hex: u32) -> Material {
-    Material { name: format!("lego {hex:06x}"), ..Material::color(hex).rough(0.32) }
+    Material { name: format!("lego {hex:06x}"), ..Material::color(hex).rough(crate::PLASTIC_ROUGH) }
 }
 
 /// The baseplate's stud pattern: one stud per texture tile (base colour shading + normal map).

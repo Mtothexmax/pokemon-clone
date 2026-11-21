@@ -209,7 +209,7 @@ impl TableArt {
         let wood = ctx.generate_texture(&TexGen::new(TexPreset::Wood).size(512).seed(4).scale(3.0).colors(0x4a2a14, 0x7a4e2c));
         let felt = ctx.generate_texture(&TexGen::new(TexPreset::Noise).size(256).seed(9).scale(6.0).colors(0x1d4a30, 0x2c6a45));
         let r = &mut ctx.renderer;
-        self.wood = Some(r.add_material(Material { texture: wood, ..Material::color(0xffffff).rough(0.55) }));
+        self.wood = Some(r.add_material(Material { name: "table wood".into(), texture: wood, ..Material::color(0xffffff).rough(0.55) }));
         self.felt = Some(r.add_material(Material { texture: felt, ..Material::color(0xffffff).rough(0.95) }));
         self.rim = Some(r.add_material(Material::color(0xf2cd37).rough(0.35).metal(0.6)));
         self.ghost = Some(r.add_material(Material { unlit: true, ..Material::color(0xd8ffe0).transparent(0.07) }));
@@ -285,13 +285,13 @@ impl TableArt {
 
     /// The material of a textured face (cards, tiles; opaque, double-sided for the shards).
     pub fn face_mat(&mut self, ctx: &mut Ctx, tex: TextureId) -> MaterialId {
-        *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { texture: Some(tex), double_sided: true, ..Material::color(0xffffff).rough(0.6) }))
+        *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face".into(), texture: Some(tex), double_sided: true, ..Material::color(0xffffff).rough(0.6) }))
     }
 
     pub fn back_mat(&mut self, ctx: &mut Ctx, faces: &mut crate::cardface::CardFaces) -> Option<MaterialId> {
         if self.back_mat.is_none() {
             let t = faces.texture(ctx, crate::cardface::Face::back())?;
-            self.back_mat = Some(ctx.renderer.add_material(Material { texture: Some(t), ..Material::color(0xffffff).rough(0.6) }));
+            self.back_mat = Some(ctx.renderer.add_material(Material { name: "card back".into(), texture: Some(t), ..Material::color(0xffffff).rough(0.6) }));
         }
         self.back_mat
     }

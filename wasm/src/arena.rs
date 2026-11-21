@@ -2350,6 +2350,7 @@ impl Screen<Data> for BattleScreen {
     }
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
+        data.loadbar(ctx);
         let dt = dt.min(0.1);
         let bdt = dt * self.speed;
         self.time += dt;

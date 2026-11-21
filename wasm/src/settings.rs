@@ -40,10 +40,11 @@ pub struct Settings {
 }
 
 /// Desktop: render at the browser window's content resolution (canvas CSS px x devicePixelRatio),
-/// no adaptive scaling. Phones keep the adaptive resolution (`phone_quality`).
+/// no adaptive scaling, no frame cap. Phones keep the adaptive resolution and the 45 fps cap (`phone_quality`).
 fn native_resolution(s: &mut engine::renderer::RenderSettings) {
     s.auto_resolution = false;
     s.render_scale = 1.0;
+    s.max_fps = 0.0;
 }
 
 /// One graphics step on the renderer. 0: the desktop look of `setup_look`; 2: the phone profile.
@@ -171,6 +172,12 @@ impl Settings {
         if self.applied != Some(step) {
             self.applied = Some(step);
             apply_step(ctx, step);
+        }
+        // the phone profile's frame cap only where it helps: on a 90 / 120 Hz display (45 fps = every 2nd / 3rd
+        // refresh), not on 60 Hz (it would halve to 30); the refresh rate is known after a few frames
+        if step == 2 {
+            let hz = ctx.time.refresh_hz;
+            ctx.renderer.settings.max_fps = if hz > 0.0 && hz < 80.0 { 0.0 } else { crate::PHONE_MAX_FPS };
         }
         out
     }

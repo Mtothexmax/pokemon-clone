@@ -279,6 +279,26 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   `game_state.state.rain_volume` (None = not playing).
 - Rays from inside the hero (swipe walking's `Swipe::free`, the debug picker) use `physics.raycast_excluding(.., &[hero])`.
 
+## Hooks for later parts (loading bar / plastic / phone pacing, engine a928c1f)
+
+- Page: `web/index.html` replaces the engine's (dev.mjs takes it): the engine's styles plus no text selection /
+  long-press callout in the game (`user-select: none`; inputs keep it) and a brick loading bar for the game download
+  (fetch with progress, then `init({module_or_path: bytes})`), faded out on `engine-ready`. Keep the engine's page
+  changes in sync by hand.
+- Talk close-up (`talk::CamZoom`): the eye moves on a line, the look point slides from the orbit camera's to the
+  board's centre (`looking_at` every frame; a slerped rotation let the face swing out), smootherstep over `ZOOM_S`
+  0.85 s, the lens closes to `ZOOM_FOV` 27 degrees and is restored. Touch help (`bh-thelp`) stays left of Use / Jump.
+- Asset bar: `Data::loadbar(ctx)` every frame from Title, PlayScreen and BattleScreen (call it from any new screen):
+  slot `loadbar` (top centre) while `ctx.assets_pending() > 0`, percent of the most pending at once.
+- Plastic: `Data::plastic` (inside `loadbar`) gives every new opaque lit material the plastic look (engine 12f937f):
+  roughness `PLASTIC_ROUGH` 0.3, clear coat 1 (`PLASTIC_COAT_ROUGH` 0.06), subsurface `PLASTIC_SSS` 0.3 (the glTF
+  minifigs / props come with 0.72); engine `material` lists them; materials named with `NOT_PLASTIC` words (wood,
+  felt, card, cave, paper, rock, sand), rougher than 0.85, glowing, metal, water, unlit or transparent stay as they
+  are: name new non-plastic materials accordingly. `setup_look` sets `ambient_specular` = `AMBIENT_SPECULAR` 0.8
+  (sky sheen and rim).
+- Phones: `phone_quality` sets `max_fps` = `PHONE_MAX_FPS` 45 (every 2nd refresh at 90 Hz: walking juddered with
+  11 / 22 ms frames in turn); `Settings::update` lifts it on a display under 80 Hz; desktop steps set 0.
+
 ## Not ported / differences from Kaigen
 - The debug panel's toggle: Kaigen used ` itself; here the engine owns ` (its debug mode, which the panel follows) and phones get
   a menu row. The picker names models by their glTF file and roads / the baseplate; Kaigen's per-building tag registry
