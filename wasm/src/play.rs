@@ -2098,7 +2098,7 @@ impl Screen<Data> for PlayScreen {
             "toast": if self.life.toast_t > 0.0 { Some(self.life.toast.clone()) } else { None },
             "goal": talk::goal_text(g),
             "menu": {
-                "open": data.settings.open, "gfx": settings::GFX_NAMES[g.gfx as usize % 4], "step": data.settings.step(g),
+                "open": data.settings.open, "slow_gpu": data.settings.slow_gpu, "gfx": settings::GFX_NAMES[g.gfx as usize % 4], "step": data.settings.step(g),
                 "voices": !g.voices_off, "music_level": g.music_level, "fps": (data.settings.fps * 10.0).round() / 10.0,
                 "shadow_cascades": ctx.renderer.settings.shadow_cascades, "msaa_pref": engine::msaa_pref(),
             },

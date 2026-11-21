@@ -37,7 +37,15 @@ pub struct Settings {
     pub fps: f32,
     /// Audio switches applied (voices, music level), None before the first.
     audio_applied: Option<(bool, u8)>,
+    /// Phones: the GPU does not keep up with the frame cap (`gpu_watch`): the slower even cadence; and how long the
+    /// queue has been long (+) or short (-)
+    pub slow_gpu: bool,
+    gpu_t: f32,
 }
+
+/// The phones' slower cadence when the GPU falls behind (`Settings::gpu_watch`): every 3rd refresh at 90 Hz (30.6 fps),
+/// every 2nd at 60 Hz.
+const PHONE_SLOW_FPS: f32 = 31.0;
 
 /// Desktop: render at the browser window's content resolution (canvas CSS px x devicePixelRatio),
 /// no adaptive scaling, no frame cap. Phones keep the adaptive resolution and the 45 fps cap (`phone_quality`).
@@ -89,6 +97,36 @@ impl Settings {
             _ => {
                 let start = if self.touch { 2 } else { 0 };
                 (g.auto_step.saturating_sub(1) as usize).max(start).min(2)
+            }
+        }
+    }
+
+    /// Phones without GPU timestamps: the frame interval says nothing about the GPU (it is the display's), but the
+    /// GPU's backlog does. When the frames submitted wait for over 4 frame times (Chrome reports a vsync or two late even
+    /// when the GPU keeps up; a phone measured 120-190 ms at 45.9 fps, the browser then dropped frames and the hero
+    /// seemed to jump ahead; 40-50 ms at 30.6 fps) for 1.5 s, the cadence drops to `PHONE_SLOW_FPS`; it goes back up
+    /// after 20 s with the backlog under 1.5 frame times (measured at the slow
+    /// cadence, so the faster one may still be too much: then it drops again, at most every 20 s).
+    fn gpu_watch(&mut self, ctx: &Ctx, dt: f32) {
+        let st = &ctx.renderer.stats;
+        let frame_ms = 1000.0 / ctx.renderer.settings.max_fps.max(1.0);
+        let lat = st.gpu_latency_ms;
+        if lat <= 0.0 || dt <= 0.0 || dt > 0.25 {
+            return;
+        }
+        if !self.slow_gpu {
+            self.gpu_t = if lat > frame_ms * 4.0 { self.gpu_t.max(0.0) + dt } else { 0.0 };
+            if self.gpu_t > 1.5 {
+                self.slow_gpu = true;
+                self.gpu_t = 0.0;
+                log_info!("graphics: the GPU is {lat:.0} ms behind, the phone cadence drops to {PHONE_SLOW_FPS} fps");
+            }
+        } else {
+            self.gpu_t = if lat < frame_ms * 1.5 { self.gpu_t + dt } else { 0.0 };
+            if self.gpu_t > 20.0 {
+                self.slow_gpu = false;
+                self.gpu_t = 0.0;
+                log_info!("graphics: the GPU keeps up ({lat:.0} ms), the phone cadence goes back up");
             }
         }
     }
@@ -177,7 +215,9 @@ impl Settings {
         // refresh), not on 60 Hz (it would halve to 30); the refresh rate is known after a few frames
         if step == 2 {
             let hz = ctx.time.refresh_hz;
-            ctx.renderer.settings.max_fps = if hz > 0.0 && hz < 80.0 { 0.0 } else { crate::PHONE_MAX_FPS };
+            self.gpu_watch(ctx, dt);
+            let cap = if self.slow_gpu { PHONE_SLOW_FPS } else { crate::PHONE_MAX_FPS };
+            ctx.renderer.settings.max_fps = if hz > 0.0 && hz < 80.0 && !self.slow_gpu { 0.0 } else { cap };
         }
         // the simulation steps a whole number of times per drawn frame on phones (engine aa91b8f): at the capped 45.9 fps
         // the 60 Hz step ran 1, 1, 2 times per frame and everything the engine does not interpolate (the walk cycle,
