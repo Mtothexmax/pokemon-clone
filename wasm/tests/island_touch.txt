@@ -16,7 +16,6 @@ call teleport {"x": 35, "z": -240}
 frames 90
 expect game_state.state.island.view.active == true
 expect game_state.state.hero.grounded == true
-expect game_state.state.island.view.stud_tris < 12000
 expect stats.render.triangles < 60000
 call stats
 screenshot shots/island-touch-road.png

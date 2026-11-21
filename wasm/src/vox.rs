@@ -328,7 +328,9 @@ impl Vox {
         if let Some((e, _)) = self.models.get(&id) {
             return *e;
         }
-        let e = ctx.load_gltf(&format!("assets/beasts/{}.glb", cards::card(id).id), Transform::from_xyz(0.0, -60.0, 0.0));
+        // (no auto-LOD: a simplified voxel model has holes, seen from the side by a PC camera tilted low)
+        let opts = engine::gltf_loader::GltfOpts { auto_lod: false, ..Default::default() };
+        let e = ctx.load_gltf_with(&format!("assets/beasts/{}.glb", cards::card(id).id), Transform::from_xyz(0.0, -60.0, 0.0), opts);
         ctx.set_layer(e, rooms::HIDDEN_LAYER);
         self.models.insert(id, (e, false));
         e

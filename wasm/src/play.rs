@@ -1508,8 +1508,9 @@ impl Screen<Data> for PlayScreen {
         }
         // the Deck-o-Matic's screen (the lab's middle machine): MISSING PART until the deck is printed
         let [mx, my, mz] = rooms::MACHINE_SCREEN;
-        let missing = ctx.load_gltf("assets/signs/machine_missing.glb", Transform::from_translation(town::m(mx, my, mz)));
-        let ready = ctx.load_gltf("assets/signs/machine_ready.glb", Transform::from_translation(town::m(mx, my, mz)));
+        let sign = engine::gltf_loader::GltfOpts { auto_lod: false, ..Default::default() };
+        let missing = ctx.load_gltf_with("assets/signs/machine_missing.glb", Transform::from_translation(town::m(mx, my, mz)), sign);
+        let ready = ctx.load_gltf_with("assets/signs/machine_ready.glb", Transform::from_translation(town::m(mx, my, mz)), sign);
         self.machine = Some((missing, ready));
 
         // the fixed top-down camera of the original: (0, 32, 17) studs * zoom above you, looking at your feet + 1.5 studs

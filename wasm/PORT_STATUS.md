@@ -90,6 +90,7 @@ comes from.
 - **LOD:** props load with the engine's auto-LOD (`gltf_defaults.auto_lod`), minifig parts never (figure.rs).
   `lod_distance_scale` multiplies the switch distances (bigger = more detail): desktop 1.0, medium 0.75, phones 0.6; a
   low PC camera divides it by up to 3.
+- **No auto-LOD** for the Voxelmon (vox.rs: a simplified voxel model has holes) and the lab machine signs.
 - **Far view:** trees (`town::is_tree`) are also engine impostors (`prop_opts`: one baked card beyond
   `TREE_IMPOSTOR` 30 x their radius, 8 views, 128 px); the village's bricks are batched under "town bricks" with an
   HLOD per 24 m cell (`HLOD_CELL`, beyond `HLOD_DISTANCE` 60 m, clustered at a stud; `town.hlods`). `view_distance`

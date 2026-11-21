@@ -93,7 +93,6 @@ expect game_state.state.island.ground_gap > -0.2
 expect game_state.state.island.view.active == true
 expect game_state.state.island.view.fine >= 4
 expect game_state.state.island.view.near >= 2
-expect game_state.state.island.view.stud_tiles > 0
 expect game_state.state.island.view.colliders > 100
 expect game_state.state.island.view.sea == true
 expect game_state.state.bands > 2048

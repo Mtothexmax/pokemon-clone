@@ -1,5 +1,5 @@
 //! The island on screen (OPEN_WORLD.md milestone 1): brick terrain in chunks of `island::CHUNK` studs, built while
-//! you walk, the near studs, the colliders and the sea.
+//! you walk, the colliders and the sea.
 //!
 //! * **Chunks.** A fine version (1 stud per cell, the stud texture on its tops, colliders) near you, a coarse one
 //!   (4 studs per cell) further out and while the fine one is not built yet, so there is never a hole. Tops are
@@ -13,8 +13,8 @@
 //!   upload and the colliders happen when a chunk's samples are complete. The chunk under you is built at once
 //!   (a teleport). Chunks inside the view are on `LAYER_NEAR`, the others on `LAYER_FAR` (drawn only while the
 //!   camera looks far: a close-up, a fight).
-//! * **Studs.** Real stud geometry only within `STUD_R` studs of you (8x8 tiles, one mesh each, palette colours),
-//!   the texture beyond.
+//! * **Studs.** Only the baseplate's stud texture and normal map on every top, near or far (real studs only round
+//!   you looked like a patch following you; the village keeps its real studs).
 //! * **Colliders.** Per fine chunk the greedy rectangles of one height as boxes down to the floor; water deeper than
 //!   `island::WADE_MIN` is a tall invisible wall, so you wade in the shallows and stop at the drop.
 //! * **Sea.** The engine's ocean (follows the camera) at `island::SEA_Y` on `LAYER_SEA`.
@@ -28,10 +28,6 @@ use engine::renderer::{Material, MaterialId, MeshId};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-/// Studs within which the tops get real studs (desktop / phone).
-const STUD_R: f32 = 12.0;
-const STUD_R_PHONE: f32 = 10.0;
-const TILE: i32 = 8;
 /// The sea's radius around the camera (metres).
 const SEA_RADIUS: f32 = 170.0;
 /// The palette texture: 16 x 16 entries of 4 x 4 texels.
@@ -105,17 +101,10 @@ impl Part {
     }
 }
 
-/// The fine heights (plates) and colours of a chunk, kept for its studs.
-struct Grid {
-    h: Vec<i16>,
-    col: Vec<u8>,
-}
-
 #[derive(Default)]
 struct Chunk {
     coarse: Option<Part>,
     fine: Option<Part>,
-    grid: Option<Grid>,
     colliders: Vec<ColliderHandle>,
     layer: u8,
 }
@@ -163,7 +152,6 @@ struct Built {
     tops: Vec<(u8, MeshData)>,
     sides: MeshData,
     boxes: Vec<(Vec3, Vec3)>,
-    grid: Option<Grid>,
     tris: usize,
 }
 
@@ -320,9 +308,8 @@ fn mesh(job: &Job) -> Built {
             }
         }
     }
-    // ---- fine: the collider boxes (greedy by height; deep water a tall wall) and the grid for the studs ----
+    // ---- fine: the collider boxes (greedy by height; deep water a tall wall) ----
     let mut boxes = vec![];
-    let mut grid = None;
     if job.fine {
         let key = |k: &Cell| if k.plates < WADE_MIN { i32::MIN } else { k.plates };
         let mut seen = vec![false; n * n];
@@ -354,59 +341,11 @@ fn mesh(job: &Job) -> Built {
                 boxes.push((Vec3::new(x0 + a as f32, y(FLOOR), z0 + b as f32), Vec3::new(x0 + a1 as f32, top, z0 + b1 as f32)));
             }
         }
-        let mut g = Grid { h: Vec::with_capacity(n * n), col: Vec::with_capacity(n * n) };
-        for b in 0..ni {
-            for a in 0..ni {
-                g.h.push(c(a, b).plates as i16);
-                g.col.push(c(a, b).colour);
-            }
-        }
-        grid = Some(g);
     }
     let mut tops: Vec<(u8, MeshData)> = tops.into_iter().collect();
     tops.sort_by_key(|t| t.0);
     let tris = tops.iter().map(|t| t.1.indices.len() / 3).sum::<usize>() + sides.indices.len() / 3;
-    Built { tops, sides, boxes, grid, tris }
-}
-
-/// The real studs of one 8x8 tile (palette colours; 8 sides, a flat top).
-fn stud_tile(grid: &Grid, x0: f32, z0: f32, a0: usize, b0: usize) -> MeshData {
-    let mut md = MeshData::default();
-    let (r, h) = (0.3 * STUD, (0.17 - 0.01) * STUD);
-    let ring: Vec<(f32, f32)> = (0..8).map(|k| {
-        let a = k as f32 * std::f32::consts::TAU / 8.0;
-        (a.cos(), a.sin())
-    }).collect();
-    for b in b0..b0 + TILE as usize {
-        for a in a0..a0 + TILE as usize {
-            let i = b * CHUNK as usize + a;
-            let y = grid.h[i] as f32 * PLATE;
-            if y < SEA_Y + 0.3 {
-                continue;
-            }
-            let uv = entry_uv(entry(grid.col[i], 2));
-            let c = m(x0 + a as f32 + 0.5, y, z0 + b as f32 + 0.5);
-            let base = md.vertices.len() as u32;
-            for &(cx, sz) in &ring {
-                let n = [cx, 0.0, sz];
-                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y, c.z + sz * r], normal: n, uv, color: Vertex::WHITE });
-                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y + h, c.z + sz * r], normal: n, uv, color: Vertex::WHITE });
-            }
-            for k in 0..8u32 {
-                let k1 = (k + 1) % 8;
-                let (bk, tk, bk1, tk1) = (base + k * 2, base + k * 2 + 1, base + k1 * 2, base + k1 * 2 + 1);
-                md.indices.extend_from_slice(&[bk, tk, tk1, bk, tk1, bk1]);
-            }
-            let cap = md.vertices.len() as u32;
-            for &(cx, sz) in &ring {
-                md.vertices.push(Vertex { pos: [c.x + cx * r, c.y + h, c.z + sz * r], normal: [0.0, 1.0, 0.0], uv, color: Vertex::WHITE });
-            }
-            for k in 1..7u32 {
-                md.indices.extend_from_slice(&[cap, cap + k + 1, cap + k]);
-            }
-        }
-    }
-    md
+    Built { tops, sides, boxes, tris }
 }
 
 #[derive(Default, Clone, serde::Serialize)]
@@ -435,7 +374,6 @@ pub struct IslandView {
     sea_mesh: Option<MeshId>,
     sea: Option<Entity>,
     chunks: HashMap<(i32, i32), Chunk>,
-    tiles: HashMap<(i32, i32), (Entity, MeshId, usize)>,
     job: Option<Job>,
     /// the last place the layers were sorted for (8-stud cell) and whether the camera looked far
     sorted: Option<((i32, i32), bool)>,
@@ -522,7 +460,6 @@ impl IslandView {
         let fine = job.fine;
         let mut b = mesh(&job);
         let t1 = engine::log::now_ms();
-        let grid = b.grid.take();
         let boxes = std::mem::take(&mut b.boxes);
         let part = self.spawn_built(ctx, key, b, fine);
         let t2 = engine::log::now_ms();
@@ -535,7 +472,6 @@ impl IslandView {
                 let h = ctx.physics.add_static(ColliderBuilder::cuboid(half.x, half.y, half.z), (lo + hi) * 0.5 * STUD);
                 ch.colliders.push(h);
             }
-            ch.grid = grid;
             ch.fine = Some(part);
             if let Some(c) = ch.coarse.take() {
                 c.drop(ctx);
@@ -562,14 +498,6 @@ impl IslandView {
         }
         for h in ch.colliders.drain(..) {
             ctx.physics.world.remove_collider(h);
-        }
-        ch.grid = None;
-        let gone: Vec<(i32, i32)> = self.tiles.keys().filter(|t| t.0 * TILE / CHUNK as i32 == key.0 && t.1 * TILE / CHUNK as i32 == key.1).copied().collect();
-        for t in gone {
-            if let Some((e, mesh, _)) = self.tiles.remove(&t) {
-                ctx.despawn(e);
-                ctx.renderer.remove_mesh(mesh);
-            }
         }
         self.stats.unloads += 1;
     }
@@ -704,7 +632,6 @@ impl IslandView {
                     }
                 }
             }
-            self.studs(ctx, hero);
         }
         let ms = (engine::log::now_ms() - t0) as f32;
         self.stats.last_frame_ms = ms;
@@ -747,59 +674,11 @@ impl IslandView {
         best.map(|(_, key, fine)| Job { key, fine, cells: vec![] })
     }
 
-    /// The real studs near you: 8x8 tiles within the radius, built from the fine chunks' grids.
-    fn studs(&mut self, ctx: &mut Ctx, hero: Vec2) {
-        let r = if self.phone { STUD_R_PHONE } else { STUD_R };
-        let t = |v: f32, o: f32| ((v - o) / TILE as f32).floor() as i32;
-        let (tx0, tx1) = (t(hero.x - r, X0), t(hero.x + r, X0));
-        let (tz0, tz1) = (t(hero.y - r, Z0), t(hero.y + r, Z0));
-        let want = |k: (i32, i32), grow: f32| {
-            // (by the tile's centre: tiles cover about the circle, not every tile it touches)
-            let c = Vec2::new(X0 + (k.0 * TILE) as f32, Z0 + (k.1 * TILE) as f32) + Vec2::splat(TILE as f32 * 0.5);
-            c.distance(hero) < r + grow
-        };
-        let gone: Vec<(i32, i32)> = self.tiles.keys().filter(|k| !want(**k, 6.0)).copied().collect();
-        for k in gone {
-            if let Some((e, mesh, _)) = self.tiles.remove(&k) {
-                ctx.despawn(e);
-                ctx.renderer.remove_mesh(mesh);
-            }
-        }
-        let per = CHUNK as i32 / TILE;
-        for tk in tz0..=tz1 {
-            for tx in tx0..=tx1 {
-                let k = (tx, tk);
-                if tx < 0 || tk < 0 || self.tiles.contains_key(&k) || !want(k, 0.0) {
-                    continue;
-                }
-                let ck = (tx.div_euclid(per), tk.div_euclid(per));
-                let Some(g) = self.chunks.get(&ck).and_then(|c| c.grid.as_ref()) else { continue };
-                let (cx0, cz0) = (X0 + ck.0 as f32 * CHUNK, Z0 + ck.1 as f32 * CHUNK);
-                let md = stud_tile(g, cx0, cz0, (tx.rem_euclid(per) * TILE) as usize, (tk.rem_euclid(per) * TILE) as usize);
-                if md.indices.is_empty() {
-                    continue;
-                }
-                let tris = md.indices.len() / 3;
-                let mesh = ctx.renderer.add_mesh(&format!("isle studs {tx},{tk}"), &md);
-                let e = ctx.spawn_mesh(&format!("isle studs {tx},{tk}"), mesh, self.bricks.unwrap(), Transform::default());
-                if let Ok(mut r) = ctx.world.get::<&mut MeshRenderer>(e) {
-                    r.cast_shadows = false;
-                }
-                ctx.set_layer(e, island::LAYER_NEAR);
-                self.tiles.insert(k, (e, mesh, tris));
-            }
-        }
-    }
-
     /// Everything off (leaving the play screen): entities, meshes, colliders.
     pub fn clear(&mut self, ctx: &mut Ctx) {
         let keys: Vec<(i32, i32)> = self.chunks.keys().copied().collect();
         for k in keys {
             self.drop_all(ctx, k);
-        }
-        for (_, (e, mesh, _)) in self.tiles.drain() {
-            ctx.despawn(e);
-            ctx.renderer.remove_mesh(mesh);
         }
         if let Some(s) = self.sea.take() {
             ctx.despawn(s);
@@ -818,8 +697,6 @@ impl IslandView {
             "coarse": coarse,
             "near": self.chunks.values().filter(|c| c.layer == island::LAYER_NEAR).count(),
             "near_tris": near_tris,
-            "stud_tiles": self.tiles.len(),
-            "stud_tris": self.tiles.values().map(|t| t.2).sum::<usize>(),
             "colliders": self.chunks.values().map(|c| c.colliders.len()).sum::<usize>(),
             "job": self.job.as_ref().map(|j| json!({"key": [j.key.0, j.key.1], "fine": j.fine, "rows": j.cells.len() / (j.n() + 2)})),
             "sea": self.sea.is_some(),
