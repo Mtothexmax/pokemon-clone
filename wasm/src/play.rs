@@ -1580,13 +1580,13 @@ impl Screen<Data> for PlayScreen {
         }
         self.dive.lab(ctx, &data.save.data);
 
-        // a villager within talking reach (or talking) gets the finer head and the talking prints for the close-up
+        // a villager within talking reach (or talking) gets the talking prints for the close-up
         // (loaded once, ahead); whoever talks moves the mouth with the voice
         if let Some((p, _)) = pos {
             for i in 0..self.npcs.len() {
                 let near = self.npc_pos(ctx, i).is_some_and(|q| (q - p).length() < 4.0) && self.npcs[i].area == self.area;
                 if near || self.talk_npc == Some(i) {
-                    self.npcs[i].fig.want_detail(ctx);
+                    self.npcs[i].fig.want_mouths(ctx);
                 }
             }
         }
@@ -2082,7 +2082,6 @@ impl Screen<Data> for PlayScreen {
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
-            "fine_heads": self.npcs.iter().filter(|n| n.fig.detailed()).map(|n| n.id.clone()).collect::<Vec<_>>(),
             "mouths": self.npcs.iter().filter(|n| n.fig.mouth() > 0).map(|n| (n.id.clone(), n.fig.mouth())).collect::<Vec<_>>(),
             "busy": self.busy,
             "life": self.life.describe(g),

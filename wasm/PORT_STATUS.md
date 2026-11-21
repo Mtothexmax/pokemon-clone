@@ -288,11 +288,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Talk close-up (`talk::CamZoom`): the eye moves on a line, the look point slides from the orbit camera's to the
   board's centre (`looking_at` every frame; a slerped rotation let the face swing out), smootherstep over `ZOOM_S`
   0.85 s, the lens opens to `ZOOM_FOV` 55 degrees (wide angle from ~1 m) and is restored. Touch help (`bh-thelp`) stays left of Use / Jump.
-- Fine heads: `tools/subdivide.mjs --heads` makes `assets/minifig/*/head_hi.glb` (auto smooth at 46 degrees, then
-  PN-triangle patches, 4x4 per triangle, hard edges kept) and `head.glb` (the same triangles smooth shaded) from
-  `head_flat.glb` (the flat-shaded original, the source: change that one and rerun). `Figure::want_detail` loads it once (out of sight) and makes
-  it LOD 0 of the head within `HI_DIST` 3 m (matched by material name); play.rs calls it for villagers within 4 m
-  and the one you talk to; `game_state.state.fine_heads`.
+- Heads: `tools/subdivide.mjs --heads` writes `assets/minifig/*/head.glb` smooth shaded (auto smooth at 46 degrees)
+  from `head_flat.glb` (the flat-shaded original, the source: change that one and rerun). The 16x subdivided close-up
+  head (head_hi.glb as LOD 0) was removed again: the smooth normals made the difference, the extra triangles didn't.
 - HUD: the help line (`KEYS_HELP` / `TOUCH_HELP` / `SWIPE_HELP`, no place name) shows `HELP_S` 9 s at the start or
   after a controls change and fades (CSS `bh-help`); the place is the `title` at the top (also at the start).
   `PlayScreen::talking()` (dialog, screen, close-up): no touch buttons, no stick.

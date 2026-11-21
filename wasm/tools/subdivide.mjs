@@ -7,10 +7,11 @@
 // UVs are linear, normals are the vertex normals interpolated (Phong shading), so prints keep their place.
 //
 //   node tools/subdivide.mjs <in.glb> <out.glb> [--level 4]
-//   node tools/subdivide.mjs --heads            (assets/minifig/*/head.glb -> head_hi.glb, and head.glb smooth shaded:
-//                                                a copy of the flat-shaded original is kept as head_flat.glb)
+//   node tools/subdivide.mjs --heads            (assets/minifig/*/head.glb smooth shaded, no subdivision;
+//                                                the flat-shaded original is kept as head_flat.glb)
 //
-// The game uses head_hi.glb as LOD 0 of a figure's head when the camera comes close (figure.rs). Zero npm dependencies.
+// The game's heads are made with --heads (smoothing only); <in> <out> [--level N] still subdivides any glTF.
+// Zero npm dependencies.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -246,8 +247,8 @@ if (args[0] === '--heads') {
     const flat = path.join(root, style, 'head_flat.glb'), f = path.join(root, style, 'head.glb');
     if (!fs.existsSync(f)) continue;
     if (!fs.existsSync(flat)) fs.copyFileSync(f, flat);
-    subdivideGlb(flat, path.join(root, style, 'head_hi.glb'));
-    // the far head: the same triangles, smooth shaded (level 1: corners only)
+    // the head: the same triangles, smooth shaded (level 1: corners only). (The 16x subdivided close-up head,
+    // head_hi.glb, was dropped: the smooth normals made the difference.)
     const keep = LEVEL;
     LEVEL = 1;
     subdivideGlb(flat, f);
