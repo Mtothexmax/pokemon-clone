@@ -123,7 +123,7 @@
     send('measure', { what: 'stats', speed: +h.speed.toFixed(2), screen: g?.screen, area: g?.state?.area, zone: g?.state?.zone,
       scale: r?.render_scale, size: r?.width ? [r.width, r.height] : r?.size, gpu: r?.gpu_ms, draws: r?.draw_calls, tris: r?.triangles,
       in_flight: r?.frames_in_flight, lat: r?.gpu_latency_ms, skipped: r?.frames_skipped, hz: tm?.refresh_hz, interval: tm?.frame_interval,
-      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps, cap: r?.max_fps, slow_gpu: g?.state?.menu?.slow_gpu, steps: tm?.steps_per_frame });
+      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps, cap: r?.max_fps, auto_step: r?.auto_frame_step, late: r?.late_presents, limit: r?.latency_limit_ms, steps: tm?.steps_per_frame });
     // the drawn position: 240 frames at a time while walking
     if (!traceOn && h.id != null) {
       traceOn = true;

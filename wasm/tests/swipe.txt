@@ -24,6 +24,8 @@ frames 2
 call input {"touch": {"id": 1, "x": 160, "y": 490, "phase": "move"}}
 frames 2
 expect game_state.state.swipe.on == true
+# the swipe walks, it does not turn the view (not even for a frame)
+expect game_state.state.cam_yaw == 0
 expect game_state.state.swipe.dir.0 == 1
 call input {"touch": {"id": 1, "x": 170, "y": 490, "phase": "end"}}
 frames 30

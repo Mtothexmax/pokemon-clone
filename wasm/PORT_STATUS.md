@@ -308,11 +308,13 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Phones: the profile from the first frame (`Data::ensure_loaded`: coarse pointer, or touch points + a mobile UA),
   `PHONE_MAX_FPS` 50 (every 2nd refresh at 91.7 Hz), half resolution at the start, 20 ms budget,
   `ctx.time.lock_fixed_to_frames` (engine aa91b8f: whole steps per drawn frame; read `ctx.time.fixed_dt`, it is not
-  always 1/60). The game's time-of-day command is `clock {hours}` (the engine's `time` is its frame clock).
+  always 1/60). A GPU that falls behind the cap (no timestamps on the phone): the engine's latency fallback adds a
+  refresh per frame (9c3f2ce, `stats.render.auto_frame_step`, `late_presents`). The play camera never turns
+  (`sensitivity` 0: a swipe to walk turned it for a frame). The game's time-of-day command is `clock {hours}` (the engine's `time` is its frame clock).
   Measuring on the phone: https://<pc>:8444/?measure (tools/phone_log.js) -> "measure" lines in logs/phone.log.
 - Loading: Stonecrest's models are `TownAssets::deferred` (empty roots now, `town::load_deferred` once nothing else
   loads); tools/serve_lan.py gzips .wasm / .glb / .js / .html (in-memory cache, `X-Raw-Length` for the page's bar),
-  .ogg stays streamed (the engine's `<audio>` music). wasm-opt (binaryen) is not installed: release builds skip it.
+  .ogg stays streamed (the engine's `<audio>` music). (wasm-opt was tried and removed from the engine: ~1 % after gzip.)
 - Weather / night: rain haze `fog_density` x (1 + 0.6 rain), `fog_start` x (1 - 0.15 rain) (the old 1.5 / 0.5 put the
   village in milk under the 16 m camera); at night outside `ambient_scale` x (1 + `NIGHT_FILL` 1.4 x night); street
   lamps 8 x night, range 24 studs.

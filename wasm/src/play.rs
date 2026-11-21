@@ -1135,6 +1135,9 @@ impl Screen<Data> for PlayScreen {
             max_distance: off.length() * 1.4,
             collide: false,
             follow_rate: 4.0,
+            // the view never turns: no look from fingers or the mouse (a swipe to walk turned it for a frame or more
+            // until fixed_update put the yaw back, the picture wobbled); pinch / wheel still zoom
+            sensitivity: 0.0,
             ..ThirdPersonCamera::following(hero)
         };
         let camera = Camera { fov_y_deg: 38.0, near: 0.5 * STUD, far: 400.0 * STUD, ..Camera::default() };
@@ -2082,6 +2085,7 @@ impl Screen<Data> for PlayScreen {
             "nearby": self.nearby.map(|i| TARGETS[i].label),
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
+            "cam_yaw": self.camera.and_then(|c| ctx.world.get::<&ThirdPersonCamera>(c).ok().map(|c| c.yaw)),
             "mouths": self.npcs.iter().filter(|n| n.fig.mouth() > 0).map(|n| (n.id.clone(), n.fig.mouth())).collect::<Vec<_>>(),
             "busy": self.busy,
             "life": self.life.describe(g),
@@ -2098,7 +2102,7 @@ impl Screen<Data> for PlayScreen {
             "toast": if self.life.toast_t > 0.0 { Some(self.life.toast.clone()) } else { None },
             "goal": talk::goal_text(g),
             "menu": {
-                "open": data.settings.open, "slow_gpu": data.settings.slow_gpu, "gfx": settings::GFX_NAMES[g.gfx as usize % 4], "step": data.settings.step(g),
+                "open": data.settings.open, "gfx": settings::GFX_NAMES[g.gfx as usize % 4], "step": data.settings.step(g),
                 "voices": !g.voices_off, "music_level": g.music_level, "fps": (data.settings.fps * 10.0).round() / 10.0,
                 "shadow_cascades": ctx.renderer.settings.shadow_cascades, "msaa_pref": engine::msaa_pref(),
             },
