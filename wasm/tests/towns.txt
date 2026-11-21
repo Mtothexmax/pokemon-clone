@@ -34,5 +34,5 @@ call teleport {"x": -300, "z": -470}
 frames 30
 expect game_state.state.island.places.built.2 == true
 expect game_state.state.island.places.trees >= 20
-expect game_state.state.island.places.triangles < 40000
+expect game_state.state.island.places.triangles < 120000
 expect game_state.state.hero.grounded == true

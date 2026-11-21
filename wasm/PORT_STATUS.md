@@ -101,7 +101,9 @@ comes from.
   Play over the sky; music `Track::Title` (assets/music/title.ogg).
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
-  of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Each building its own entity
+  of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)
+  in the Brick Ages manner: running-bond brick walls with openings, framed windows with shutters and flower boxes,
+  doors with frame / step / lamp, stepped gable or hip roofs, chimneys, Dewmere's with picket-fenced gardens. Each building its own entity
   (fades, `Fader::add`) and a box collider; the pads' middles stay free. ~21k triangles for all three. Test: towns.
 - **Island music:** `island::music_at` picks the place's track (`sound::ISLE_MUSIC`: a town's on its pad + 20 studs, the
   north, cliffs, warm beaches, the night sea west / east, meadows; day / night); `PlayScreen::outdoor_music` switches

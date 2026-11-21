@@ -29,11 +29,13 @@ struct Bld {
     hi: Vec3,
     n: u32,
     solid: bool,
+    /// the part that blocks you and fades (a house without its garden); None: all of it
+    body: Option<(Vec3, Vec3)>,
 }
 
 impl Bld {
     fn new() -> Self {
-        Self { mb: MeshBuilder::new(), lo: Vec3::splat(f32::MAX), hi: Vec3::splat(f32::MIN), n: 0, solid: true }
+        Self { mb: MeshBuilder::new(), lo: Vec3::splat(f32::MAX), hi: Vec3::splat(f32::MIN), n: 0, solid: true, body: None }
     }
     /// A box (studs) min..max in colour `hex`; every box a little larger or smaller than the last (no shared planes).
     fn bx(&mut self, hex: u32, a: Vec3, b: Vec3) {
@@ -169,69 +171,273 @@ fn shop(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, floors: u32, front: f
 /// The mall: a long hall with a glass front and entrance, a coloured band with the sign, a glass roof light.
 fn mall(b: &mut Bld, c: Vec3, w: f32, d: f32) {
     let (x0, x1, z0, z1) = (c.x - w * 0.5, c.x + w * 0.5, c.z - d * 0.5, c.z + d * 0.5);
-    let h = 12.0;
+    let h = 26.0;
     b.bx(0xf4f4f4, Vec3::new(x0, c.y, z0), Vec3::new(x1, c.y + h, z1));
-    // glass front (south) with the entrance in the middle
-    b.bx(0x6fb6e0, Vec3::new(x0 + 2.0, c.y + 0.4, z1), Vec3::new(x1 - 2.0, c.y + 8.0, z1 + 0.2));
-    b.bx(0x1b2a34, Vec3::new(c.x - 4.0, c.y + 0.4, z1 + 0.2), Vec3::new(c.x + 4.0, c.y + 5.0, z1 + 0.35));
-    b.bx(0x9fd8ef, Vec3::new(c.x - 3.6, c.y + 0.4, z1 + 0.35), Vec3::new(c.x + 3.6, c.y + 4.6, z1 + 0.45));
-    // the sign band: red with yellow "letters" (blocks), the canopy over the entrance
-    b.bx(0xc91a09, Vec3::new(x0 + 1.0, c.y + 8.6, z1), Vec3::new(x1 - 1.0, c.y + 11.2, z1 + 0.4));
-    let mut x = c.x - 9.0;
-    for wl in [2.4, 1.0, 2.4, 1.0, 1.6, 1.0, 1.6] {
-        if wl > 1.2 {
-            b.bx(0xf2cd37, Vec3::new(x, c.y + 9.1, z1 + 0.4), Vec3::new(x + wl, c.y + 10.7, z1 + 0.6));
+    // two glass storeys on the front (south), white pillars, the entrance two storeys tall in the middle
+    b.bx(0x6fb6e0, Vec3::new(x0 + 2.0, c.y + 0.4, z1), Vec3::new(x1 - 2.0, c.y + 9.0, z1 + 0.2));
+    b.bx(0x6fb6e0, Vec3::new(x0 + 2.0, c.y + 10.2, z1), Vec3::new(x1 - 2.0, c.y + 15.6, z1 + 0.2));
+    for k in 0..7 {
+        let x = x0 + 2.0 + (w - 4.0) * k as f32 / 6.0;
+        b.bx(0xf4f4f4, Vec3::new(x - 0.25, c.y + 0.4, z1 + 0.2), Vec3::new(x + 0.25, c.y + 15.6, z1 + 0.35));
+    }
+    b.bx(0x1b2a34, Vec3::new(c.x - 5.0, c.y + 0.4, z1 + 0.35), Vec3::new(c.x + 5.0, c.y + 8.6, z1 + 0.5));
+    b.bx(0x9fd8ef, Vec3::new(c.x - 4.6, c.y + 0.4, z1 + 0.5), Vec3::new(c.x + 4.6, c.y + 8.2, z1 + 0.6));
+    b.bx(0x1b2a34, Vec3::new(c.x - 0.15, c.y + 0.4, z1 + 0.6), Vec3::new(c.x + 0.15, c.y + 8.2, z1 + 0.7));
+    // the sign band high up: red with yellow "letters" (blocks)
+    b.bx(0xc91a09, Vec3::new(x0 + 1.0, c.y + 17.0, z1), Vec3::new(x1 - 1.0, c.y + 22.4, z1 + 0.4));
+    let mut x = c.x - 13.0;
+    for wl in [3.2, 1.2, 3.2, 1.2, 2.2, 1.2, 2.2, 1.2, 3.2] {
+        if wl > 1.5 {
+            b.bx(0xf2cd37, Vec3::new(x, c.y + 18.0, z1 + 0.4), Vec3::new(x + wl, c.y + 21.4, z1 + 0.6));
         }
         x += wl + 0.6;
     }
-    // the entrance canopy: a glass roof on a white frame out from the wall, a yellow edge, held by two struts
-    b.bx(0xf4f4f4, Vec3::new(c.x - 6.0, c.y + 5.2, z1), Vec3::new(c.x + 6.0, c.y + 5.6, z1 + 3.6));
-    b.bx(0x9fd8ef, Vec3::new(c.x - 5.6, c.y + 5.6, z1 + 0.2), Vec3::new(c.x + 5.6, c.y + 5.75, z1 + 3.3));
-    b.bx(0xf2cd37, Vec3::new(c.x - 6.1, c.y + 5.0, z1 + 3.6), Vec3::new(c.x + 6.1, c.y + 5.8, z1 + 3.9));
+    // the entrance canopy above the doors: a glass roof on a white frame out from the wall, a yellow edge, two struts
+    let cy = c.y + 9.4;
+    b.bx(0xf4f4f4, Vec3::new(c.x - 7.0, cy, z1), Vec3::new(c.x + 7.0, cy + 0.5, z1 + 5.0));
+    b.bx(0x9fd8ef, Vec3::new(c.x - 6.6, cy + 0.5, z1 + 0.2), Vec3::new(c.x + 6.6, cy + 0.65, z1 + 4.7));
+    b.bx(0xf2cd37, Vec3::new(c.x - 7.1, cy - 0.3, z1 + 5.0), Vec3::new(c.x + 7.1, cy + 0.7, z1 + 5.3));
     for s in [-1.0, 1.0] {
-        b.bx(0xa0a5a9, Vec3::new(c.x + s * 5.0 - 0.15, c.y + 5.6, z1 + 0.1), Vec3::new(c.x + s * 5.0 + 0.15, c.y + 8.2, z1 + 0.4));
+        b.bx(0xa0a5a9, Vec3::new(c.x + s * 6.0 - 0.2, cy + 0.5, z1 + 0.1), Vec3::new(c.x + s * 6.0 + 0.2, cy + 4.0, z1 + 0.5));
     }
-    // roof: edge and a long glass light
+    // roof: edge, a long glass light, a machine room
     b.bx(0xa0a5a9, Vec3::new(x0 - 0.3, c.y + h, z0 - 0.3), Vec3::new(x1 + 0.3, c.y + h + 0.6, z1 + 0.3));
-    b.bx(0x9fd8ef, Vec3::new(x0 + 6.0, c.y + h + 0.6, c.z - 3.0), Vec3::new(x1 - 6.0, c.y + h + 2.2, c.z + 3.0));
+    b.bx(0x9fd8ef, Vec3::new(x0 + 6.0, c.y + h + 0.6, c.z - 3.0), Vec3::new(x1 - 6.0, c.y + h + 2.4, c.z + 3.0));
+    b.bx(0x6c6e68, Vec3::new(x0 + 3.0, c.y + h + 0.6, z0 + 3.0), Vec3::new(x0 + 9.0, c.y + h + 3.6, z0 + 8.0));
 }
 
-/// A gabled house with a stepped brick roof (harbour and village), its door toward `front` (+1 south, -1 north).
-fn cottage(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, walls: &[u32], roofs: &[u32], front: f32, storeys: u32) {
-    let wall = r.pick(walls);
-    let roof = r.pick(roofs);
-    let (x0, x1, z0, z1) = (c.x - w * 0.5, c.x + w * 0.5, c.z - d * 0.5, c.z + d * 0.5);
-    let h = 4.4 * storeys as f32;
-    b.bx(0xa0a5a9, Vec3::new(x0 - 0.5, c.y, z0 - 0.5), Vec3::new(x1 + 0.5, c.y + 0.4, z1 + 0.5));
-    b.bx(wall, Vec3::new(x0, c.y + 0.4, z0), Vec3::new(x1, c.y + 0.4 + h, z1));
-    let zf = if front > 0.0 { z1 } else { z0 };
-    let o = front * 0.15;
-    let (za, zb) = if front > 0.0 { (zf, zf + o) } else { (zf + o, zf) };
-    // door, windows (white frames, glass)
-    b.bx(0xf4f4f4, Vec3::new(c.x - 1.1, c.y + 0.4, za), Vec3::new(c.x + 1.1, c.y + 4.0, zb));
-    let (za2, zb2) = if front > 0.0 { (zf + o, zf + o * 2.0) } else { (zf + o * 2.0, zf + o) };
-    b.bx(r.pick(&[0x583927, 0x0055bf, 0x237841, 0xc91a09]), Vec3::new(c.x - 0.8, c.y + 0.4, za2), Vec3::new(c.x + 0.8, c.y + 3.7, zb2));
-    for s in [-1.0, 1.0] {
-        let wx = c.x + s * (w * 0.5 - 2.0);
-        for k in 0..storeys {
-            let wy = c.y + 1.6 + k as f32 * 4.4;
-            b.bx(0xf4f4f4, Vec3::new(wx - 1.0, wy, za), Vec3::new(wx + 1.0, wy + 1.8, zb));
-            b.bx(0x9fd8ef, Vec3::new(wx - 0.7, wy + 0.25, za2), Vec3::new(wx + 0.7, wy + 1.55, zb2));
+/// A house's look (Brick Ages: a few parameters make every house different).
+struct HouseStyle {
+    /// walls, roof, accent (shutters, door, flower boxes): a curated triple
+    colours: (u32, u32, u32),
+    storeys: u32,
+    /// false: a stepped gable along x; true: a hip roof stepping in on all sides
+    hip: bool,
+    /// the door's side: +1 south, -1 north
+    front: f32,
+    /// a garden round it: a picket fence, a path to the door, flower beds
+    garden: bool,
+}
+
+/// A wall of bricks in running bond (rows of 1.2 studs, bricks of 2 or 4, each row's joints offset), a touch of
+/// brightness jitter per brick, holes left for the openings (along0, along1, bottom, top). `along_x`: the wall runs
+/// along x from `a0` to `a1`, its outer face at `face`, `out` the outside's sign.
+fn brick_wall(b: &mut Bld, hex: u32, along_x: bool, a0: f32, a1: f32, face: f32, out: f32, y0: f32, y1: f32, holes: &[(f32, f32, f32, f32)], seed: u32) {
+    let t = 1.0;
+    let (f0, f1) = if out > 0.0 { (face - t, face) } else { (face, face + t) };
+    let mut row = 0u32;
+    let mut y = y0;
+    while y < y1 - 0.05 {
+        let yt = (y + 1.2).min(y1);
+        let mut a = a0;
+        let mut k = 0u32;
+        let mut next = a0 + if row % 2 == 1 { 2.0 } else { 4.0 };
+        while a < a1 - 0.01 {
+            let e = next.min(a1);
+            // the brick, cut round the holes in this row
+            let mut segs = vec![(a, e)];
+            for &(h0, h1, hy0, hy1) in holes {
+                if hy1 <= y + 0.01 || hy0 >= yt - 0.01 {
+                    continue;
+                }
+                let mut nsegs = vec![];
+                for (s0, s1) in segs {
+                    if h1 <= s0 || h0 >= s1 {
+                        nsegs.push((s0, s1));
+                        continue;
+                    }
+                    if h0 - s0 > 0.05 {
+                        nsegs.push((s0, h0));
+                    }
+                    if s1 - h1 > 0.05 {
+                        nsegs.push((h1, s1));
+                    }
+                }
+                segs = nsegs;
+            }
+            let jit = [0.96, 1.0, 1.03, 0.985][(seed.wrapping_mul(31).wrapping_add(row * 17 + k * 7) % 4) as usize];
+            let col = shade(hex, jit);
+            for (s0, s1) in segs {
+                if along_x {
+                    b.bx(col, Vec3::new(s0, y, f0), Vec3::new(s1, yt, f1));
+                } else {
+                    b.bx(col, Vec3::new(f0, y, s0), Vec3::new(f1, yt, s1));
+                }
+            }
+            a = e;
+            next = a + if (seed + row + k) % 3 == 0 { 2.0 } else { 4.0 };
+            k += 1;
+        }
+        y = yt;
+        row += 1;
+    }
+}
+
+/// A window in a wall's opening: glass set back, a white frame with a cross, shutters in the accent colour, a flower
+/// box below (ground floor fronts).
+fn window(r: &mut Rng, b: &mut Bld, along_x: bool, at: f32, face: f32, out: f32, y0: f32, w: f32, h: f32, accent: u32, flowers: bool) {
+    let p = |al: f32, o: f32, y: f32| if along_x { Vec3::new(al, y, face + out * o) } else { Vec3::new(face + out * o, y, al) };
+    let bx = |b: &mut Bld, col: u32, a0: f32, a1: f32, o0: f32, o1: f32, y0: f32, y1: f32| {
+        let (pa, pb) = (p(a0, o0, y0), p(a1, o1, y1));
+        b.bx(col, pa.min(pb), pa.max(pb));
+    };
+    let (a0, a1) = (at - w * 0.5, at + w * 0.5);
+    bx(b, 0x9fd8ef, a0, a1, -0.6, -0.4, y0, y0 + h);
+    bx(b, 0xf4f4f4, a0 - 0.2, a1 + 0.2, -0.1, 0.25, y0 - 0.25, y0);
+    bx(b, 0xf4f4f4, a0 - 0.2, a1 + 0.2, -0.1, 0.15, y0 + h, y0 + h + 0.2);
+    bx(b, 0xf4f4f4, a0 - 0.2, a0, -0.4, 0.15, y0, y0 + h);
+    bx(b, 0xf4f4f4, a1, a1 + 0.2, -0.4, 0.15, y0, y0 + h);
+    bx(b, 0xf4f4f4, at - 0.08, at + 0.08, -0.45, -0.3, y0, y0 + h);
+    bx(b, 0xf4f4f4, a0, a1, -0.45, -0.3, y0 + h * 0.55, y0 + h * 0.55 + 0.12);
+    for s in [-1.0f32, 1.0] {
+        let (sa, sb) = if s < 0.0 { (a0 - 0.2 - w * 0.5, a0 - 0.2) } else { (a1 + 0.2, a1 + 0.2 + w * 0.5) };
+        bx(b, accent, sa, sb, 0.0, 0.15, y0 - 0.05, y0 + h + 0.05);
+        bx(b, shade(accent, 0.8), sa + 0.15, sb - 0.15, 0.15, 0.22, y0 + h * 0.3, y0 + h * 0.36);
+    }
+    if flowers {
+        bx(b, 0x583927, a0 - 0.1, a1 + 0.1, 0.25, 0.9, y0 - 0.85, y0 - 0.3);
+        let n = ((w / 0.7) as i32).max(2);
+        for i in 0..n {
+            let fa = a0 + 0.35 + (w - 0.7) * i as f32 / (n - 1) as f32;
+            let col = r.pick(&[0xc91a09, 0xf2cd37, 0xff8ac0, 0xf4f4f4, 0xfe8a18]);
+            bx(b, 0x4b9f4a, fa - 0.25, fa + 0.25, 0.35, 0.8, y0 - 0.3, y0 - 0.05);
+            bx(b, col, fa - 0.18, fa + 0.18, 0.4, 0.75, y0 - 0.05, y0 + 0.2);
         }
     }
-    // stepped roof along x (gable ends east and west)
-    let top = c.y + 0.4 + h;
-    let ov = 0.7;
-    for i in 0..8 {
-        let dd = d + ov * 2.0 - i as f32 * 1.6;
-        if dd <= 0.8 {
+}
+
+/// A house in the Brick Ages manner: a stone foundation, brick walls in running bond with real openings, framed
+/// windows with shutters and flower boxes, a door with its frame, a step and a lamp, a stepped gable or hip roof
+/// with a ridge and a chimney; with a garden: a white picket fence, a path to the door, flower beds.
+fn house(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, st: &HouseStyle) {
+    let (wall, roof, accent) = st.colours;
+    let (x0, x1, z0, z1) = (c.x - w * 0.5, c.x + w * 0.5, c.z - d * 0.5, c.z + d * 0.5);
+    let base = c.y + 0.6;
+    let storey = 4.8;
+    let top = base + storey * st.storeys as f32;
+    b.bx(0x6c6e68, Vec3::new(x0 - 0.4, c.y, z0 - 0.4), Vec3::new(x1 + 0.4, base, z1 + 0.4));
+    let (fz, fo) = if st.front > 0.0 { (z1, 1.0) } else { (z0, -1.0) };
+    let (bz, bo) = (if st.front > 0.0 { z0 } else { z1 }, -fo);
+    let (ww, wh) = (2.0, 2.4);
+    let mut front_holes = vec![(c.x - 1.0, c.x + 1.0, base, base + 3.6)];
+    let mut back_holes = vec![];
+    let mut side_holes = vec![];
+    let wxs = [c.x - w * 0.5 + 2.6, c.x + w * 0.5 - 2.6];
+    for k in 0..st.storeys {
+        let wy = base + 1.2 + k as f32 * storey;
+        for &wx in &wxs {
+            front_holes.push((wx - ww * 0.5, wx + ww * 0.5, wy, wy + wh));
+            back_holes.push((wx - ww * 0.5, wx + ww * 0.5, wy, wy + wh));
+        }
+        side_holes.push((c.z - ww * 0.5, c.z + ww * 0.5, wy, wy + wh));
+    }
+    let seed = (c.x.abs() * 7.0 + c.z.abs() * 13.0) as u32;
+    brick_wall(b, wall, true, x0, x1, fz, fo, base, top, &front_holes, seed);
+    brick_wall(b, wall, true, x0, x1, bz, bo, base, top, &back_holes, seed + 1);
+    brick_wall(b, wall, false, z0 + 1.0, z1 - 1.0, x0, -1.0, base, top, &side_holes, seed + 2);
+    brick_wall(b, wall, false, z0 + 1.0, z1 - 1.0, x1, 1.0, base, top, &side_holes, seed + 3);
+    // (inside: one dark block, nothing to see through the glass)
+    b.bx(shade(wall, 0.6), Vec3::new(x0 + 1.0, base, z0 + 1.0), Vec3::new(x1 - 1.0, top - 0.2, z1 - 1.0));
+    for k in 0..st.storeys {
+        let wy = base + 1.2 + k as f32 * storey;
+        for &wx in &wxs {
+            window(r, b, true, wx, fz, fo, wy, ww, wh, accent, k == 0);
+            window(r, b, true, wx, bz, bo, wy, ww, wh, accent, false);
+        }
+        window(r, b, false, c.z, x0, -1.0, wy, ww, wh, accent, false);
+        window(r, b, false, c.z, x1, 1.0, wy, ww, wh, accent, false);
+    }
+    // the door: the door with a little window and a knob, a white frame, a step, a lamp over it
+    let zz = |a: f32, bb: f32| if fo > 0.0 { (fz + a, fz + bb) } else { (fz - bb, fz - a) };
+    let (a, bb) = zz(-0.6, -0.4);
+    b.bx(accent, Vec3::new(c.x - 1.0, base, a), Vec3::new(c.x + 1.0, base + 3.6, bb));
+    let (a, bb) = zz(-0.4, -0.3);
+    b.bx(0x9fd8ef, Vec3::new(c.x - 0.4, base + 2.4, a), Vec3::new(c.x + 0.4, base + 3.2, bb));
+    let (a, bb) = zz(-0.4, -0.2);
+    b.bx(0xf2cd37, Vec3::new(c.x + 0.55, base + 1.6, a), Vec3::new(c.x + 0.75, base + 1.8, bb));
+    let (a, bb) = zz(-0.1, 0.2);
+    b.bx(0xf4f4f4, Vec3::new(c.x - 1.3, base + 3.6, a), Vec3::new(c.x + 1.3, base + 4.0, bb));
+    for s in [-1.0f32, 1.0] {
+        b.bx(0xf4f4f4, Vec3::new(c.x + s * 1.15 - 0.15, base, a), Vec3::new(c.x + s * 1.15 + 0.15, base + 3.6, bb));
+    }
+    let (a, bb) = zz(0.0, 1.4);
+    b.bx(0xa0a5a9, Vec3::new(c.x - 1.6, c.y, a), Vec3::new(c.x + 1.6, base - 0.1, bb));
+    let (a, bb) = zz(0.2, 0.7);
+    b.bx(0x1b2a34, Vec3::new(c.x - 0.25, base + 4.2, a), Vec3::new(c.x + 0.25, base + 4.9, bb));
+    let (a, bb) = zz(0.3, 0.6);
+    b.bx(0xf2cd37, Vec3::new(c.x - 0.18, base + 4.25, a), Vec3::new(c.x + 0.18, base + 4.6, bb));
+    // the roof: a cornice, then steps (along x for a gable, in on all sides for a hip), a ridge, a chimney
+    b.bx(shade(wall, 0.85), Vec3::new(x0 - 0.3, top, z0 - 0.3), Vec3::new(x1 + 0.3, top + 0.4, z1 + 0.3));
+    let ov = 0.8;
+    let step = 1.4;
+    let mut i = 0;
+    loop {
+        let dd = d + ov * 2.0 - i as f32 * step;
+        let wd = if st.hip { w + ov * 2.0 - i as f32 * step } else { w + ov * 2.0 };
+        if dd <= 1.2 || wd <= 1.2 {
             break;
         }
         let col = if i % 2 == 0 { roof } else { shade(roof, 0.9) };
-        b.bx(col, Vec3::new(x0 - ov, top + i as f32 * 0.6, c.z - dd * 0.5), Vec3::new(x1 + ov, top + (i + 1) as f32 * 0.6, c.z + dd * 0.5));
+        let y = top + 0.4 + i as f32 * 0.7;
+        b.bx(col, Vec3::new(c.x - wd * 0.5, y, c.z - dd * 0.5), Vec3::new(c.x + wd * 0.5, y + 0.7, c.z + dd * 0.5));
+        i += 1;
     }
-    if r.f() < 0.6 {
-        b.bx(0x82422a, Vec3::new(x1 - 2.4, top, c.z - 1.6), Vec3::new(x1 - 1.0, top + 3.6, c.z - 0.2));
+    let ridge_y = top + 0.4 + i as f32 * 0.7;
+    let rw = if st.hip { (w + ov * 2.0 - (i as f32 - 1.0) * step).max(1.2) } else { w + ov * 2.0 };
+    b.bx(shade(roof, 0.75), Vec3::new(c.x - rw * 0.5, ridge_y, c.z - 0.5), Vec3::new(c.x + rw * 0.5, ridge_y + 0.4, c.z + 0.5));
+    let chx = if r.f() < 0.5 { x0 + 2.0 } else { x1 - 2.0 };
+    b.bx(0x82422a, Vec3::new(chx - 0.8, top, c.z - 2.2), Vec3::new(chx + 0.8, ridge_y + 1.6, c.z - 0.8));
+    b.bx(0x6c6e68, Vec3::new(chx - 1.0, ridge_y + 1.6, c.z - 2.4), Vec3::new(chx + 1.0, ridge_y + 2.0, c.z - 0.6));
+    b.body = Some((Vec3::new(x0 - 0.5, c.y, z0 - 0.5), Vec3::new(x1 + 0.5, ridge_y + 2.0, z1 + 0.5)));
+    if st.garden {
+        // a plot round the house: a white picket fence with a gap at the path, flower beds by the front wall
+        let mg = 3.0;
+        let (px0, px1, pz0, pz1) = (x0 - mg, x1 + mg, z0 - mg, z1 + mg);
+        let fzf = if st.front > 0.0 { pz1 } else { pz0 };
+        let post = |b: &mut Bld, x: f32, z: f32| b.bx(0xf4f4f4, Vec3::new(x - 0.15, c.y, z - 0.15), Vec3::new(x + 0.15, c.y + 1.6, z + 0.15));
+        let mut x = px0;
+        while x <= px1 + 0.01 {
+            for zr in [pz0, pz1] {
+                if !((zr - fzf).abs() < 0.01 && (x - c.x).abs() < 1.5) {
+                    post(b, x, zr);
+                }
+            }
+            x += 1.0;
+        }
+        let mut z = pz0 + 1.0;
+        while z < pz1 - 0.01 {
+            post(b, px0, z);
+            post(b, px1, z);
+            z += 1.0;
+        }
+        for zr in [pz0, pz1] {
+            let gap = (zr - fzf).abs() < 0.01;
+            let spans = if gap { vec![(px0, c.x - 1.6), (c.x + 1.6, px1)] } else { vec![(px0, px1)] };
+            for (ra, rb) in spans {
+                b.bx(0xf4f4f4, Vec3::new(ra, c.y + 0.9, zr - 0.08), Vec3::new(rb, c.y + 1.15, zr + 0.08));
+            }
+        }
+        for xr in [px0, px1] {
+            b.bx(0xf4f4f4, Vec3::new(xr - 0.08, c.y + 0.9, pz0), Vec3::new(xr + 0.08, c.y + 1.15, pz1));
+        }
+        let (pa, pb) = if st.front > 0.0 { (z1 + 1.4, fzf) } else { (fzf, z0 - 1.4) };
+        b.bx(0xe4cd9e, Vec3::new(c.x - 1.0, c.y, pa.min(pb)), Vec3::new(c.x + 1.0, c.y + 0.15, pa.max(pb)));
+        for s in [-1.0f32, 1.0] {
+            let (ba, bb) = if st.front > 0.0 { (z1 + 0.6, z1 + 2.0) } else { (z0 - 2.0, z0 - 0.6) };
+            let (xa, xb) = if s < 0.0 { (x0 + 0.5, c.x - 2.0) } else { (c.x + 2.0, x1 - 0.5) };
+            if xb - xa < 1.0 {
+                continue;
+            }
+            b.bx(0x583927, Vec3::new(xa, c.y, ba), Vec3::new(xb, c.y + 0.4, bb));
+            let zm = (ba + bb) * 0.5;
+            let mut fx = xa + 0.5;
+            while fx < xb - 0.3 {
+                let col = r.pick(&[0xc91a09, 0xf2cd37, 0xff8ac0, 0xf4f4f4, 0x5a93db]);
+                b.bx(0x4b9f4a, Vec3::new(fx - 0.2, c.y + 0.4, zm - 0.2), Vec3::new(fx + 0.2, c.y + 0.9, zm + 0.2));
+                b.bx(col, Vec3::new(fx - 0.3, c.y + 0.9, zm - 0.3), Vec3::new(fx + 0.3, c.y + 1.3, zm + 0.3));
+                fx += 1.0;
+            }
+        }
     }
 }
 
@@ -323,12 +529,12 @@ fn brickton(y: f32) -> Plan {
                     let h = 48.0 + mid * 95.0 + r.f() * 25.0;
                     tower(&mut r, &mut b, c, w, d, h);
                 } else if r.f() < 0.35 {
-                    let h = 22.0 + r.f() * 22.0;
+                    let h = 40.0 + r.f() * 40.0;
                     tower(&mut r, &mut b, c, w, d, h);
                 } else {
                     // shops face the street they lie on (the cross street north of them)
                     let front = if (c.z - p.z).abs() < 25.0 { -1.0 } else { 1.0 };
-                    let floors = 1 + (r.f() * 2.5) as u32;
+                    let floors = 3 + (r.f() * 4.0) as u32;
                     shop(&mut r, &mut b, c, w, d, floors, front);
                 }
                 plan.blds.push(b);
@@ -358,20 +564,24 @@ fn saltwick(y: f32) -> Plan {
     let p = &PADS[1];
     let mut r = Rng(7002);
     let mut plan = Plan::default();
-    let walls = [0x5a93db, 0xf2cd37, 0xff8ac0, 0xf4f4f4, 0x9fd8ef, 0xfe8a18, 0xe4cd9e];
-    let roofs = [0xc91a09, 0x0a3463, 0x237841, 0x6c6e68];
-    let mut x = p.x - p.hx + 16.0;
-    while x < p.x + p.hx - 8.0 {
+    // (wall, roof, shutters and door): bright harbour colours
+    let triples = [
+        (0x5a93db, 0xc91a09, 0xf4f4f4), (0xf2cd37, 0x0a3463, 0x0055bf), (0xff8ac0, 0x6c6e68, 0xf4f4f4),
+        (0xf4f4f4, 0x0a3463, 0x5a93db), (0x9fd8ef, 0xc91a09, 0x0a3463), (0xfe8a18, 0x237841, 0xf4f4f4),
+        (0xe4cd9e, 0x82422a, 0x237841),
+    ];
+    let mut x = p.x - p.hx + 15.0;
+    while x < p.x + p.hx - 9.0 {
         for (s, front) in [(-1.0, 1.0), (1.0, -1.0)] {
-            let w = 8.0 + r.f() * 2.0;
-            let d = 7.0 + r.f() * 1.5;
-            let c = Vec3::new(x, y, p.z + s * (5.0 + d * 0.5 + 1.0));
+            let w = 12.4 + r.f() * 1.6;
+            let d = 8.0 + r.f() * 2.0;
+            let c = Vec3::new(x, y, p.z + s * (5.0 + d * 0.5 + 2.0));
             let mut b = Bld::new();
-            let storeys = 1 + (r.f() < 0.4) as u32;
-            cottage(&mut r, &mut b, c, w, d, &walls, &roofs, front, storeys);
+            let st = HouseStyle { colours: r.pick(&triples), storeys: 2 + (r.f() < 0.4) as u32, hip: r.f() < 0.3, front, garden: false };
+            house(&mut r, &mut b, c, w, d, &st);
             plan.blds.push(b);
         }
-        x += 13.0;
+        x += 16.0;
     }
     let mut b = Bld::new();
     pier(&mut b, Vec3::new(p.x + p.hx - 2.0, y, p.z), 34.0);
@@ -392,8 +602,11 @@ fn dewmere(y: f32) -> Plan {
     let p = &PADS[2];
     let mut r = Rng(7003);
     let mut plan = Plan::default();
-    let walls = [0xf4f4f4, 0xe4cd9e, 0xf2cd37, 0xffe0b0];
-    let roofs = [0x82422a, 0x583927, 0xc91a09, 0x237841];
+    // (wall, roof, shutters and door): warm cottage colours
+    let triples = [
+        (0xf4f4f4, 0x82422a, 0x237841), (0xe4cd9e, 0x583927, 0xc91a09), (0xf2cd37, 0x82422a, 0x0055bf),
+        (0xffe0b0, 0x237841, 0x82422a), (0xf4f4f4, 0xc91a09, 0x0a3463), (0xe4cd9e, 0x0a3463, 0xfe8a18),
+    ];
     let n = 9;
     for i in 0..n {
         let a = std::f32::consts::TAU * (i as f32 + 0.5) / n as f32;
@@ -404,8 +617,9 @@ fn dewmere(y: f32) -> Plan {
         let c = Vec3::new(p.x + a.cos() * (p.hx - 14.0), y, p.z + a.sin() * (p.hz - 14.0));
         let mut b = Bld::new();
         let front = if a.sin() > 0.0 { -1.0 } else { 1.0 };
-        let (w, d) = (8.0 + r.f() * 2.0, 6.5 + r.f() * 1.5);
-        cottage(&mut r, &mut b, c, w, d, &walls, &roofs, front, 1);
+        let (w, d) = (12.4 + r.f() * 1.6, 8.0 + r.f() * 1.5);
+        let st = HouseStyle { colours: r.pick(&triples), storeys: 1 + (r.f() < 0.35) as u32, hip: r.f() < 0.4, front, garden: true };
+        house(&mut r, &mut b, c, w, d, &st);
         plan.blds.push(b);
     }
     plan.ponds.push((Vec3::new(p.x - 18.0, y, p.z + 14.0), Vec2::new(14.0, 10.0)));
@@ -461,7 +675,8 @@ impl Places {
         let mut specs = vec![];
         let mut tris = 0;
         for (k, b) in plan.blds.into_iter().enumerate() {
-            let (lo, hi, solid) = (b.lo, b.hi, b.solid);
+            let (lo, hi) = b.body.unwrap_or((b.lo, b.hi));
+            let solid = b.solid;
             tris += b.mb.triangle_count();
             let parts = b.mb.finish();
             let mats: Vec<(String, MaterialIdOf)> = parts.iter().map(|(p, _)| (p.clone(), assets.material(ctx, u32::from_str_radix(&p[1..], 16).unwrap_or(0xffffff)))).collect();
