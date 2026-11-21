@@ -225,6 +225,8 @@ pub struct PlayScreen {
     /// the baked height law (shared with `Data`) and its chunks, studs, colliders and sea
     law: Option<Rc<Island>>,
     isle: IslandView,
+    /// the island's towns (built near, kept)
+    places: crate::places::Places,
     /// the north gate's doors (hinge roots), their opening angle (None before the first frame), the closed blocker
     gate_doors: Option<(Entity, Entity)>,
     gate_angle: Option<f32>,
@@ -449,6 +451,7 @@ impl PlayScreen {
         json!({
             "law": self.law.as_ref().map(|l| l.describe()),
             "view": self.isle.describe(),
+            "places": self.places.describe(),
             "gate": {"open": data.save.data.north_gate, "angle": self.gate_angle.map(|a| (a * 100.0).round() / 100.0), "blocked": self.gate_block.is_some(), "stops": self.north_stops},
             "map": {"open": self.map_open, "painted": self.map_url.is_some(), "opened": self.maps_opened},
             "found": data.save.data.isle_found,
@@ -1595,6 +1598,7 @@ impl Screen<Data> for PlayScreen {
 
     fn exit(&mut self, ctx: &mut Ctx, data: &mut Data) {
         self.isle.clear(ctx);
+        self.places.clear(ctx);
         data.trans = None;
         ctx.ui.set("bt_trans", "");
         data.save.data.time_of_day = ctx.renderer.settings.time_of_day;
@@ -1973,6 +1977,9 @@ impl Screen<Data> for PlayScreen {
             self.isle.phone = data.settings.touch;
             let far = self.zoom.active || self.fight || self.vox.cam_on || self.cam_low;
             self.isle.update(ctx, &law, Vec2::new(p.x, p.z) / STUD, far);
+            if let Some(assets) = data.town.as_mut() {
+                self.places.update(ctx, assets, &law, &mut self.fader, Vec2::new(p.x, p.z) / STUD);
+            }
         }
         self.outdoor_zone(ctx);
         self.gate(ctx, data);

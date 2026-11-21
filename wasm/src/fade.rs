@@ -42,6 +42,16 @@ impl Fader {
         Self { items, ..Default::default() }
     }
 
+    /// More occluders (a town on the island, built later).
+    pub fn add(&mut self, specs: Vec<OccluderSpec>) {
+        for s in specs {
+            if let OccluderSpec::Bricks { root, extra, min, max } = s {
+                self.items.push(Occluder { root, extra, bounds: Some((min, max)), meshes: vec![], alpha: 1.0 });
+            }
+        }
+        self.retry = 0.0;
+    }
+
     /// Collects the mesh entities (and a model's bounds) of every occluder that has none yet.
     /// A glTF can still be instantiating when the asset counter first reaches 0, so this runs
     /// again (once a second) until every occluder has its meshes.

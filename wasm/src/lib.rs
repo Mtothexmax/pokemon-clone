@@ -21,6 +21,7 @@ mod grass;
 mod island;
 mod islandview;
 mod life;
+mod places;
 mod play;
 mod save;
 mod savefile;

@@ -1242,7 +1242,7 @@ pub fn is_tree(path: &str) -> bool {
 pub const TREE_IMPOSTOR: f32 = 30.0;
 
 /// The load options of a prop: its engine LOD levels (`lod` > 0: their switch distance), trees also an impostor.
-fn prop_opts(ctx: &Ctx, path: &str, lod: f32) -> engine::gltf_loader::GltfOpts {
+pub fn prop_opts(ctx: &Ctx, path: &str, lod: f32) -> engine::gltf_loader::GltfOpts {
     let mut o = if lod > 0.0 { engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: lod, ..Default::default() } } else { ctx.gltf_defaults };
     if is_tree(path) {
         o.impostor = true;

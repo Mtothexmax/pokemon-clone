@@ -1,0 +1,34 @@
+# The island's towns (places.rs): built the first time you come near, then kept. Brickton (towers, the mall, shops),
+# Port Saltwick (houses, pier, boat, lighthouse), Dewmere (cottages round a green, a pond, trees); every building a
+# collider and an occluder that fades; the pads' middles stay free.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/towns.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call clock {"hours": 11}
+call island {"gate": "open"}
+resume
+frames 10
+expect game_state.state.island.places.built.0 == false
+call teleport {"x": -80, "z": -820}
+frames 30
+expect game_state.state.island.places.built.0 == true
+expect game_state.state.island.places.buildings >= 25
+expect game_state.state.hero.grounded == true
+wait_for game_state.state.assets_pending == 0 15000
+screenshot shots/towns-brickton.png
+# walking north up the avenue from the plaza is free
+down KeyW
+frames 150
+up KeyW
+expect game_state.state.hero.z < -835
+call teleport {"x": 470, "z": -620}
+frames 30
+expect game_state.state.island.places.built.1 == true
+call teleport {"x": -300, "z": -470}
+frames 30
+expect game_state.state.island.places.built.2 == true
+expect game_state.state.island.places.trees >= 20
+expect game_state.state.island.places.triangles < 40000
+expect game_state.state.hero.grounded == true

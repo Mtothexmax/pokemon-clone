@@ -77,6 +77,7 @@ comes from.
 | `table.rs` | `TableArt`: the battle's meshes and materials (slabs, tiles, number atlas badges, shards, table, glows) |
 | `sound.rs` | synthesized effects (`Sfx`), music (`Track`, crossfades), voice lines (`assets/voices/<id>.ogg` on `Bus::Voice`), `voice_mouth` |
 | `settings.rs` | the ☰ menu (voices, music, Graphics Auto / High / Medium / Low, controls on phones, debug panel, title screen), Auto's frame-rate watch, `apply_step`, `native_resolution` |
+| `places.rs` | the island's towns: `Places` (built near, kept), Brickton / Port Saltwick / Dewmere plans, `tower`, `shop`, `mall`, `cottage`, `pier`, `boat`, `lighthouse` |
 | `save.rs` | `GameSave` (serde, every field defaulted) in localStorage, written 0.5 s after `mark()` |
 | `swipe.rs` | swipe walking on phones (`touch_mode` 0): keeps walking a direction around obstacles, a tap stops |
 | `debugpanel.rs` | FPS, the picker, Copy buttons; shown with the engine's debug mode (`) or the menu row |
@@ -94,6 +95,10 @@ comes from.
   plates (`strip_sd`, `STRIP_LAND`), a beach, the sea; the plates and the rooms far east are holes (`island::hole`,
   no tops, sides or colliders; a coarse cell only when all of it is). No table under the plates any more. The island
   view is active everywhere outdoors (not in the rooms), so the bands outside include layers 11 and 13.
+- **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
+  (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
+  of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Each building its own entity
+  (fades, `Fader::add`) and a box collider; the pads' middles stay free. ~21k triangles for all three. Test: towns.
 - **Island music:** `island::music_at` picks the place's track (`sound::ISLE_MUSIC`: a town's on its pad + 20 studs, the
   north, cliffs, warm beaches, the night sea west / east, meadows; day / night); `PlayScreen::outdoor_music` switches
   once a place's track held 2 s (`MUSIC_HOLD`); `Track::Home` means the outdoor music where you are
