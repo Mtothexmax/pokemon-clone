@@ -165,6 +165,8 @@ pub struct PlayScreen {
     prewarmed: bool,
     /// the camera can turn (a PC; `cam_free`), as last applied to the island's chunk ranges and the bands
     cam_turns: bool,
+    /// a PC camera tilted low (it sees far over the ground): every band and the island's far chunks are drawn
+    cam_low: bool,
     // ---- the lab quest's dive (dive.rs, cave.rs) ----
     dive: Dive,
     /// > 0: you jumped into the pond with the suit and sink in (seconds; then the dive)
@@ -248,8 +250,12 @@ const SWIPE_HELP: &str = "<div class='panel bh-thelp bh-help'>swipe: walk that w
 const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Seconds the help line stays (it fades out over its last 1.2 s, CSS `bh-help`).
 const HELP_S: f32 = 9.0;
-/// How fast the right mouse button turns the PC camera (radians per CSS px).
+/// How fast a mouse drag turns the PC camera (radians per CSS px), and how far it tilts (pitch, radians: 0.3 low
+/// over the ground .. 1.45 nearly straight down; the fixed view is atan(32 / 17) = 1.08).
 const CAM_TURN: f32 = 0.005;
+const CAM_PITCH: (f32, f32) = (0.3, 1.45);
+/// Below this pitch the camera sees past the near bands / chunks: everything is drawn (as in a close-up).
+const CAM_LOW: f32 = 0.9;
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
@@ -341,7 +347,7 @@ impl PlayScreen {
             self.title = ["Back in Brickhollow", "Route 1", "Welcome to Stonecrest!", "Brick Isle"][zone];
             self.title_t = 3.5;
         }
-        let far = self.zoom.active || self.fight || self.vox.cam_on;
+        let far = self.zoom.active || self.fight || self.vox.cam_on || self.cam_low;
         // (on the island the strip behind you only matters as far as the camera sees south: its forest is heavy)
         let south = if z < island::SOUTH_Z { 24.0 } else { 40.0 };
         // (a turning PC camera may look south as far as north: both sides as far as the farther)
@@ -1168,9 +1174,10 @@ impl PlayScreen {
         ctx.ui.set("toast", &toast);
     }
 
-    /// The camera turns (a PC: right mouse button); phones keep the fixed view (a touch device, or one seen).
+    /// The camera turns on a PC (left or right mouse button held and dragged), also one with a touchscreen; phones
+    /// keep the fixed view (`Settings::phone`, known at the start).
     pub(crate) fn cam_free(&self, data: &Data) -> bool {
-        !(self.touch_ui || data.settings.touch)
+        !data.settings.phone
     }
 
     /// A dialog or a screen (computer, TV: they have their own close button) has the screen: no walking controls.
@@ -1538,10 +1545,16 @@ impl Screen<Data> for PlayScreen {
         let mut cam_yaw = 0.0;
         if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut ThirdPersonCamera>(c).ok()) {
             c.sensitivity = if cam_free { CAM_TURN } else { 0.0 };
-            if !cam_free {
+            let fixed = CAM_OFFSET.y.atan2(CAM_OFFSET.z);
+            if cam_free {
+                // dragging up / down tilts it too: from low over the ground to straight down on you
+                (c.min_pitch, c.max_pitch) = CAM_PITCH;
+            } else {
                 c.yaw = 0.0;
+                (c.min_pitch, c.max_pitch, c.pitch) = (fixed, fixed, fixed);
             }
             cam_yaw = c.yaw;
+            self.cam_low = cam_free && c.pitch < CAM_LOW;
         }
         let dt = ctx.time.fixed_dt;
         let space = ctx.input.key_down_or_pressed("Space");
@@ -1641,6 +1654,18 @@ impl Screen<Data> for PlayScreen {
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
         data.loadbar(ctx);
+        // a PC: the left mouse button turns the camera too (the engine's own look takes the right one); fingers never
+        // do (a swipe to walk turned it), also on a PC with a touchscreen
+        if self.cam_free(data) {
+            ctx.input.touch.look_delta = Vec2::ZERO;
+            if ctx.input.button(MouseButton::Left) && !ctx.input.pointer_over_panel && !data.settings.open {
+                let d = ctx.input.pointer_delta;
+                if let Some(mut c) = self.camera.and_then(|c| ctx.world.get::<&mut ThirdPersonCamera>(c).ok()) {
+                    c.yaw -= d.x * CAM_TURN;
+                    c.pitch = (c.pitch + d.y * CAM_TURN).clamp(c.min_pitch, c.max_pitch);
+                }
+            }
+        }
         // once the village is loaded: every pipeline variant drawn once off screen, so the first faded
         // tree or the first sun step doesn't make the phone's driver compile mid-walk (a 44-55 ms hitch, a jump ahead)
         if !self.prewarmed && ctx.assets_pending() == 0 && data.town.is_some() {
@@ -1863,7 +1888,7 @@ impl Screen<Data> for PlayScreen {
         // the island streams around you (within its frame budget) before the camera's layers are chosen
         if let (Some(law), Some((p, _))) = (self.law.clone(), self.hero_pos(ctx)) {
             self.isle.phone = data.settings.touch;
-            let far = self.zoom.active || self.fight || self.vox.cam_on;
+            let far = self.zoom.active || self.fight || self.vox.cam_on || self.cam_low;
             self.isle.update(ctx, &law, Vec2::new(p.x, p.z) / STUD, far);
         }
         self.outdoor_zone(ctx);
@@ -2411,6 +2436,7 @@ impl Screen<Data> for PlayScreen {
             "talk_npc": self.talk_npc.map(|i| self.npcs[i].id.clone()),
             "talk_cam": (self.zoom.t * 100.0).round() / 100.0,
             "cam_yaw": self.camera.and_then(|c| ctx.world.get::<&ThirdPersonCamera>(c).ok().map(|c| c.yaw)),
+            "cam_pitch": self.camera.and_then(|c| ctx.world.get::<&ThirdPersonCamera>(c).ok().map(|c| c.pitch)),
             "mouths": self.npcs.iter().filter(|n| n.fig.mouth() > 0).map(|n| (n.id.clone(), n.fig.mouth())).collect::<Vec<_>>(),
             "busy": self.busy,
             "life": self.life.describe(g),

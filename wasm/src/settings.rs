@@ -30,6 +30,9 @@ pub struct Settings {
     pub applied: Option<usize>,
     /// Phones (a touch was seen): Auto starts at Low.
     pub touch: bool,
+    /// A phone by its pointer / browser, known at the start (a touch on a PC with a touchscreen doesn't make one):
+    /// the camera stays fixed (`PlayScreen::cam_free`)
+    pub phone: bool,
     settle: f32,
     win_t: f32,
     win_frames: u32,

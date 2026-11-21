@@ -1,4 +1,4 @@
-# On a PC the camera turns with the right mouse button and the keys walk the way it looks; with the button up the
+# On a PC the camera turns with the left or right mouse button held and the keys walk the way it looks; with the button up the
 # mouse does nothing. (Phones keep the fixed view: swipe.txt checks cam_yaw == 0 while swiping.)
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/camera_turn.txt --port 9223 --url http://localhost:8091/
 reload
@@ -32,3 +32,27 @@ frames 5
 expect game_state.state.hero.x < -14
 expect game_state.state.hero.z > -2
 expect game_state.state.hero.z < 3
+# the left button turns it too (back by a quarter)
+call input {"button": 0, "down": true}
+frames 1
+call input {"dx": 314, "dy": 0}
+frames 3
+call input {"button": 0, "down": false}
+frames 3
+expect game_state.state.cam_yaw ~= 0
+# dragging down / up tilts it: low over the ground (everything far is drawn then), back to the fixed tilt
+call input {"button": 2, "down": true}
+frames 1
+call input {"dx": 0, "dy": -120}
+frames 3
+call input {"button": 2, "down": false}
+frames 30
+expect game_state.state.cam_pitch < 0.6
+screenshot shots/camera-low.png
+call input {"button": 0, "down": true}
+frames 1
+call input {"dx": 0, "dy": 120}
+frames 3
+call input {"button": 0, "down": false}
+frames 3
+expect game_state.state.cam_pitch ~= 1.08

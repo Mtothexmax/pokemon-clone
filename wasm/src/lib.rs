@@ -169,13 +169,14 @@ impl Data {
             self.cards = deck::CardUi::new();
             // a phone (a coarse primary pointer, or touch points and a mobile browser) gets the phone profile from the
             // first frame, not after the first touch
-            self.settings.touch = web_sys::window().is_some_and(|w| {
+            self.settings.phone = web_sys::window().is_some_and(|w| {
                 let coarse = w.match_media("(pointer: coarse)").ok().flatten().is_some_and(|m| m.matches());
                 let nav = w.navigator();
                 let ua = nav.user_agent().unwrap_or_default();
                 let mobile = nav.max_touch_points() > 0 && ["Android", "iPhone", "iPad", "Mobile"].iter().any(|k| ua.contains(k));
                 coarse || mobile
             });
+            self.settings.touch = self.settings.phone;
         }
     }
 }
