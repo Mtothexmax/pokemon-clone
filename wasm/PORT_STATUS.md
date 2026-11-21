@@ -94,6 +94,10 @@ comes from.
   plates (`strip_sd`, `STRIP_LAND`), a beach, the sea; the plates and the rooms far east are holes (`island::hole`,
   no tops, sides or colliders; a coarse cell only when all of it is). No table under the plates any more. The island
   view is active everywhere outdoors (not in the rooms), so the bands outside include layers 11 and 13.
+- **Island music:** `island::music_at` picks the place's track (`sound::ISLE_MUSIC`: a town's on its pad + 20 studs, the
+  north, cliffs, warm beaches, the night sea west / east, meadows; day / night); `PlayScreen::outdoor_music` switches
+  once a place's track held 2 s (`MUSIC_HOLD`); `Track::Home` means the outdoor music where you are
+  (`Sound::set_outdoor`), so a fight hands back to it. Test: isle_music.
 - **No auto-LOD** for the Voxelmon (vox.rs: a simplified voxel model has holes) and the lab machine signs.
 - **Far view:** trees (`town::is_tree`) are also engine impostors (`prop_opts`: one baked card beyond
   `TREE_IMPOSTOR` 30 x their radius, 8 views, 128 px); the village's bricks are batched under "town bricks" with an

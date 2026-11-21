@@ -166,6 +166,9 @@ pub struct PlayScreen {
     /// the save's place applied (first frames), seconds since your place was last looked at (`keep_place`)
     place_restored: bool,
     place_t: f32,
+    /// the outdoor music wanted where you are, and how long it has been wanted (a zone's edge doesn't flap)
+    music_want: Option<Track>,
+    music_t: f32,
     /// the camera can turn (a PC; `cam_free`), as last applied to the island's chunk ranges and the bands
     cam_turns: bool,
     /// a PC camera tilted low (it sees far over the ground): every band and the island's far chunks are drawn
@@ -257,6 +260,8 @@ const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot
 const HELP_S: f32 = 9.0;
 /// How often where you stand goes into the save (seconds).
 const PLACE_EVERY: f32 = 2.0;
+/// Seconds a new place's music must be the one before it plays.
+const MUSIC_HOLD: f32 = 2.0;
 /// How far geometry is drawn (m): from the fixed tilt (~16 m above you, the screen's top edge some 80 m away) to the
 /// lowest PC tilt (`far_view` 1, the haze thin).
 const VIEW_NEAR: f32 = 120.0;
@@ -1188,6 +1193,26 @@ impl PlayScreen {
     /// Where you stand goes into the save every `PLACE_EVERY` s once you have moved (not while busy, diving, fighting
     /// or in the air: a reload must start you somewhere safe); a hidden page (tab switched, phone locked) writes it at
     /// once. The first frames of the screen put you back where the save says (a new game: the intro's room).
+    /// The outdoor music where you are (`island::music_at`), switched once it has been the one for `MUSIC_HOLD` s.
+    fn outdoor_music(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) {
+        let Some((p, _)) = self.hero_pos(ctx) else { return };
+        let tod = ((ctx.renderer.settings.time_of_day - 6.0) / 24.0).rem_euclid(1.0);
+        let night = tod > 0.55 || tod < 0.05;
+        let want = match (&self.law, self.area) {
+            (Some(law), None) => law.music_at(p.x / STUD, p.z / STUD, night).map(Track::Isle).unwrap_or(Track::Home),
+            _ => Track::Home,
+        };
+        if self.music_want != Some(want) {
+            self.music_want = Some(want);
+            self.music_t = 0.0;
+        }
+        self.music_t += dt;
+        // (at once the first time: a reload on the island starts with its music)
+        if self.music_t >= MUSIC_HOLD || data.sound.outdoor().is_none() {
+            data.sound.set_outdoor(ctx, want);
+        }
+    }
+
     fn keep_place(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) {
         if !self.place_restored {
             if !data.save.loaded {
@@ -2007,6 +2032,8 @@ impl Screen<Data> for PlayScreen {
         self.fountain.set_visible(layers, self.area.is_none());
         self.fountain.update(ctx, dt);
 
+        // ---- the music outdoors: the village's tune on the strip and indoors, the island's by place, day and night ----
+        self.outdoor_music(ctx, data, dt);
         // ---- the save: where you are (a reload starts there), the clock every 20 s ----
         self.keep_place(ctx, data, dt);
         self.clock_t += dt;

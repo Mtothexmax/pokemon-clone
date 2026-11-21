@@ -160,7 +160,15 @@ pub enum Track {
     Victory,
     Defeat,
     Wild,
+    /// The island's music where you are (index into `ISLE_MUSIC`; `island::music_at` picks it).
+    Isle(u8),
 }
+
+/// The island's tracks (OPEN_WORLD.md, "Musik"): towns, then zones by day / night, the night sea.
+pub const ISLE_MUSIC: [&str; 14] = [
+    "brickton", "mall", "saltwick", "dewmere", "beach_day", "beach_night", "meadows_day", "meadows_night", "north_day",
+    "north_night", "cliffs_day", "cliffs_night", "sea_night", "sea_night_2",
+];
 
 impl Track {
     pub fn url(self) -> Option<&'static str> {
@@ -172,10 +180,11 @@ impl Track {
             Track::Victory => Some("assets/music/victory.ogg"),
             Track::Defeat => Some("assets/music/defeat.ogg"),
             Track::Wild => Some("assets/music/wild.ogg"),
+            Track::Isle(i) => Some(ISLE_URLS[i as usize % ISLE_URLS.len()]),
         }
     }
     fn looped(self) -> bool {
-        matches!(self, Track::Home | Track::Fight | Track::Wild)
+        matches!(self, Track::Home | Track::Fight | Track::Wild | Track::Isle(_))
     }
     pub fn name(self) -> &'static str {
         match self {
@@ -186,9 +195,18 @@ impl Track {
             Track::Victory => "victory",
             Track::Defeat => "defeat",
             Track::Wild => "wild",
+            Track::Isle(i) => ISLE_MUSIC[i as usize % ISLE_MUSIC.len()],
         }
     }
 }
+
+const ISLE_URLS: [&str; 14] = [
+    "assets/music/brickton.ogg", "assets/music/mall.ogg", "assets/music/saltwick.ogg", "assets/music/dewmere.ogg",
+    "assets/music/beach_day.ogg", "assets/music/beach_night.ogg", "assets/music/meadows_day.ogg",
+    "assets/music/meadows_night.ogg", "assets/music/north_day.ogg", "assets/music/north_night.ogg",
+    "assets/music/cliffs_day.ogg", "assets/music/cliffs_night.ogg", "assets/music/sea_night.ogg",
+    "assets/music/sea_night_2.ogg",
+];
 
 /// The music's level per menu step (off, quiet, normal, loud). Normal is the Kaigen / three.js level
 /// (0.15): the voices (0.95) stay clear above it.
@@ -211,6 +229,8 @@ pub struct Sound {
     pub sfx_played: u32,
     /// seconds the current track has played (the battle intro hands over to the fight music)
     pub track_t: f32,
+    /// What `Track::Home` means where you are: the village's tune, or the island's (`set_outdoor`)
+    outdoor: Option<Track>,
 }
 
 impl Sound {
@@ -233,8 +253,9 @@ impl Sound {
         self.sfx_played += 1;
     }
 
-    /// Switches the music (no-op if it already plays).
+    /// Switches the music (no-op if it already plays). `Track::Home` is the music outdoors where you are.
     pub fn music(&mut self, ctx: &mut Ctx, t: Track) {
+        let t = if t == Track::Home { self.outdoor.unwrap_or(Track::Home) } else { t };
         if self.track == Some(t) {
             return;
         }
@@ -246,6 +267,19 @@ impl Sound {
             }
             None => ctx.audio.stop_music(0.4),
         }
+    }
+
+    /// Where you are outdoors (the play screen, every frame): the village's `Home` or an island track. Switches at once
+    /// while the outdoor music plays (a battle's keeps playing; it hands back to this one).
+    pub fn set_outdoor(&mut self, ctx: &mut Ctx, t: Track) {
+        self.outdoor = Some(t);
+        if matches!(self.track, Some(Track::Home) | Some(Track::Isle(_))) {
+            self.music(ctx, t);
+        }
+    }
+
+    pub fn outdoor(&self) -> Option<Track> {
+        self.outdoor
     }
 
     pub fn track(&self) -> Track {

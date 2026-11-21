@@ -1,0 +1,35 @@
+# The island's music by place (island::music_at, OPEN_WORLD.md "Musik"): the village's tune on the strip, a town's on its
+# pad, the zones by day and night; a new place's music plays once it has been the one for 2 s; a fight's music hands
+# back to the place's.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/isle_music.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call clock {"hours": 12}
+call island {"gate": "open"}
+resume
+frames 30
+expect game_state.state.sound.track == "home"
+# Brickton (the city pad)
+call teleport {"x": -80, "z": -820}
+frames 20
+expect game_state.state.sound.track == "home"
+wait_for game_state.state.sound.track == "brickton" 4000
+# Port Saltwick, Dewmere
+call teleport {"x": 470, "z": -620}
+wait_for game_state.state.sound.track == "saltwick" 4000
+call teleport {"x": -300, "z": -470}
+wait_for game_state.state.sound.track == "dewmere" 4000
+# the meadows on the road between, by day and by night
+call teleport {"x": 5, "z": -360}
+wait_for game_state.state.sound.track == "meadows_day" 4000
+call clock {"hours": 23}
+wait_for game_state.state.sound.track == "meadows_night" 4000
+# the cold north
+call clock {"hours": 12}
+call teleport {"x": -80, "z": -1250}
+wait_for game_state.state.sound.track == "north_day" 4000
+# back on the strip: the village's tune
+call teleport {"x": -15, "z": -2.5}
+wait_for game_state.state.sound.track == "home" 4000

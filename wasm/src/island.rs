@@ -655,6 +655,38 @@ impl Island {
         SelfTest { ok: p.is_empty(), problems: p, road_min_y: if min_y == f32::MAX { 0.0 } else { min_y }, road_max_step: max_step }
     }
 
+    /// The island's music at (x, z) (index into `sound::ISLE_MUSIC`, OPEN_WORLD.md "Musik"), or None on the strip
+    /// and the land round it (the village's own tune): a town's on its pad and the ring round it, else the zone's by
+    /// day or night: the cold north, rock and cliffs, the warm beaches (at night the cooler coasts have the night sea,
+    /// west and east their own take), the meadows.
+    pub fn music_at(&self, x: f32, z: f32, night: bool) -> Option<u8> {
+        if z > SOUTH_Z - 8.0 {
+            return None;
+        }
+        for (i, p) in PADS.iter().enumerate() {
+            if (x - p.x).abs() < p.hx + 20.0 && (z - p.z).abs() < p.hz + 20.0 {
+                return Some([0, 2, 3][i]);
+            }
+        }
+        let n = self.lerp(x, z);
+        let pick = |day: u8| if night { day + 1 } else { day };
+        Some(if north(z) > 0.5 {
+            pick(8)
+        } else if n.cliff > 0.45 || n.h > 12.0 {
+            pick(10)
+        } else if n.coast > -45.0 {
+            if n.warm > 0.45 {
+                pick(4)
+            } else if night {
+                if x < 0.0 { 12 } else { 13 }
+            } else {
+                6
+            }
+        } else {
+            pick(6)
+        })
+    }
+
     pub fn describe(&self) -> serde_json::Value {
         serde_json::json!({
             "bake_ms": (self.bake_ms * 10.0).round() / 10.0,
