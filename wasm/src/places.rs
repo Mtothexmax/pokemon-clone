@@ -93,18 +93,52 @@ fn tower(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, h: f32) {
     let glass = r.pick(&[0x9fd8ef, 0x6fb6e0, 0xbfe6f4, 0x3b7fb8]);
     let (x0, x1, z0, z1) = (c.x - w * 0.5, c.x + w * 0.5, c.z - d * 0.5, c.z + d * 0.5);
     b.bx(shade(body, 0.8), Vec3::new(x0 - 0.4, c.y, z0 - 0.4), Vec3::new(x1 + 0.4, c.y + 1.2, z1 + 0.4));
-    b.bx(body, Vec3::new(x0, c.y, z0), Vec3::new(x1, c.y + h, z1));
-    window_bands(b, glass, x0, x1, z0, z1, c.y + 1.2, c.y + h, 2.4, 1.3);
+    if h > 40.0 || r.f() < 0.4 {
+        // a glass tower: the glass body, pillars of the frame colour up every side, a band every three floors
+        b.bx(glass, Vec3::new(x0, c.y, z0), Vec3::new(x1, c.y + h, z1));
+        let o = 0.12;
+        let cols = |len: f32| ((len / 3.2).round() as i32).max(2);
+        for side in 0..4 {
+            let (len, along_x) = if side < 2 { (w, true) } else { (d, false) };
+            let n = cols(len);
+            for i in 0..=n {
+                let t = -len * 0.5 + len * i as f32 / n as f32;
+                let (a, bb) = match side {
+                    0 => (Vec3::new(c.x + t - 0.3, c.y, z1), Vec3::new(c.x + t + 0.3, c.y + h, z1 + o)),
+                    1 => (Vec3::new(c.x + t - 0.3, c.y, z0 - o), Vec3::new(c.x + t + 0.3, c.y + h, z0)),
+                    2 => (Vec3::new(x0 - o, c.y, c.z + t - 0.3), Vec3::new(x0, c.y + h, c.z + t + 0.3)),
+                    _ => (Vec3::new(x1, c.y, c.z + t - 0.3), Vec3::new(x1 + o, c.y + h, c.z + t + 0.3)),
+                };
+                let _ = along_x;
+                b.bx(body, a, bb);
+            }
+        }
+        let mut y = c.y + 7.2;
+        while y < c.y + h - 1.0 {
+            b.bx(body, Vec3::new(x0 - o * 0.5, y, z0 - o * 0.5), Vec3::new(x1 + o * 0.5, y + 0.5, z1 + o * 0.5));
+            y += 7.2;
+        }
+    } else {
+        b.bx(body, Vec3::new(x0, c.y, z0), Vec3::new(x1, c.y + h, z1));
+        window_bands(b, glass, x0, x1, z0, z1, c.y + 1.2, c.y + h, 2.4, 1.3);
+    }
     // the lobby's glass front (south, toward the street) and the crown
     b.bx(glass, Vec3::new(c.x - w * 0.3, c.y + 0.2, z1), Vec3::new(c.x + w * 0.3, c.y + 2.2, z1 + 0.15));
     let top = c.y + h;
     b.bx(shade(body, 0.85), Vec3::new(x0 - 0.3, top, z0 - 0.3), Vec3::new(x1 + 0.3, top + 0.6, z1 + 0.3));
     if h > 30.0 {
-        let (iw, id) = (w * 0.6, d * 0.6);
-        b.bx(body, Vec3::new(c.x - iw * 0.5, top + 0.6, c.z - id * 0.5), Vec3::new(c.x + iw * 0.5, top + 4.8, c.z + id * 0.5));
-        window_bands(b, glass, c.x - iw * 0.5, c.x + iw * 0.5, c.z - id * 0.5, c.z + id * 0.5, top + 0.6, top + 4.8, 2.4, 1.3);
+        // a setback crown (or two on the tallest), a spire on some
+        let mut y = top + 0.6;
+        let mut k = 0.6;
+        for _ in 0..if h > 90.0 { 2 } else { 1 } {
+            let (iw, id) = (w * k, d * k);
+            b.bx(body, Vec3::new(c.x - iw * 0.5, y, c.z - id * 0.5), Vec3::new(c.x + iw * 0.5, y + 6.0, c.z + id * 0.5));
+            window_bands(b, glass, c.x - iw * 0.5, c.x + iw * 0.5, c.z - id * 0.5, c.z + id * 0.5, y, y + 6.0, 2.4, 1.3);
+            y += 6.0;
+            k *= 0.65;
+        }
         if r.f() < 0.6 {
-            b.bx(0xc91a09, Vec3::new(c.x - 0.2, top + 4.8, c.z - 0.2), Vec3::new(c.x + 0.2, top + 11.0, c.z + 0.2));
+            b.bx(0xc91a09, Vec3::new(c.x - 0.25, y, c.z - 0.25), Vec3::new(c.x + 0.25, y + 6.0 + h * 0.08, c.z + 0.25));
         }
     } else {
         // roof boxes (air conditioning, a water tank)
@@ -150,9 +184,12 @@ fn mall(b: &mut Bld, c: Vec3, w: f32, d: f32) {
         }
         x += wl + 0.6;
     }
-    b.bx(0xa0a5a9, Vec3::new(c.x - 6.0, c.y + 5.2, z1), Vec3::new(c.x + 6.0, c.y + 5.7, z1 + 4.0));
+    // the entrance canopy: a glass roof on a white frame out from the wall, a yellow edge, held by two struts
+    b.bx(0xf4f4f4, Vec3::new(c.x - 6.0, c.y + 5.2, z1), Vec3::new(c.x + 6.0, c.y + 5.6, z1 + 3.6));
+    b.bx(0x9fd8ef, Vec3::new(c.x - 5.6, c.y + 5.6, z1 + 0.2), Vec3::new(c.x + 5.6, c.y + 5.75, z1 + 3.3));
+    b.bx(0xf2cd37, Vec3::new(c.x - 6.1, c.y + 5.0, z1 + 3.6), Vec3::new(c.x + 6.1, c.y + 5.8, z1 + 3.9));
     for s in [-1.0, 1.0] {
-        b.bx(0xa0a5a9, Vec3::new(c.x + s * 5.6 - 0.3, c.y, z1 + 3.4), Vec3::new(c.x + s * 5.6 + 0.3, c.y + 5.2, z1 + 4.0));
+        b.bx(0xa0a5a9, Vec3::new(c.x + s * 5.0 - 0.15, c.y + 5.6, z1 + 0.1), Vec3::new(c.x + s * 5.0 + 0.15, c.y + 8.2, z1 + 0.4));
     }
     // roof: edge and a long glass light
     b.bx(0xa0a5a9, Vec3::new(x0 - 0.3, c.y + h, z0 - 0.3), Vec3::new(x1 + 0.3, c.y + h + 0.6, z1 + 0.3));
@@ -283,10 +320,10 @@ fn brickton(y: f32) -> Plan {
                 if qz < 0.0 {
                     // north: towers, taller toward the middle of the city
                     let mid = 1.0 - ((c.x - p.x).abs() / p.hx).min(1.0) * 0.6 - ((c.z - p.z).abs() / p.hz).min(1.0) * 0.3;
-                    let h = 18.0 + mid * 40.0 + r.f() * 14.0;
+                    let h = 48.0 + mid * 95.0 + r.f() * 25.0;
                     tower(&mut r, &mut b, c, w, d, h);
                 } else if r.f() < 0.35 {
-                    let h = 14.0 + r.f() * 10.0;
+                    let h = 22.0 + r.f() * 22.0;
                     tower(&mut r, &mut b, c, w, d, h);
                 } else {
                     // shops face the street they lie on (the cross street north of them)
@@ -448,16 +485,18 @@ impl Places {
             self.trees += 1;
         }
         for (c, half) in &plan.ponds {
-            let w = ctx.spawn_water(&format!("{name} pond"), assets.water, Vec2::new(half.x * 2.0 * STUD, half.y * 2.0 * STUD), Transform::from_translation(m(c.x, c.y + 0.12, c.z)));
+            // a raised basin: a dark bed a plate up, the water well above it (a few millimetres of water over the
+            // ground flickered: foam and reflections fought over nothing), a stone rim above the water
+            let (bed, water, rim) = (c.y + 0.4, c.y + 1.0, c.y + 1.3);
+            let w = ctx.spawn_water(&format!("{name} pond"), assets.water, Vec2::new(half.x * 2.0 * STUD, half.y * 2.0 * STUD), Transform::from_translation(m(c.x, water, c.z)));
             ctx.set_layer(w, layer);
-            // a dark bed and a stone rim round it
             let mut b = Bld::new();
-            b.bx(0x1b2a34, Vec3::new(c.x - half.x, c.y - 0.05, c.z - half.y), Vec3::new(c.x + half.x, c.y + 0.02, c.z + half.y));
+            b.bx(0x1d4a5e, Vec3::new(c.x - half.x, c.y, c.z - half.y), Vec3::new(c.x + half.x, bed, c.z + half.y));
             for (a, bb) in [
-                (Vec3::new(c.x - half.x - 0.8, c.y, c.z - half.y - 0.8), Vec3::new(c.x + half.x + 0.8, c.y + 0.5, c.z - half.y)),
-                (Vec3::new(c.x - half.x - 0.8, c.y, c.z + half.y), Vec3::new(c.x + half.x + 0.8, c.y + 0.5, c.z + half.y + 0.8)),
-                (Vec3::new(c.x - half.x - 0.8, c.y, c.z - half.y), Vec3::new(c.x - half.x, c.y + 0.5, c.z + half.y)),
-                (Vec3::new(c.x + half.x, c.y, c.z - half.y), Vec3::new(c.x + half.x + 0.8, c.y + 0.5, c.z + half.y)),
+                (Vec3::new(c.x - half.x - 0.8, c.y, c.z - half.y - 0.8), Vec3::new(c.x + half.x + 0.8, rim, c.z - half.y)),
+                (Vec3::new(c.x - half.x - 0.8, c.y, c.z + half.y), Vec3::new(c.x + half.x + 0.8, rim, c.z + half.y + 0.8)),
+                (Vec3::new(c.x - half.x - 0.8, c.y, c.z - half.y), Vec3::new(c.x - half.x, rim, c.z + half.y)),
+                (Vec3::new(c.x + half.x, c.y, c.z - half.y), Vec3::new(c.x + half.x + 0.8, rim, c.z + half.y)),
             ] {
                 b.bx(0xa0a5a9, a, bb);
             }

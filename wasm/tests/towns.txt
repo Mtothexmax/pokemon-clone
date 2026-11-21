@@ -6,6 +6,10 @@ reload
 screen play
 wait_for game_state.state.assets_pending == 0 15000
 call save_reset
+# (again from a new game's load: the place an earlier test left may lie near a town, which would be built at once)
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
 call clock {"hours": 11}
 call island {"gate": "open"}
 resume
