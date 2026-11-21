@@ -11,10 +11,11 @@ call clock {"hours": 12}
 call life {"freeze": true, "pip_home": true}
 resume
 frames 10
-# the land north is built on its own band layers; the village shows only its own
+# the land north is built on its own band layers; the village shows only its own (and the island's land and sea
+# round the strip: layers 11 and 13)
 expect game_state.state.town.props >= 700
 expect game_state.state.zone == "Brickhollow"
-expect game_state.state.bands == 2
+expect game_state.state.bands == 10242
 # ---- the gap is closed: Prof. Quill stands in the middle; walking past her turns you back and she talks ----
 expect game_state.state.npcs.2.id == "gate-prof"
 expect game_state.state.npcs.2.x ~= 0

@@ -10,7 +10,8 @@ call life {"freeze": true, "pip_home": true}
 resume
 frames 5
 expect game_state.state.area == null
-expect game_state.state.camera_layers == 3
+# (outside: the village and the island's land and sea round it)
+expect game_state.state.camera_layers == 10243
 expect game_state.state.room_lights_on == 0
 # ---- no z-fighting in the rooms (Home with Mom, Dex & Lumi's, the lab with the Prof, your room): bricks, studs,
 # the minifigs' leg halves, the lab's props ----
@@ -108,7 +109,7 @@ wait_for game_state.state.area == null 3000
 frames 30
 expect game_state.state.hero.x ~= -15
 expect game_state.state.hero.z ~= -3
-expect game_state.state.camera_layers == 3
+expect game_state.state.camera_layers == 10243
 expect game_state.state.title == "Brickhollow"
 wait_for game_state.state.indoor < 0.05 3000
 expect game_state.state.room_lights_on == 0

@@ -16,9 +16,9 @@ frames 10
 expect game_state.state.island.law.selftest.ok == true
 expect game_state.state.island.law.bake_ms < 500
 expect game_state.state.island.law.selftest.road_max_step <= 1
-# (the village draws no island layer)
-expect game_state.state.island.view.active == false
-expect game_state.state.bands == 2
+# (the village draws its own band and the island's near land and sea round it: no void round the strip)
+expect game_state.state.island.view.active == true
+expect game_state.state.bands == 10242
 # ---- the north gate is closed: walking into it sends you back to the guard, who explains ----
 expect game_state.state.island.gate.open == false
 expect game_state.state.island.gate.blocked == true
@@ -180,10 +180,13 @@ frames 5
 action map_close
 frames 5
 expect game_state.state.island.map.open == false
-# ---- back to the village: the island unloads ----
+# ---- back to the village: the island's land round it stays, the far north unloads ----
 call teleport {"x": -15, "z": -2.5}
 frames 30
-expect game_state.state.island.view.active == false
-expect game_state.state.island.view.fine == 0
-expect game_state.state.bands == 2
+expect game_state.state.island.view.active == true
+expect game_state.state.island.view.fine >= 1
+expect game_state.state.bands == 10242
+# (the land beside the village plate lies a plate below it and is no ground of its own under the plate)
+expect game_state.state.island.law.hole_village == true
+expect game_state.state.island.law.beside_village_y ~= -0.4
 call save_reset

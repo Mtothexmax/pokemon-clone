@@ -17,17 +17,19 @@ pub const PLATE: f32 = 0.4;
 pub const SEA_Y: f32 = -1.4;
 /// The island begins north of the north plate (the strip's ground ends at z -194).
 pub const SOUTH_Z: f32 = -194.0;
-/// The lattice: x X0..X1, z Z0..SOUTH_Z, `CELL` studs per cell.
+/// The lattice: x X0..X1, z Z0..Z1, `CELL` studs per cell. It reaches south past the strip (Brickhollow, Route 1,
+/// Stonecrest): the land round the strip's plates and the sea beyond (the plates themselves are holes, `hole`).
 pub const X0: f32 = -704.0;
 pub const X1: f32 = 704.0;
 pub const Z0: f32 = -1538.0;
+pub const Z1: f32 = 254.0;
 pub const CELL: f32 = 4.0;
 pub const NX: usize = ((X1 - X0) / CELL) as usize;
-pub const NZ: usize = ((SOUTH_Z - Z0) / CELL) as usize;
+pub const NZ: usize = ((Z1 - Z0) / CELL) as usize;
 /// Chunks (studs per side) and their count.
 pub const CHUNK: f32 = 64.0;
 pub const CX: i32 = ((X1 - X0) / CHUNK) as i32;
-pub const CZ: i32 = ((SOUTH_Z - Z0) / CHUNK) as i32;
+pub const CZ: i32 = ((Z1 - Z0) / CHUNK) as i32;
 /// The deep sea floor, the bottom every chunk's skirt reaches, and the deepest top you can wade on (plates).
 pub const DEEP: i32 = -15;
 pub const FLOOR: i32 = -20;
@@ -202,6 +204,21 @@ fn sd_box(p: Vec2, c: Vec2, half: Vec2) -> f32 {
 
 // ------------------------------------------------------------------------- the law
 
+/// The strip's plates (village; Route 1 and Stonecrest) as a signed distance (studs; < 0 on them).
+pub fn strip_sd(x: f32, z: f32) -> f32 {
+    let p = Vec2::new(x, z);
+    sd_box(p, Vec2::new(20.0, -9.0), Vec2::new(52.0, 38.0)).min(sd_box(p, Vec2::new(5.0, -120.5), Vec2::new(51.0, 73.5)))
+}
+
+/// How far the land reaches round the strip's plates (studs, before the coast's noise).
+const STRIP_LAND: f32 = 55.0;
+
+/// Where the island has no ground of its own: the strip's plates (their own ground lies there) and the rooms far
+/// east of the village (interiors on their own layers).
+pub fn hole(x: f32, z: f32) -> bool {
+    strip_sd(x, z) <= 0.0 || (x >= 140.0 && z > -150.0)
+}
+
 /// The coast as a signed distance (studs; < 0 on land): capsules between the regions' centres, smoothly
 /// united, warped by noise, bays cut out; the strip's table south of the island is always land.
 pub fn coast(x: f32, z: f32) -> f32 {
@@ -220,7 +237,9 @@ pub fn coast(x: f32, z: f32) -> f32 {
     let zline = SOUTH_Z + 30.0 - (((x - 20.0).abs() - 215.0).max(0.0) * 0.9) + fbm(x / 70.0, 3.7, 2, 14) * 10.0;
     d = -smin(-d, -(z - zline) * 0.9, 25.0);
     // the strip's table (x -180..220) ends at the island's south edge: land there, so it never shows
-    smin(d, sd_box(Vec2::new(x, z), Vec2::new(20.0, -200.0), Vec2::new(215.0, 50.0)), 30.0)
+    let d = smin(d, sd_box(Vec2::new(x, z), Vec2::new(20.0, -200.0), Vec2::new(215.0, 50.0)), 30.0);
+    // and land round the strip's plates (meadows, then a beach), so the village never ends in the void
+    smin(d, strip_sd(x, z) - STRIP_LAND + fbm(x / 45.0, z / 45.0, 3, 15) * 14.0, 30.0)
 }
 
 /// How far north (0 in the warm south .. 1 in the cold north).
@@ -301,6 +320,8 @@ pub struct Cell {
     pub road: u8,
     /// the pad it lies on (index into `PADS`)
     pub pad: Option<u8>,
+    /// no ground here (`hole`): no top, no sides, no collider
+    pub hole: bool,
 }
 
 /// One graded road: its points, the distance along it at each point, the height every stud along it.
@@ -496,13 +517,16 @@ impl Island {
             h += (rh - h) * w;
             road = if d < ROAD_HALF { 1 } else if d < ROAD_EDGE { 2 } else { 0 };
         }
-        // the edge to the north plate: the land meets the strip's ground at 0
+        // the edge to the strip: the road meets the plate's ground at 0, the land beside the plates lies a plate below
+        // them (a plate never shares a plane with the land) and rises to low hills further out; the sea stays sea
         if z > -224.0 {
-            h += (0.0 - h) * smoothstep(-224.0, -197.0, z);
+            let k = smoothstep(-224.0, -197.0, z);
+            let target = if road != 0 { 0.0 } else if n.coast > 0.0 { h } else { -PLATE + (h.min(2.4) + PLATE).max(0.0) * smoothstep(6.0, 45.0, strip_sd(x, z)) };
+            h += (target - h) * k;
         }
         let plates = (h / PLATE).round() as i32;
         let colour = self.colour(x, z, plates, &n, road, pad);
-        Cell { plates, colour, warm: n.warm > 0.55, road, pad }
+        Cell { plates, colour, warm: n.warm > 0.55, road, pad, hole: hole(x, z) }
     }
 
     /// A top's colour: under water sand or the deep, the road, the pads, the beach, snow and rock on the heights,
@@ -637,6 +661,9 @@ impl Island {
             "lattice": [NX + 1, NZ + 1],
             "pads": PADS.iter().zip(self.pad_h).map(|(p, h)| serde_json::json!({"name": p.name, "kind": p.kind, "x": p.x, "z": p.z, "y": h})).collect::<Vec<_>>(),
             "selftest": self.selftest,
+            // (round the strip: the village plate is a hole, the land beside it lies a plate below it)
+            "hole_village": hole(20.0, -9.0) && !hole(-40.0, -9.0),
+            "beside_village_y": (self.ground_y(-36.5, -9.5) * 100.0).round() / 100.0,
         })
     }
 }

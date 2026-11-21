@@ -90,6 +90,10 @@ comes from.
 - **LOD:** props load with the engine's auto-LOD (`gltf_defaults.auto_lod`), minifig parts never (figure.rs).
   `lod_distance_scale` multiplies the switch distances (bigger = more detail): desktop 1.0, medium 0.75, phones 0.6; a
   low PC camera divides it by up to 3.
+- **Round the strip:** the island's lattice reaches south past the village (`island::Z1`): meadows a plate below the
+  plates (`strip_sd`, `STRIP_LAND`), a beach, the sea; the plates and the rooms far east are holes (`island::hole`,
+  no tops, sides or colliders; a coarse cell only when all of it is). No table under the plates any more. The island
+  view is active everywhere outdoors (not in the rooms), so the bands outside include layers 11 and 13.
 - **No auto-LOD** for the Voxelmon (vox.rs: a simplified voxel model has holes) and the lab machine signs.
 - **Far view:** trees (`town::is_tree`) are also engine impostors (`prop_opts`: one baked card beyond
   `TREE_IMPOSTOR` 30 x their radius, 8 views, 128 px); the village's bricks are batched under "town bricks" with an

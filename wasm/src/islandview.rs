@@ -142,7 +142,15 @@ impl Job {
         let (x0, z0) = (X0 + self.key.0 as f32 * CHUNK, Z0 + self.key.1 as f32 * CHUNK);
         let z = z0 + (b as f32 - 1.0 + 0.5) * cs;
         for a in 0..w {
-            self.cells.push(law.cell(x0 + (a as f32 - 1.0 + 0.5) * cs, z));
+            let x = x0 + (a as f32 - 1.0 + 0.5) * cs;
+            let mut c = law.cell(x, z);
+            if !self.fine && c.hole {
+                // (a coarse cell is a hole only when all of it is: one that reaches over a plate's edge stays, a plate
+                // below the plate's top, hidden in it)
+                let h = 0.49 * cs;
+                c.hole = [(-h, -h), (h, -h), (-h, h), (h, h)].iter().all(|(dx, dz)| island::hole(x + dx, z + dz));
+            }
+            self.cells.push(c);
         }
     }
 }
@@ -209,15 +217,15 @@ fn mesh(job: &Job) -> Built {
                 continue;
             }
             let k = c(a, b);
-            let key = (k.plates, k.colour);
+            let key = (k.plates, k.colour, k.hole);
             let mut a1 = a + 1;
-            while a1 < ni && !seen[(b * ni + a1) as usize] && (c(a1, b).plates, c(a1, b).colour) == key {
+            while a1 < ni && !seen[(b * ni + a1) as usize] && (c(a1, b).plates, c(a1, b).colour, c(a1, b).hole) == key {
                 a1 += 1;
             }
             let mut b1 = b + 1;
             'grow: while b1 < ni {
                 for aa in a..a1 {
-                    if seen[(b1 * ni + aa) as usize] || (c(aa, b1).plates, c(aa, b1).colour) != key {
+                    if seen[(b1 * ni + aa) as usize] || (c(aa, b1).plates, c(aa, b1).colour, c(aa, b1).hole) != key {
                         break 'grow;
                     }
                 }
@@ -227,6 +235,9 @@ fn mesh(job: &Job) -> Built {
                 for aa in a..a1 {
                     seen[(bb * ni + aa) as usize] = true;
                 }
+            }
+            if key.2 {
+                continue;
             }
             let (xa, xb) = (x0 + a as f32 * cs, x0 + a1 as f32 * cs);
             let (za, zb) = (z0 + b as f32 * cs, z0 + b1 as f32 * cs);
@@ -252,10 +263,13 @@ fn mesh(job: &Job) -> Built {
                     let me = c(a, b);
                     let nb = c(a + da, b + db);
                     let border = a + da < 0 || a + da >= ni || b + db < 0 || b + db >= ni;
+                    // (a hole has no faces; nor does a cell toward a hole: a plate's own sides lie there)
+                    let open_side = !me.hole && !nb.hole;
                     // (brick ids from absolute studs, so neighbouring chunks agree)
                     let abs_along = if dir < 2 { (z0 + along as f32 * cs) as i32 } else { (x0 + along as f32 * cs) as i32 };
                     let abs_line = if dir < 2 { (x0 + a as f32 * cs) as i32 * 4 + dir as i32 } else { (z0 + b as f32 * cs) as i32 * 4 + dir as i32 };
-                    if border {
+                    if !open_side {
+                    } else if border {
                         riser(&mut segs, me.plates, nb.plates.max(FLOOR), me, abs_along, abs_line);
                         let hidden = me.plates.min(nb.plates);
                         if hidden > FLOOR {
@@ -311,7 +325,8 @@ fn mesh(job: &Job) -> Built {
     // ---- fine: the collider boxes (greedy by height; deep water a tall wall) ----
     let mut boxes = vec![];
     if job.fine {
-        let key = |k: &Cell| if k.plates < WADE_MIN { i32::MIN } else { k.plates };
+        // (i32::MAX: a hole, no box)
+        let key = |k: &Cell| if k.hole { i32::MAX } else if k.plates < WADE_MIN { i32::MIN } else { k.plates };
         let mut seen = vec![false; n * n];
         for b in 0..ni {
             for a in 0..ni {
@@ -336,6 +351,9 @@ fn mesh(job: &Job) -> Built {
                     for aa in a..a1 {
                         seen[(bb * ni + aa) as usize] = true;
                     }
+                }
+                if kk == i32::MAX {
+                    continue;
                 }
                 let top = if kk == i32::MIN { SEA_Y + 10.0 } else { y(kk) };
                 boxes.push((Vec3::new(x0 + a as f32, y(FLOOR), z0 + b as f32), Vec3::new(x0 + a1 as f32, top, z0 + b1 as f32)));
@@ -535,7 +553,8 @@ impl IslandView {
     /// Every frame: loads and unloads around you (`hero` in studs) within the budget, sorts the layers, the studs.
     pub fn update(&mut self, ctx: &mut Ctx, law: &Island, hero: Vec2, far: bool) {
         let t0 = engine::log::now_ms();
-        let near_island = hero.y < island::SOUTH_Z + 60.0;
+        // (everywhere outdoors: the island and the land and sea round the strip; not in the rooms far east)
+        let near_island = hero.y < island::Z1 && !(hero.x >= 140.0 && hero.y > -150.0);
         if !near_island {
             if self.active {
                 self.active = false;

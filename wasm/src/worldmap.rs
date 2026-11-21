@@ -13,7 +13,7 @@ use web_sys::{CanvasRenderingContext2d as C2d, HtmlCanvasElement};
 pub const MX0: f32 = island::X0;
 pub const MX1: f32 = island::X1;
 pub const MZ0: f32 = island::Z0;
-pub const MZ1: f32 = 48.0;
+pub const MZ1: f32 = 112.0;
 /// Studs per pixel of the picture.
 const SCALE: f32 = 2.0;
 
@@ -77,14 +77,11 @@ pub fn paint(law: &Island) -> Option<String> {
         for i in 0..w {
             let x = MX0 + (i as f32 + 0.5) * SCALE;
             let idx = (j * w + i) as usize;
-            let col = if z > SOUTH_Z {
-                match strip_at(x, z) {
-                    Some(c) => {
-                        land[idx] = true;
-                        c
-                    }
-                    None => rgb(0x7fb6d6),
-                }
+            // (the strip's plates as drawn; round them the island's land and sea like everywhere)
+            let strip = if z > SOUTH_Z { strip_at(x, z) } else { None };
+            let col = if let Some(c) = strip {
+                land[idx] = true;
+                c
             } else {
                 let n = law.lerp(x, z);
                 if n.coast > 0.0 {

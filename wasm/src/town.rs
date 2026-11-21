@@ -1202,7 +1202,6 @@ pub struct TownAssets {
     pub stud_nrm: Option<engine::renderer::TextureId>,
     /// the tan dirt trail of Route 1 (the baseplate's studs in tan)
     pub trail: MaterialId,
-    pub table: MaterialId,
     pub water: MaterialId,
     /// the creek on Route 1 (coarser waves: a long strip)
     pub creek: MaterialId,
@@ -1307,13 +1306,12 @@ impl TownAssets {
         let (tex, nrm) = stud_maps(ctx);
         let ground = ctx.renderer.add_material(Material { name: "baseplate".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, ..lego(C_GREEN) });
         let trail = ctx.renderer.add_material(Material { name: "trail".into(), texture: tex, normal_texture: nrm, normal_scale: 1.0, ..lego(0xc8a46a) });
-        let table = ctx.renderer.add_material(Material { name: "table".into(), ..Material::color(0xe9eef2).rough(0.6) });
         // a small, murky village pond: low calm waves, little clarity
         let water = ctx.renderer.add_material(Material { name: "pond water".into(), wave_height: 0.015, wave_scale: 2.0, water_chop: 0.3, water_clarity: 0.8, water_foam: 0.0, water_vertex_spacing: 0.1, ..Material::water(0x1d4a5e, C_WATER) });
         let creek = ctx.renderer.add_material(Material { name: "creek water".into(), wave_height: 0.012, wave_scale: 2.5, water_chop: 0.35, water_clarity: 0.9, water_foam: 0.0, water_vertex_spacing: 0.25, ..Material::water(0x1d4a5e, C_WATER) });
         let _ = AlphaMode::Opaque;
         let tuft = ctx.renderer.add_mesh("grass tuft", &tuft_mesh());
-        Self { deferred: vec![], materials: HashMap::new(), stud, ground, stud_tex: tex, stud_nrm: nrm, trail, table, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
+        Self { deferred: vec![], materials: HashMap::new(), stud, ground, stud_tex: tex, stud_nrm: nrm, trail, water, creek, tuft, tuft_mats: HashMap::new(), life: None }
     }
 
     pub fn material(&mut self, ctx: &mut Ctx, hex: u32) -> MaterialId {
@@ -1337,7 +1335,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
     let layer = |a: i8| if a < 0 { village } else { rooms::layer_of(Some(rooms::ROOMS[a as usize])) };
     let mut stats = TownStats::default();
 
-    // ---- the baseplate (village) and the table under it (diorama feel) ----
+    // ---- the baseplate (village) ----
     {
         let mut mb = MeshBuilder::new().uv_world(1.0 / STUD);
         mb.part("ground").cuboid(m(20.0 - 52.0, -0.8, -9.0 - 38.0), m(20.0 + 52.0, 0.0, -9.0 + 38.0));
@@ -1346,9 +1344,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
         let base = ctx.spawn_parts("baseplate", &parts, |_| g, Transform::default());
         ctx.set_layer(base, village);
         ctx.physics.add_static(ColliderBuilder::cuboid(52.0 * STUD, 0.4 * STUD, 38.0 * STUD), m(20.0, -0.4, -9.0));
-        // (the table under the village ends where the north plate begins: each band has its own piece)
-        let table = ctx.spawn_mesh("table", ctx.renderer.builtin.cube, assets.table, Transform::from_translation(m(20.0, -1.3, (NORTH_EDGE + 191.0) * 0.5)).with_scale(m(400.0, 1.0, 191.0 - NORTH_EDGE)));
-        ctx.set_layer(table, village);
+        // (no table under the plates any more: the island's land and sea lie round them, islandview.rs)
         // ---- the north plate (Route 1 and Stonecrest), one piece per band, and the trail on it ----
         let p = NORTH_PLATE;
         for (i, (z0, z1, layer)) in NORTH_BANDS.into_iter().enumerate() {
@@ -1371,9 +1367,6 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             let (g, tr) = (assets.ground, assets.trail);
             let e = ctx.spawn_parts(&format!("north plate {i}"), &parts, |n| if n == "trail" { tr } else { g }, Transform::default());
             ctx.set_layer(e, layer);
-            let tz0 = if i == NORTH_BANDS.len() - 1 { -209.0 } else { z0 };
-            let t = ctx.spawn_mesh("table", ctx.renderer.builtin.cube, assets.table, Transform::from_translation(m(20.0, -1.3, (tz0 + z1) * 0.5)).with_scale(m(400.0, 1.0, z1 - tz0)));
-            ctx.set_layer(t, layer);
         }
         ctx.physics.add_static(ColliderBuilder::cuboid((p.x1 - p.x0) * 0.5 * STUD, 0.4 * STUD, (p.z1 - p.z0) * 0.5 * STUD), m((p.x0 + p.x1) * 0.5, -0.4, (p.z0 + p.z1) * 0.5));
         // the creek's water (on the band of the bridge): one strip (spawn_water tessellates each axis to the spacing)
