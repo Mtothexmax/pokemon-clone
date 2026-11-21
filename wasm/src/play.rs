@@ -157,6 +157,8 @@ pub struct PlayScreen {
     help_hidden: bool,
     /// seconds the help line has been up (`HELP_S`: gone)
     help_t: f32,
+    /// `ctx.renderer.prewarm()` asked for (once the village is loaded)
+    prewarmed: bool,
     // ---- the lab quest's dive (dive.rs, cave.rs) ----
     dive: Dive,
     /// > 0: you jumped into the pond with the suit and sink in (seconds; then the dive)
@@ -1370,6 +1372,12 @@ impl Screen<Data> for PlayScreen {
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
         data.loadbar(ctx);
+        // once the village is loaded: every pipeline variant drawn once off screen (engine bc6bc4d), so the first faded
+        // tree or the first sun step doesn't make the phone's driver compile mid-walk (a 44-55 ms hitch, a jump ahead)
+        if !self.prewarmed && ctx.assets_pending() == 0 && data.town.is_some() {
+            self.prewarmed = true;
+            ctx.renderer.prewarm();
+        }
         // Stonecrest's models once the village is loaded (they don't hold up the start)
         if let Some(t) = data.town.as_mut() {
             if !t.deferred.is_empty() {

@@ -62,10 +62,13 @@
   let since = 0;
   setInterval(() => {
     try {
-      const r = window.engine?.call?.('logs', { since, level: 'warn', limit: 50 });
+      // warnings and errors, plus the info lines about frame pacing and first-use hitches
+      const r = window.engine?.call?.('logs', { since, level: 'info', limit: 200 });
       const v = r?.result ?? r;
-      const list = Array.isArray(v) ? v : v?.entries || [];
-      if (list.length) { send('engine', list); since = Math.max(since, ...list.map((x) => (x.seq ?? 0) + 1)); }
+      const all = Array.isArray(v) ? v : v?.entries || [];
+      const list = all.filter((x) => x.level !== 'info' || /first use|prewarm|adaptive|frame cap|graphics/.test(x.msg || ''));
+      if (list.length) send('engine', list);
+      if (all.length) since = Math.max(since, ...all.map((x) => (x.seq ?? 0) + 1));
       if (window.engine?.fatal) send('fatal', window.engine.fatal);
     } catch (e) { send('poll', String(e)); }
   }, 3000);
