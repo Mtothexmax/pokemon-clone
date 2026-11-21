@@ -23,6 +23,9 @@ frames 2
 call input {"touch": {"id": 1, "x": 100, "y": 700, "phase": "end"}}
 frames 5
 expect ui.slots.touch contains >Jump<
+expect ui.slots.vox_pill == ""
+call vox {"hp": {"me": 10}}
+frames 3
 expect ui.slots.vox_pill contains Abyssquid
 expect game_state.state.stick == true
 # ---- the stick walks north into the grass: a wild one ----

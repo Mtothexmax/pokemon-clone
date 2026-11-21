@@ -46,6 +46,7 @@ expect game_state.state.vox.me.id == "stormaw"
 call cards {"open": false}
 frames 60
 expect game_state.state.vox.me.shown == true
-expect ui.slots.vox_pill contains Stormaw
+# (full HP: no pill)
+expect ui.slots.vox_pill == ""
 screenshot shots/vox-walk.png
 call save_reset

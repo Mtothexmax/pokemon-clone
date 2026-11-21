@@ -266,7 +266,8 @@ pub const STYLE: &str = "<style>
 .vx-key{position:absolute;left:5px;top:3px;font-size:11px;font-weight:800;color:rgba(255,255,255,.75);text-shadow:0 0 3px #000}
 .vx-sec{position:absolute;left:0;right:0;bottom:3px;text-align:center;font-size:11px;font-weight:800;color:#fff;text-shadow:0 0 3px #000}
 .vx-lbl{font-size:11px;font-weight:700;color:#e6eaf0;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.7);line-height:1.2}
-.vx-pill{background:rgba(250,250,246,.88);color:#1b2a34;border-radius:10px;padding:6px 12px 8px;display:flex;flex-direction:column;gap:4px;font-size:14px;font-weight:600}
+.vx-pill{background:rgba(250,250,246,.88);color:#1b2a34;border-radius:8px;padding:3px 8px 5px;display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600}
+.vx-pill .vx-bar{height:6px;border-radius:3px}.vx-pill .vx-bar i{border-radius:3px}
 .vx-pill.night{background:rgba(24,32,42,.88);color:#e8eef4}
 #ui .world-label.vx-num{background:none;border:0;padding:0;font-size:24px;font-weight:900;color:#ff5a46;text-shadow:0 2px 0 #000,0 0 4px #000;pointer-events:none}
 #ui .world-label.vx-num.mine{font-size:30px;color:#ffe650}
@@ -1064,7 +1065,8 @@ impl Vox {
     // ------------------------------------------------------------------ the HUD
 
     /// The wild one's name and HP (top centre), yours with the skill tiles and Run (bottom centre); between fights a
-    /// small pill with its HP (a moon while it rests). `pill`: outdoors and no dialog.
+    /// small pill with its HP (a moon while it rests), only while it is hurt or resting: at full HP there is
+    /// nothing to tell. `pill`: outdoors and no dialog.
     pub fn draw(&self, ctx: &mut Ctx, pill: bool, night: bool, narrow: bool) {
         let (Some(me_id), me, wf) = (self.me.id, &self.me, &self.wild) else {
             for s in ["vox_wild", "vox_mine", "vox_pill"] {
@@ -1128,11 +1130,11 @@ impl Vox {
         }
         ctx.ui.set("vox_wild", "");
         ctx.ui.set("vox_mine", "");
-        if !pill {
+        let f = me.hp / me.max.max(1.0);
+        if !pill || (f >= 1.0 && !me.tired) {
             ctx.ui.set("vox_pill", "");
             return;
         }
-        let f = me.hp / me.max.max(1.0);
         ctx.ui.set(
             "vox_pill",
             &format!(
@@ -1143,7 +1145,7 @@ impl Vox {
                 cards::card(me_id).name,
                 me.hp as i32,
                 me.max as i32,
-                bar(f, 150.0, if me.tired { "#7882c8" } else { hp_color(f) })
+                bar(f, 96.0, if me.tired { "#7882c8" } else { hp_color(f) })
             ),
         );
     }

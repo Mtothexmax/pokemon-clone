@@ -26,7 +26,16 @@ expect game_state.state.vox.me.id == "titanoak"
 expect game_state.state.vox.me.max == 123
 expect game_state.state.vox.me.shown == true
 wait_for game_state.state.vox.me.children > 0 10000
+# the HP pill (small) only while it is hurt: none at full HP
+expect ui.slots.vox_pill == ""
+call vox {"hp": {"me": 60}}
+frames 3
 expect ui.slots.vox_pill contains Titanoak
+expect ui.slots.vox_pill contains 60/123
+screenshot shots/vox-pill.png
+call vox {"hp": {"me": 123}}
+frames 3
+expect ui.slots.vox_pill == ""
 # it follows: walk west for a second, it comes after you
 down KeyA
 frames 60
