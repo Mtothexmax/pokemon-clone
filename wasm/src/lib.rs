@@ -172,7 +172,8 @@ const PLASTIC_SSS: f32 = 0.3;
 pub(crate) const AMBIENT_SPECULAR: f32 = 0.8;
 /// The phones' frame cap (`phone_quality`): 45 fps = every 2nd refresh at 90 Hz.
 pub(crate) const PHONE_MAX_FPS: f32 = 45.0;
-const NOT_PLASTIC: [&str; 7] = ["wood", "felt", "card", "cave", "paper", "rock", "sand"];
+/// (`sign_`: the printed boards, a clear coat's sky reflection washed their text out at some angles)
+const NOT_PLASTIC: [&str; 8] = ["wood", "felt", "card", "cave", "paper", "rock", "sand", "sign_"];
 
 /// The asset bar's look (as the page's loading bar in web/index.html: red bricks with studs filling a dark track).
 const LOADBAR_STYLE: &str = "<style>#ui [data-slot=loadbar]{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translateX(-50%);z-index:4}#ui .lbar{width:min(320px,calc(100vw - 48px));text-align:center;padding:8px 12px;border-radius:10px;background:rgb(10 14 22/.6)}#ui .lbar .track{position:relative;height:14px;border-radius:5px;background:#0e1420;box-shadow:inset 0 2px 4px rgb(0 0 0/.6);overflow:hidden}#ui .lbar .fill{position:absolute;inset:0 auto 0 0;border-radius:5px;transition:width .2s linear;background:radial-gradient(circle at 50% 38%,rgb(255 255 255/.45) 0 2px,transparent 3px) 0 0/14px 14px,linear-gradient(#e3343a,#b5161c)}#ui .lbar .label{margin-top:4px;font-size:12px;opacity:.8;font-variant-numeric:tabular-nums}</style>";

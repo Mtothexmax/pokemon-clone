@@ -40,7 +40,7 @@ impl Town {
     fn north_sign(&mut self, x: f32, z: f32, board: u32, glb: &str) {
         self.brick(C_BROWN, 0.35, 3.2, 0.35, x, 0.0, z - 0.2, false);
         self.sign_board(x, z, 3.4, 1.8, 1.3, board);
-        self.prop(glb, x, z + 0.21, 2.2, 1.0, 0.0);
+        self.prop(glb, x, z + crate::town::SIGN_FACE, 2.2, 1.0, 0.0);
         self.block(x - 0.5, x + 0.5, z - 0.7, z + 0.3);
     }
 

@@ -442,7 +442,7 @@ impl Screens {
             return;
         }
         self.shown = true;
-        let mut r = rect.unwrap_or_else(|| {
+        let r = rect.unwrap_or_else(|| {
             let w = (sw * 0.9).min(760.0);
             let h = w * if kind == ScreenKind::Tv { 0.55 } else { 0.62 };
             [(sw - w) * 0.5, (sh - h) * 0.45, w, h]

@@ -135,14 +135,15 @@ pub fn readable(i: usize) -> Readable {
 
 /// The painted board of readables 0..3, 5, 6 (metres; the camera flies to it), as the town places the signs.
 pub fn sign_board(i: usize) -> Option<Board> {
+    use crate::town::SIGN_FACE;
     let b = |x: f32, y: f32, z: f32, yaw: f32, w: f32, h: f32| Some(Board { c: Vec3::new(x, y, z) * STUD, yaw, w, h, max_dist: 0.0, tilt: 0.0 });
     match i {
-        0 => b(5.9, 2.3, 20.41, 0.0, 3.8, 2.0),
-        1 => b(5.0, 2.2, -24.09, 0.0, 3.4, 1.8),
+        0 => b(5.9, 2.3, 20.2 + SIGN_FACE, 0.0, 3.8, 2.0),
+        1 => b(5.0, 2.2, -24.3 + SIGN_FACE, 0.0, 3.4, 1.8),
         2 => b(-22.91, 2.1, 8.9, std::f32::consts::FRAC_PI_2, 2.8, 1.5),
         3 => b(13.0, 5.75, 16.17, 0.0, 5.2, 1.9),
-        5 => b(5.5, 2.2, -48.99, 0.0, 3.4, 1.8),
-        6 => b(5.5, 2.2, -108.39, 0.0, 3.4, 1.8),
+        5 => b(5.5, 2.2, -49.2 + SIGN_FACE, 0.0, 3.4, 1.8),
+        6 => b(5.5, 2.2, -108.6 + SIGN_FACE, 0.0, 3.4, 1.8),
         _ => None,
     }
 }

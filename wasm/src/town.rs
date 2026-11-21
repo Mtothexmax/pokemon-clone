@@ -756,6 +756,8 @@ impl Town {
     }
 
     /// A sign: a framed board facing +z.
+    /// (the painted board's front is z + 0.2 plus up to 0.018 of the bricks' size steps; its picture, a glTF plane, hangs at
+    /// z + `SIGN_FACE`: at 0.21 the Stonecrest board poked through its middle and only the frame showed)
     fn sign_board(&mut self, x: f32, z: f32, w: f32, h: f32, y: f32, board: u32) {
         self.brick(C_WHITE, w + 0.2, h + 0.2, 0.25, x, y - 0.1, z, false);
         self.brick(board, w - 0.2, h - 0.2, 0.1, x, y + 0.1, z + 0.15, false);
@@ -940,11 +942,11 @@ impl Town {
         self.brick(C_BROWN, 0.35, 3.2, 0.35, 4.4, 0.0, 20.0, false);
         self.brick(C_BROWN, 0.35, 3.2, 0.35, 7.4, 0.0, 20.0, false);
         self.sign_board(5.9, 20.2, 3.8, 2.0, 1.3, C_WHITE);
-        self.prop("assets/signs/village.glb", 5.9, 20.41, 2.3, 1.0, 0.0);
+        self.prop("assets/signs/village.glb", 5.9, 20.2 + SIGN_FACE, 2.3, 1.0, 0.0);
         self.block(4.0, 7.8, 19.6, 20.6);
         self.brick(C_BROWN, 0.35, 3.2, 0.35, 5.0, 0.0, -24.5, false);
         self.sign_board(5.0, -24.3, 3.4, 1.8, 1.3, 0xfff6c8);
-        self.prop("assets/signs/route.glb", 5.0, -24.09, 2.2, 1.0, 0.0);
+        self.prop("assets/signs/route.glb", 5.0, -24.3 + SIGN_FACE, 2.2, 1.0, 0.0);
         self.block(4.5, 5.5, -25.0, -24.0);
 
         // ---- lamp posts ----
@@ -1192,6 +1194,9 @@ pub struct TownAssets {
     /// the village life's meshes (life.rs, made on the first play screen)
     pub life: Option<crate::life::LifeArt>,
 }
+
+/// How far in front of a sign board's centre its picture hangs (studs; `Town::sign_board`).
+pub const SIGN_FACE: f32 = 0.26;
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
 fn lego(hex: u32) -> Material {
