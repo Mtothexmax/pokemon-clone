@@ -46,6 +46,19 @@ impl Bld {
         self.lo = self.lo.min(a);
         self.hi = self.hi.max(b);
     }
+    /// A turned box (studs): centre, size, rotation.
+    fn rbx(&mut self, hex: u32, c: Vec3, size: Vec3, rot: Quat) {
+        self.n += 1;
+        let t = Mat4::from_rotation_translation(rot, m(c.x, c.y, c.z));
+        let h = m(size.x, size.y, size.z) * 0.5;
+        self.mb.part(&format!("c{hex:06x}"));
+        self.mb.with(t, |mb| {
+            mb.cuboid(-h, h);
+        });
+        let r = size.length() * 0.5;
+        self.lo = self.lo.min(c - Vec3::splat(r));
+        self.hi = self.hi.max(c + Vec3::splat(r));
+    }
     fn cyl(&mut self, hex: u32, c: Vec3, r: f32, h: f32) {
         let t = Mat4::from_translation(m(c.x, c.y, c.z));
         self.mb.part(&format!("c{hex:06x}"));
@@ -484,18 +497,134 @@ fn pier(b: &mut Bld, c: Vec3, len: f32) -> Vec<(Vec3, Vec3)> {
     ]
 }
 
+/// The fishing cutter (after the user's brick model, `klemmbaustein_tannenbaum_boot_ohne_noppen.html`): a dark keel, a
+/// red hull narrowing to the bow, a warm wooden deck, a white wheelhouse with blue windows and an overhanging roof,
+/// a winch at the stern, a white mast and an orange crane arm. Model units scaled by `BOAT_K` studs; the bow points
+/// east (+x) out to sea, the waterline at the hull's lower third.
+const BOAT_K: f32 = 4.5;
+
 fn boat(b: &mut Bld, c: Vec3) {
-    let y = island::SEA_Y - 0.4;
-    // hull (two steps, narrower below), a white cabin, a mast with a sail
-    b.bx(0xc91a09, Vec3::new(c.x - 5.0, y - 0.6, c.z - 1.4), Vec3::new(c.x + 5.0, y + 0.4, c.z + 1.4));
-    b.bx(0xf4f4f4, Vec3::new(c.x - 6.0, y + 0.4, c.z - 2.0), Vec3::new(c.x + 6.0, y + 1.6, c.z + 2.0));
-    b.bx(0x0055bf, Vec3::new(c.x + 6.0, y + 0.8, c.z - 1.2), Vec3::new(c.x + 7.2, y + 1.6, c.z + 1.2));
-    b.bx(0xe4cd9e, Vec3::new(c.x - 5.6, y + 1.6, c.z - 1.6), Vec3::new(c.x + 5.6, y + 1.9, c.z + 1.6));
-    b.bx(0xf4f4f4, Vec3::new(c.x - 3.0, y + 1.9, c.z - 1.3), Vec3::new(c.x + 0.6, y + 4.3, c.z + 1.3));
-    b.bx(0x9fd8ef, Vec3::new(c.x - 3.1, y + 2.9, c.z - 1.0), Vec3::new(c.x - 3.0, y + 3.9, c.z + 1.0));
-    b.bx(0x583927, Vec3::new(c.x + 2.0, y + 1.9, c.z - 0.2), Vec3::new(c.x + 2.4, y + 12.0, c.z + 0.2));
-    b.bx(0xf4f4f4, Vec3::new(c.x + 2.4, y + 3.0, c.z - 0.06), Vec3::new(c.x + 6.4, y + 11.0, c.z + 0.06));
+    let k = BOAT_K;
+    let origin = Vec3::new(c.x, island::SEA_Y - 0.5 * k, c.z);
+    let yaw = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    // (w, h, d, x, y, z, colour, euler x, y, z): a brick centred at (x, y, z) in the model, the bow at +z
+    let bricks: [(f32, f32, f32, f32, f32, f32, u32, f32, f32, f32); 47] = [
+        (1.95, 0.28, 4.35, 0.0, 0.14, -0.05, 0x252d38, 0.0, 0.0, 0.0),
+        (1.55, 0.24, 0.85, 0.0, 0.22, 2.28, 0x252d38, 0.0, 0.0, 0.0),
+        (1.75, 0.24, 0.65, 0.0, 0.22, -2.35, 0x252d38, 0.0, 0.0, 0.0),
+        (2.18, 0.46, 4.25, 0.0, 0.48, -0.05, 0xa31c12, 0.0, 0.0, 0.0),
+        (0.28, 0.66, 2.45, -1.14, 0.78, -0.25, 0xc92519, 0.0, 0.0, 0.0),
+        (0.28, 0.66, 2.45, 1.14, 0.78, -0.25, 0xc92519, 0.0, 0.0, 0.0),
+        (0.28, 0.72, 1.25, -0.84, 0.84, 1.42, 0xc92519, 0.0, -0.34, 0.0),
+        (0.28, 0.72, 1.25, 0.84, 0.84, 1.42, 0xc92519, 0.0, 0.34, 0.0),
+        (0.56, 0.78, 0.56, 0.0, 0.88, 2.32, 0xc92519, 0.0, 0.0, 0.0),
+        (0.34, 0.26, 0.45, 0.0, 1.32, 2.38, 0xc92519, 0.0, 0.0, 0.0),
+        (2.26, 0.64, 0.28, 0.0, 0.78, -1.62, 0xa31c12, 0.0, 0.0, 0.0),
+        (0.28, 0.58, 0.72, -1.04, 0.74, -1.96, 0xc92519, 0.0, 0.30, 0.0),
+        (0.28, 0.58, 0.72, 1.04, 0.74, -1.96, 0xc92519, 0.0, -0.30, 0.0),
+        (1.86, 0.56, 0.26, 0.0, 0.74, -2.24, 0xc92519, 0.0, 0.0, 0.0),
+        (1.98, 0.16, 3.85, 0.0, 0.76, -0.15, 0xd8b88c, 0.0, 0.0, 0.0),
+        (1.22, 0.16, 1.25, 0.0, 0.80, 1.48, 0xd8b88c, 0.0, 0.0, 0.0),
+        (0.24, 0.22, 0.55, -0.96, 1.18, 0.92, 0xc92519, 0.0, 0.0, 0.0),
+        (0.24, 0.22, 0.55, 0.96, 1.18, 0.92, 0xc92519, 0.0, 0.0, 0.0),
+        (0.26, 0.18, 0.32, -0.68, 1.14, 1.88, 0xd8b88c, 0.0, 0.0, 0.0),
+        (0.26, 0.18, 0.32, 0.68, 1.14, 1.88, 0xd8b88c, 0.0, 0.0, 0.0),
+        (0.24, 0.16, 0.24, -1.14, 1.16, 0.35, 0xfacc15, 0.0, 0.0, 0.0),
+        (0.24, 0.16, 0.24, 1.14, 1.16, 0.35, 0xfacc15, 0.0, 0.0, 0.0),
+        (0.34, 0.20, 0.14, -0.52, 0.76, -2.38, 0x374151, 0.0, 0.0, 0.0),
+        (0.34, 0.20, 0.14, 0.52, 0.76, -2.38, 0x374151, 0.0, 0.0, 0.0),
+        (0.76, 0.34, 0.68, 0.0, 1.00, -1.12, 0x374151, 0.0, 0.0, 0.0),
+        (0.54, 0.16, 0.48, 0.0, 1.22, -1.12, 0xfacc15, 0.0, 0.0, 0.0),
+        // the wheelhouse, its windows round, the overhanging roof and its lights
+        (1.48, 1.12, 1.42, 0.0, 1.42, 0.12, 0xf3f4f6, 0.0, 0.0, 0.0),
+        (0.30, 0.36, 0.08, -0.44, 1.58, 0.84, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.30, 0.36, 0.08, 0.0, 1.58, 0.84, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.30, 0.36, 0.08, 0.44, 1.58, 0.84, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.08, 0.34, 0.32, -0.75, 1.58, 0.38, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.08, 0.34, 0.32, -0.75, 1.58, -0.14, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.08, 0.34, 0.32, 0.75, 1.58, 0.38, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.08, 0.34, 0.32, 0.75, 1.58, -0.14, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.34, 0.34, 0.08, -0.36, 1.58, -0.60, 0x2b7de9, 0.0, 0.0, 0.0),
+        (0.34, 0.34, 0.08, 0.36, 1.58, -0.60, 0x2b7de9, 0.0, 0.0, 0.0),
+        (1.76, 0.22, 1.72, 0.0, 2.08, 0.14, 0xe5e7eb, 0.0, 0.0, 0.0),
+        (0.22, 0.14, 0.22, -0.58, 2.26, 0.72, 0xfacc15, 0.0, 0.0, 0.0),
+        (0.22, 0.14, 0.22, 0.58, 2.26, 0.72, 0xfacc15, 0.0, 0.0, 0.0),
+        (0.24, 0.14, 0.24, 0.0, 2.26, 0.72, 0xc96614, 0.0, 0.0, 0.0),
+        // the mast on its socket, its cross pieces and tip; the crane arm; the stern's antenna
+        (0.56, 0.58, 0.56, 0.0, 2.48, 0.02, 0xf3f4f6, 0.0, 0.0, 0.0),
+        (0.14, 1.45, 0.14, 0.0, 3.44, 0.02, 0xf8fafc, 0.0, 0.0, 0.0),
+        (0.52, 0.12, 0.14, 0.0, 3.34, 0.02, 0xf8fafc, 0.0, 0.0, 0.0),
+        (0.36, 0.10, 0.12, 0.0, 3.71, 0.02, 0xf8fafc, 0.0, 0.0, 0.0),
+        (0.28, 0.18, 0.28, 0.0, 3.97, 0.02, 0xc96614, 0.0, 0.0, 0.0),
+        (0.22, 2.15, 0.22, 0.04, 3.11, -0.56, 0xc96614, 0.52, 0.05, 0.0),
+        (0.09, 1.15, 0.09, 0.46, 1.48, -1.35, 0xf8fafc, -0.48, 0.0, -0.15),
+    ];
+    for (w, h, d, x, y, z, col, rx, ry, rz) in bricks {
+        let rot = yaw * Quat::from_euler(EulerRot::XYZ, rx, ry, rz);
+        let at = origin + yaw * (Vec3::new(x, y, z) * k);
+        b.rbx(col, at, Vec3::new(w, h, d) * k, rot);
+    }
 }
+
+/// The fir tree (the user's brick model): a slim trunk, five tiers of a core and bevelled branch bricks tilted
+/// outward, a hexagonal tip; in model units (6.8 tall), parts per colour. Built once, placed as instances.
+fn fir_parts() -> Vec<(String, engine::mesh::MeshData)> {
+    // (y, core radius, core height, branches, branch width, height, depth, radial distance, tilt)
+    const TIERS: [(f32, f32, f32, u32, f32, f32, f32, f32, f32); 5] = [
+        (1.35, 1.65, 0.72, 8, 1.32, 0.88, 1.12, 1.72, 0.24),
+        (2.28, 1.36, 0.72, 8, 1.12, 0.86, 1.02, 1.44, 0.26),
+        (3.18, 1.06, 0.70, 7, 0.90, 0.82, 0.90, 1.15, 0.28),
+        (4.02, 0.76, 0.66, 6, 0.68, 0.74, 0.76, 0.84, 0.29),
+        (4.76, 0.48, 0.54, 5, 0.44, 0.52, 0.52, 0.58, 0.26),
+    ];
+    const LEAF: [u32; 5] = [0x145a32, 0x1b6e3d, 0x238249, 0x1b6e3d, 0x238249];
+    let mut mb = MeshBuilder::new();
+    mb.part("c5c3721");
+    mb.lathe(&[Vec2::new(0.0, 0.0), Vec2::new(0.50, 0.0), Vec2::new(0.42, 1.55), Vec2::new(0.0, 1.55)], 16);
+    for (ti, &(y, cr, ch, n, bw, bh, bd, rd, tilt)) in TIERS.iter().enumerate() {
+        mb.part(&format!("c{:06x}", LEAF[ti]));
+        mb.with(Mat4::from_translation(Vec3::new(0.0, y, 0.0)), |mb| {
+            mb.lathe(&[Vec2::new(0.0, 0.0), Vec2::new(cr, 0.0), Vec2::new(cr * 0.88, ch), Vec2::new(0.0, ch)], 16);
+        });
+        // a branch brick: its profile (depth, height) extruded along its width, the sloped side toward the trunk
+        let (hw, hh, hd) = (bw * 0.5, bh * 0.5, bd * 0.5);
+        let prof = [Vec2::new(-hd, -hh), Vec2::new(hd * 0.92, -hh), Vec2::new(hd * 0.52, hh), Vec2::new(-hd * 0.88, hh)];
+        let off = (ti % 2) as f32 * std::f32::consts::PI / n as f32;
+        for i in 0..n {
+            let a = off + i as f32 / n as f32 * std::f32::consts::TAU;
+            let t = Mat4::from_translation(Vec3::new(a.cos() * rd, y + bh * 0.46, a.sin() * rd))
+                * Mat4::from_rotation_y(-a + std::f32::consts::FRAC_PI_2)
+                * Mat4::from_rotation_x(tilt);
+            // (three.js: the profile's x is depth, y height, extruded along z, then turned a quarter about y)
+            let v = |p: Vec2, s: f32| t.transform_point3(Vec3::new(s * hw, p.y, -p.x));
+            let pts: Vec<Vec3> = [-1.0f32, 1.0].iter().flat_map(|&s| prof.iter().map(move |&p| (p, s))).map(|(p, s)| v(p, s)).collect();
+            let centre = pts.iter().fold(Vec3::ZERO, |a, b| a + *b) / 8.0;
+            let mut face = |q: [Vec3; 4]| {
+                let n = (q[1] - q[0]).cross(q[2] - q[0]);
+                let fc = (q[0] + q[1] + q[2] + q[3]) * 0.25;
+                if n.dot(fc - centre) >= 0.0 {
+                    mb.quad(q[0], q[1], q[2], q[3]);
+                } else {
+                    mb.quad(q[3], q[2], q[1], q[0]);
+                }
+            };
+            face([pts[0], pts[1], pts[2], pts[3]]);
+            face([pts[4], pts[5], pts[6], pts[7]]);
+            for e in 0..4 {
+                let f = (e + 1) % 4;
+                face([pts[e], pts[f], pts[4 + f], pts[4 + e]]);
+            }
+        }
+    }
+    mb.part(&format!("c{:06x}", LEAF[0]));
+    mb.with(Mat4::from_translation(Vec3::new(0.0, 5.28, 0.0)), |mb| {
+        mb.lathe(&[Vec2::new(0.0, 0.0), Vec2::new(0.42, 0.0), Vec2::new(0.08, 1.48), Vec2::new(0.0, 1.48)], 6);
+    });
+    mb.finish()
+}
+
+/// The fir's height in model units (its tip's top).
+const FIR_H: f32 = 6.76;
 
 fn lighthouse(b: &mut Bld, c: Vec3) {
     b.bx(0xa0a5a9, Vec3::new(c.x - 3.0, c.y, c.z - 3.0), Vec3::new(c.x + 3.0, c.y + 1.2, c.z + 3.0));
@@ -518,6 +647,8 @@ struct Plan {
     blds: Vec<Bld>,
     /// boxes to stand on or lean against that are no building (the pier's deck and railings)
     cols: Vec<(Vec3, Vec3)>,
+    /// fir trees (`fir_parts`): foot, height (studs), turn
+    firs: Vec<(Vec3, f32, f32)>,
     trees: Vec<(&'static str, Vec3, f32)>,
     ponds: Vec<(Vec3, Vec2)>,
 }
@@ -620,8 +751,8 @@ fn saltwick(y: f32) -> Plan {
     b.solid = false;
     plan.blds.push(b);
     let mut b = Bld::new();
-    // (moored near the pier's end, where the water is deep: the beach runs ~45 studs east of the pad)
-    boat(&mut b, Vec3::new(p.x + p.hx + 78.0, y, p.z + 5.6));
+    // (moored beside the pier's end, where the water is deep: the beach runs ~45 studs east of the pad)
+    boat(&mut b, Vec3::new(p.x + p.hx + 72.0, y, p.z + 9.0));
     b.solid = false;
     plan.blds.push(b);
     let mut b = Bld::new();
@@ -664,8 +795,12 @@ fn dewmere(y: f32) -> Plan {
         if (0.75..0.9).contains(&ring) || ring < 0.35 && (tx - p.x).abs() > 8.0 || (tz - p.z).abs() < 6.0 && tx > p.x {
             continue;
         }
-        let path = if r.f() < 0.5 { "assets/props/round_tree.glb" } else { "assets/props/spruce.glb" };
-        plan.trees.push((path, Vec3::new(tx, y, tz), if path.contains("spruce") { 7.0 + r.f() * 2.0 } else { 3.5 + r.f() }));
+        if r.f() < 0.5 {
+            plan.trees.push(("assets/props/round_tree.glb", Vec3::new(tx, y, tz), 3.5 + r.f()));
+        } else {
+            let (h, turn) = (14.0 + r.f() * 6.0, r.f() * std::f32::consts::TAU);
+            plan.firs.push((Vec3::new(tx, y, tz), h, turn));
+        }
     }
     plan
 }
@@ -676,6 +811,9 @@ fn dewmere(y: f32) -> Plan {
 #[derive(Default)]
 pub struct Places {
     built: [bool; 3],
+    /// the fir tree's meshes and materials (made once)
+    fir: Vec<(engine::renderer::MeshId, MaterialIdOf)>,
+    pub firs: usize,
     roots: Vec<Entity>,
     colliders: Vec<engine::physics::rapier::prelude::ColliderHandle>,
     pub buildings: usize,
@@ -729,6 +867,22 @@ impl Places {
             let hd = ctx.physics.add_static(ColliderBuilder::cuboid(h.x * STUD, h.y * STUD, h.z * STUD), m(c.x, c.y, c.z));
             self.colliders.push(hd);
         }
+        if !plan.firs.is_empty() && self.fir.is_empty() {
+            for (part, md) in fir_parts() {
+                let mesh = ctx.renderer.add_mesh(&format!("fir {part}"), &md);
+                let mat = assets.material(ctx, u32::from_str_radix(&part[1..], 16).unwrap_or(0x1b6e3d));
+                self.fir.push((mesh, mat));
+            }
+        }
+        for (at, h, turn) in &plan.firs {
+            let t = Transform::from_translation(m(at.x, at.y, at.z)).with_rotation(Quat::from_rotation_y(*turn)).with_scale(Vec3::splat(h * STUD / FIR_H));
+            for &(mesh, mat) in &self.fir {
+                let e = ctx.spawn_mesh(&format!("{name} fir"), mesh, mat, t);
+                ctx.set_layer(e, layer);
+                self.roots.push(e);
+            }
+            self.firs += 1;
+        }
         for (path, at, s) in &plan.trees {
             let opts = town::prop_opts(ctx, path, 0.0, *s);
             let rot = Quat::from_rotation_y((at.x * 12.9898 + at.z * 78.233).sin() * 43758.5 % std::f32::consts::TAU);
@@ -777,7 +931,7 @@ impl Places {
     }
 
     pub fn describe(&self) -> Value {
-        json!({"built": self.built, "buildings": self.buildings, "triangles": self.triangles, "trees": self.trees})
+        json!({"built": self.built, "buildings": self.buildings, "triangles": self.triangles, "trees": self.trees, "firs": self.firs})
     }
 }
 

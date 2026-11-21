@@ -103,7 +103,9 @@ comes from.
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
   of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)
   in the Brick Ages manner: running-bond brick walls with openings, framed windows with shutters and flower boxes,
-  doors with frame / step / lamp, stepped gable or hip roofs, chimneys, Dewmere's with picket-fenced gardens. Each building its own entity
+  doors with frame / step / lamp, stepped gable or hip roofs, chimneys, Dewmere's with picket-fenced gardens. The fishing cutter (`boat`, 47 bricks after the user's model, `BOAT_K`
+  4.5 studs per unit) at the pier's end; Dewmere's firs (`fir_parts`: trunk, five tiers of a core and bevelled
+  branch bricks, a hexagonal tip; meshes made once, placed as instances). Each building its own entity
   (fades, `Fader::add`) and a box collider; the pads' middles stay free. ~21k triangles for all three. Test: towns.
 - **Map travel:** a click on the open map's picture (`hook_map_click`, a DOM click handler: the UI's actions carry no
   position) travels there (`map_travel` / `map_target`): the island once the gate is open (a town's pad: its middle),

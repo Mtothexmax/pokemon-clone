@@ -34,6 +34,7 @@ call teleport {"x": -300, "z": -470}
 frames 30
 expect game_state.state.island.places.built.2 == true
 expect game_state.state.island.places.trees >= 20
+expect game_state.state.island.places.firs >= 8
 expect game_state.state.island.places.triangles < 120000
 expect game_state.state.hero.grounded == true
 # Port Saltwick's pier: you walk out on its deck to the end (no deep-water wall under it), the railings keep you on it
