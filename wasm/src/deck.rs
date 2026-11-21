@@ -384,7 +384,8 @@ impl CardUi {
                 "{}{{content:'\\2713';position:absolute;right:{:.0}px;bottom:{:.0}px;width:{d:.0}px;height:{d:.0}px;border-radius:50%;background:#27b05a;border:2px solid #fff;box-sizing:border-box;color:#fff;font-weight:800;font-size:{:.0}px;line-height:{:.0}px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.35);pointer-events:none}}",
                 pseudo("::after"),
                 -d * 0.25,
-                -d * 0.25,
+                // above the face's bottom banner (a quarter of the card's width high), not over the name
+                gw * 0.26,
                 d * 0.62,
                 d - 4.0
             );

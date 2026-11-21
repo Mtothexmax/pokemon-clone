@@ -1,6 +1,7 @@
 //! A card's printed face (Kaigen `cu_card` / the three.js `Card.svelte`): white edge (or the upgrade stage's
-//! metal), the ability's colour, the art window with the beast's pixel art, the name banner, the cost and power
-//! badges, the ability symbol (small) or the kind and the text (big), the foil sheen; and the card back (red
+//! metal), the ability's colour, the art window with the beast's pixel art, the cost and power badges, one banner
+//! line with the kind (left) and the name (right) under a tall picture (small), or the name banner, the kind and
+//! the text (big), the foil sheen; and the card back (red
 //! lattice, gold frame, BRICK BEASTS medallion). Drawn on one 2D canvas (`FACE_W` x `FACE_H`, 1 : 1.4), then
 //!
 //! * `CardFaces::texture(ctx, face)` -> an sRGB `TextureId` with mips (synchronous: `getImageData`) for a 3D
@@ -35,7 +36,7 @@ pub struct Face {
     pub power: i32,
     /// not collected yet: a dark silhouette, "???"
     pub unknown: bool,
-    /// the detail card: art on top, the kind and the ability text below (else the symbol only)
+    /// the detail card: art on top, the name, the kind and the ability text below (else one line: kind + name)
     pub big: bool,
     /// cards lying on the table do not show their cost
     pub hide_cost: bool,
@@ -338,7 +339,11 @@ fn draw_front(g: &C2d, ac: HtmlCanvasElement, ag: C2d, f: Face, w: f64, h: f64) 
     rr1(g, cx, cy, cw, ch, 0.38 * em);
     g.clip();
     // ---- the art window: the beast on a little scene in the ability's colour ----
-    let art_h = if f.big { cw * 5.0 / 6.0 } else { ch - 0.95 * em - 1.95 * em };
+    // the compact face: one banner line at the bottom (kind left, name right), the art window fills the rest
+    // (it reaches under the banner's top half, as the big card's window reaches under the name)
+    let (sbw, sbh) = (cw - 0.2 * em, 1.9 * em);
+    let (sbx, sby) = (cx + 0.1 * em, cy + ch - 0.15 * em - sbh);
+    let art_h = if f.big { cw * 5.0 / 6.0 } else { sby + sbh * 0.5 - cy };
     let sky = if f.unknown { 0x3a3e44 } else { mix(t, 0xffffff, 0.55) };
     let ground = if f.unknown { 0x2a2d32 } else { mix(t, td, 0.35) };
     shadow(g, "rgba(0,0,0,0.18)", 0.0, 0.12 * em);
@@ -362,12 +367,12 @@ fn draw_front(g: &C2d, ac: HtmlCanvasElement, ag: C2d, f: Face, w: f64, h: f64) 
         if let Ok(img) = web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), pw, ph) {
             let _ = ag.put_image_data(&img, 0, 0);
         }
+        // centred in the window's content box (padding top 0.6 em, bottom 0.7 em; compact: above the banner)
+        let (top, bot) = if f.big { (cy + 0.6 * em, cy + art_h - 0.7 * em) } else { (cy + 0.6 * em, sby - 0.15 * em) };
         let bx = cw * 0.86;
-        let by = if f.big { art_h } else { (h - 2.0 * bw - 0.6 * em) * 0.62 } * 0.86;
+        let by = if f.big { art_h * 0.86 } else { bot - top };
         let s = (bx / pw as f64).min(by / ph as f64);
         let (dw, dh) = (pw as f64 * s, ph as f64 * s);
-        // centred in the window's content box (padding top 0.6 em, bottom 0.7 em)
-        let (top, bot) = (cy + 0.6 * em, cy + art_h - 0.7 * em);
         g.set_image_smoothing_enabled(false);
         shadow(g, "rgba(0,0,0,0.25)", 0.15 * em, 0.08 * em);
         let _ = g.draw_image_with_html_canvas_element_and_dw_and_dh(&ac, cx + (cw - dw) * 0.5, (top + bot - dh) * 0.5, dw, dh);
@@ -409,20 +414,19 @@ fn draw_front(g: &C2d, ac: HtmlCanvasElement, ag: C2d, f: Face, w: f64, h: f64) 
         ));
         g.fill();
     }
-    // ---- the name on a banner overlapping the bottom of the art window ----
-    let (bnw, bnh) = (cw - 0.6 * em, 1.5 * em);
-    let (bnx, bny) = (cx + (cw - bnw) * 0.5, cy + art_h + 0.16 * em - bnh * 0.5);
-    shadow(g, "rgba(0,0,0,0.30)", 0.2 * em, 0.1 * em);
-    rr1(g, bnx, bny, bnw, bnh, 0.35 * em);
-    g.set_fill_style_canvas_gradient(&lin(g, bnx, bny, bnw, bnh, 180.0, &[(0.0, "#ffffff".into()), (1.0, "#f1ebdc".into())]));
-    g.fill();
-    no_shadow(g);
-    g.set_stroke_style_str(&hex(mix(td, 0, 0.3)));
-    g.set_line_width((0.07 * em).max(1.0));
-    g.stroke();
-    text(g, if f.unknown { "???" } else { d.name }, bnx + bnw * 0.5, bny + bnh * 0.53, 1.1 * em, 800, "#1b2a34", bnw - 0.5 * em);
-    let below = cy + art_h + 0.16 * em + bnh * 0.5;
     if f.big {
+        // ---- the name on a banner overlapping the bottom of the art window ----
+        let (bnw, bnh) = (cw - 0.6 * em, 1.5 * em);
+        let (bnx, bny) = (cx + (cw - bnw) * 0.5, cy + art_h + 0.16 * em - bnh * 0.5);
+        shadow(g, "rgba(0,0,0,0.30)", 0.2 * em, 0.1 * em);
+        rr1(g, bnx, bny, bnw, bnh, 0.35 * em);
+        g.set_fill_style_canvas_gradient(&lin(g, bnx, bny, bnw, bnh, 180.0, &[(0.0, "#ffffff".into()), (1.0, "#f1ebdc".into())]));
+        g.fill();
+        no_shadow(g);
+        g.set_stroke_style_str(&hex(mix(td, 0, 0.3)));
+        g.set_line_width((0.07 * em).max(1.0));
+        g.stroke();
+        text(g, if f.unknown { "???" } else { d.name }, bnx + bnw * 0.5, bny + bnh * 0.53, 1.1 * em, 800, "#1b2a34", bnw - 0.5 * em);
         // the kind as a pill, then the text
         let label = if ki.glyph.is_empty() { ki.label.to_string() } else { format!("{}  {}", ki.glyph, ki.label) };
         g.set_font(&format!("700 {:.1}px {FONT}", 0.75 * em));
@@ -444,21 +448,8 @@ fn draw_front(g: &C2d, ac: HtmlCanvasElement, ag: C2d, f: Face, w: f64, h: f64) 
                 let _ = g.fill_text(l, cx + cw * 0.5, py + phh + 0.3 * em + i as f64 * fs * 1.22);
             }
         }
-    } else if d.kind != Kind::None && !f.unknown {
-        // the ability symbol in a round badge
-        let r = 0.825 * em;
-        let (bx, by) = (cx + cw * 0.5, below + (0.95 - 0.91) * em + r + 0.05 * em);
-        let by = by.min(cy + ch - 0.3 * em - r);
-        shadow(g, "rgba(0,0,0,0.35)", 0.3 * em, 0.1 * em);
-        g.begin_path();
-        let _ = g.arc(bx, by, r, 0.0, std::f64::consts::TAU);
-        g.set_fill_style_str(&hex(t));
-        g.fill();
-        no_shadow(g);
-        g.set_stroke_style_str("rgba(255,255,255,0.85)");
-        g.set_line_width((0.06 * em).max(1.0));
-        g.stroke();
-        text(g, ki.glyph, bx, by + 0.04 * em, 1.0 * em, 800, &hex(ink(t)), 2.0 * r);
+    } else {
+        compact_banner(g, f, d, &ki, t, td, (sbx, sby, sbw, sbh), em);
     }
     // ---- cost (round, blue) top left, power (rounded square, orange / green raised / red lowered) top right ----
     let bd = 2.15 * em;
@@ -505,6 +496,50 @@ fn draw_front(g: &C2d, ac: HtmlCanvasElement, ag: C2d, f: Face, w: f64, h: f64) 
     rr1(g, 0.0, 0.0, w, h, 0.6 * em);
     g.set_fill_style_canvas_gradient(&lin(g, 0.0, 0.0, w, h, 125.0, &[(0.0, rgba(0xffffff, 0.35)), (0.28, rgba(0xffffff, 0.0)), (0.62, rgba(0xffffff, 0.0)), (0.78, rgba(0xffffff, 0.18))]));
     g.fill();
+}
+
+/// The compact face's one banner line: the kind as a pill on the left (glyph and label, in the ability's colour),
+/// the name on the right. Both shrink together when they do not fit side by side (long kind + long name), so
+/// neither is cut; no pill for cards without an ability and unknown cards (the name gets the whole line).
+fn compact_banner(g: &C2d, f: Face, d: &cards::CardDef, ki: &cards::KindInfo, t: u32, td: u32, (x, y, w, h): (f64, f64, f64, f64), em: f64) {
+    shadow(g, "rgba(0,0,0,0.30)", 0.2 * em, 0.1 * em);
+    rr1(g, x, y, w, h, 0.4 * em);
+    g.set_fill_style_canvas_gradient(&lin(g, x, y, w, h, 180.0, &[(0.0, "#ffffff".into()), (1.0, "#f1ebdc".into())]));
+    g.fill();
+    no_shadow(g);
+    g.set_stroke_style_str(&hex(mix(td, 0, 0.3)));
+    g.set_line_width((0.07 * em).max(1.0));
+    g.stroke();
+    let name = if f.unknown { "???" } else { d.name };
+    let pill = d.kind != Kind::None && !f.unknown;
+    let label = if ki.glyph.is_empty() { ki.label.to_string() } else { format!("{} {}", ki.glyph, ki.label) };
+    let (pad, gap) = (0.2 * em, 0.25 * em);
+    let (mut ls, mut ns) = (0.76 * em, 1.1 * em);
+    let width = |s: &str, size: f64, weight: u32| {
+        g.set_font(&format!("{weight} {size:.1}px {FONT}"));
+        g.measure_text(s).map(|m| m.width()).unwrap_or(0.0)
+    };
+    let pill_w = |ls: f64| width(&label, ls, 800) + 0.9 * ls;
+    let need = if pill { pill_w(ls) + gap } else { 0.0 } + width(name, ns, 800);
+    let avail = w - 2.0 * pad - 0.15 * em;
+    if need > avail {
+        let k = avail / need;
+        ls *= k;
+        ns *= k;
+    }
+    let cy = y + h * 0.53;
+    if pill {
+        let (pw, ph) = (pill_w(ls), (ls * 1.75).min(h - 0.3 * em));
+        rr1(g, x + pad, y + (h - ph) * 0.5, pw, ph, ph * 0.5);
+        g.set_fill_style_str(&hex(t));
+        g.fill();
+        text(g, &label, x + pad + pw * 0.5, cy, ls, 800, &hex(ink(t)), pw);
+    }
+    g.set_font(&format!("800 {ns:.1}px {FONT}"));
+    g.set_text_align(if pill { "right" } else { "center" });
+    g.set_text_baseline("middle");
+    g.set_fill_style_str("#1b2a34");
+    let _ = g.fill_text(name, if pill { x + w - pad - 0.05 * em } else { x + w * 0.5 }, cy);
 }
 
 /// The card back: cream edge, red lattice, a gold frame line and the BRICK BEASTS medallion.
