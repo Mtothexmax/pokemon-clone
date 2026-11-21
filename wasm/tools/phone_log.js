@@ -50,7 +50,8 @@
       const st = g?.result ?? g;
       const id = st?.state?.hero?.id;
       // start once the hero walks (that is what should look smooth)
-      if (traced || id == null || !(st?.state?.hero?.speed > 1)) return;
+      // (the measuring mode below traces on its own)
+      if (traced || id == null || !(st?.state?.hero?.speed > 1) || /[?&]measure/.test(location.search)) return;
       traced = true;
       clearInterval(tracer);
       window.engine.call('trace', { id, frames: 120 });
@@ -68,4 +69,75 @@
       if (window.engine?.fatal) send('fatal', window.engine.fatal);
     } catch (e) { send('poll', String(e)); }
   }, 3000);
+})();
+
+// ---- Measuring mode (https://<pc>:8444/?measure): the player walks, the PC gets the timing ----
+// A badge at the top counts the seconds walked. While the hero walks: every animation frame's interval (3 s windows:
+// p50 / p95 / max, frames over 1.5x / 2.5x the median), the engine's render size, GPU time, frame cap and CPU phases
+// twice a second, and the drawn hero position over 240 frames at a time (engine `trace`: speed jitter, frames with
+// 0 / 2+ fixed steps) - all as "measure" lines in logs/phone.log. Done after 60 s of walking.
+(() => {
+  if (!/[?&]measure\b/.test(location.search)) return;
+  const send = (kind, data) => {
+    try { fetch('/__log', { method: 'POST', body: JSON.stringify({ t: Math.round(performance.now()), kind, data }), keepalive: true }); } catch {}
+  };
+  const call = (n, a) => { try { const r = window.engine?.call?.(n, a); return r?.result ?? r; } catch { return null; } };
+  const badge = document.createElement('div');
+  badge.style.cssText = 'position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;background:#c21;color:#fff;font:600 13px system-ui;padding:4px 10px;border-radius:12px;pointer-events:none';
+  badge.textContent = 'measuring: walk around';
+  addEventListener('DOMContentLoaded', () => document.body.appendChild(badge));
+  const GOAL = 60;
+  let walked = 0, last = null, walking = false, win = [], winT = 0, traceOn = false, done = false;
+  const q = (a, p) => a[Math.min(a.length - 1, Math.floor(p * a.length))];
+  const flush = () => {
+    if (win.length < 5) { win = []; return; }
+    const s = [...win].sort((a, b) => a - b);
+    const med = q(s, 0.5);
+    send('measure', { what: 'frames', n: win.length, p50: +med.toFixed(1), p95: +q(s, 0.95).toFixed(1), max: +s[s.length - 1].toFixed(1),
+      over1_5: win.filter((x) => x > med * 1.5).length, over2_5: win.filter((x) => x > med * 2.5).length,
+      seq: win.map((x) => Math.round(x)).join(',') });
+    win = [];
+  };
+  const frame = (t) => {
+    if (last != null && walking && !done) {
+      const dt = t - last;
+      win.push(dt);
+      walked += dt / 1000;
+      winT += dt;
+      if (winT > 3000) { winT = 0; flush(); }
+    }
+    last = t;
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  setInterval(() => {
+    if (done) return;
+    const g = call('game_state');
+    const h = g?.state?.hero;
+    walking = !!h && h.speed > 1;
+    badge.textContent = walked >= GOAL ? 'measured - thanks!' : `measuring: walk around (${Math.floor(walked)} / ${GOAL} s)`;
+    if (walked >= GOAL) { done = true; flush(); send('measure', { what: 'done', walked: Math.round(walked) }); badge.style.background = '#2a2'; return; }
+    if (!walking) return;
+    const st = call('stats');
+    const r = st?.render, tm = st?.time;
+    send('measure', { what: 'stats', speed: +h.speed.toFixed(2), screen: g?.screen, area: g?.state?.area, zone: g?.state?.zone,
+      scale: r?.render_scale, size: r?.width ? [r.width, r.height] : r?.size, gpu: r?.gpu_ms, draws: r?.draw_calls, tris: r?.triangles,
+      in_flight: r?.frames_in_flight, lat: r?.gpu_latency_ms, skipped: r?.frames_skipped, hz: tm?.refresh_hz, interval: tm?.frame_interval,
+      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps });
+    // the drawn position: 240 frames at a time while walking
+    if (!traceOn && h.id != null) {
+      traceOn = true;
+      call('trace', { id: h.id, frames: 240 });
+      const poll = setInterval(() => {
+        const tr = call('trace', { samples: true });
+        if (tr?.done) {
+          clearInterval(poll);
+          traceOn = false;
+          const s = tr.samples || [];
+          send('measure', { what: 'trace', jitter: tr.speed_jitter_pct, steps0: tr.frames_with_0_steps, steps2: tr.frames_with_2plus_steps,
+            mean_speed: tr.mean_speed, frame_ms: s.map((x) => Math.round(x[0] * 10) / 10).join(','), steps: s.map((x) => x[1]).join('') });
+        }
+      }, 1000);
+    }
+  }, 500);
 })();
