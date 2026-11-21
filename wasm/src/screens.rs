@@ -13,6 +13,7 @@
 //! The Beasts app shows the collection and the newest owned beasts as name chips, the lab terminal analyses
 //! a random card of the pool (cards.rs). The Stats app counts the life part's butterflies (`GameSave::butterflies`).
 
+use crate::esc;
 use crate::save::GameSave;
 use crate::sound::{Sfx, Sound};
 use crate::talk::Board;
@@ -123,10 +124,6 @@ pub fn screen_board(kind: ScreenKind, x: f32, z: f32) -> Option<Board> {
         ScreenKind::Lab => b([345.2, 4.33, if z < 0.5 { -2.0 } else { 3.5 } - 0.17], 2.2, 1.64, std::f32::consts::FRAC_PI_4),
         ScreenKind::Piano => None,
     }
-}
-
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 #[derive(Default)]

@@ -4,7 +4,7 @@
 //!
 //! Hooks for later parts:
 //! * `sound.sfx(ctx, Sfx::Fanfare, pitch, volume)` — blip, coin, fanfare, alert, quack, kick, splash,
-//!   piano (C4, pitch = 2^(semitones/12)), pop; `Sfx::Rain` is a 2 s loop (`sfx_loop`).
+//!   piano (C4, pitch = 2^(semitones/12)), pop; `Sfx::Rain` is a 2 s loop (the rain, `LifeView::frame`).
 //! * `sound.music(ctx, Track::Wild)` — switches the track (crossfade); `Track::Home` is the village.
 //!   The card battle plays Intro (then Fight after 10.8 s, `Data::track_music`), Victory, Defeat.
 //! * `sound.voice(ctx, "10a293f7")` — a voice line (stops the one before); `prefetch_voice` loads early.
@@ -12,8 +12,8 @@
 //! Voice lines play on the engine's `Bus::Voice`; the menu's "voices" switch sets that bus's volume
 //! (lines still play, silently, so their timing stays the same).
 
-#![allow(dead_code)] // hooks for later parts (see the module doc)
 
+use crate::lcg as noise;
 use engine::prelude::*;
 
 const RATE: f32 = 44100.0;
@@ -77,11 +77,6 @@ fn tone(out: &mut [f32], start: f32, dur: f32, freq: f32, vol: f32, square: bool
         let s = if square { (if ph.fract() < 0.5 { 1.0 } else { -1.0 }) * 0.5 } else { (ph * std::f32::consts::TAU).sin() };
         out[i] += s * vol * env(t, 0.008, dur * 0.35);
     }
-}
-
-fn noise(s: &mut u32) -> u32 {
-    *s = s.wrapping_mul(1664525).wrapping_add(1013904223);
-    *s >> 8
 }
 
 /// The samples of one effect, as the Kaigen `snd_render` (which follows the three.js sfx.ts).
@@ -236,11 +231,6 @@ impl Sound {
         ctx.audio.play_named(id.name(), Play::new().pitch(pitch).volume(volume));
         self.last_sfx = Some(id.name());
         self.sfx_played += 1;
-    }
-
-    /// A looping effect (rain); stop it with `ctx.audio.stop`.
-    pub fn sfx_loop(&mut self, ctx: &mut Ctx, id: Sfx, volume: f32) -> Option<VoiceId> {
-        ctx.audio.play_named(id.name(), Play::new().looped().volume(volume))
     }
 
     /// Switches the music (no-op if it already plays).

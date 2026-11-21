@@ -34,7 +34,7 @@ const INDOOR_SUN: f32 = 0.04;
 /// A room lamp's intensity (`rooms::room_lights`: 6 to 8 per room, soft and even).
 const ROOM_LAMP: f32 = 6.0;
 const INDOOR_SKY: f32 = 0.45;
-/// The colour grade (display space after tonemapping, engine 2466128): a little warm by day (`DAY`), the engine's
+/// The colour grade (display space after tonemapping): a little warm by day (`DAY`), the engine's
 /// "night" preset's values at night (`NIGHT`), blended by the night; `NIGHT_GRAIN` film grain at night.
 /// (temperature, tint, lift, gain, contrast, saturation)
 struct Look(f32, f32, [f32; 3], [f32; 3], f32, f32);
@@ -210,6 +210,8 @@ pub struct PlayScreen {
 /// Where you come out of the pond after a dive (studs, the north bank; Kaigen -8, but Pip stands there at home).
 const POND_EXIT: [f32; 2] = [-5.5, 13.6];
 const SURFACE_FADE: f32 = 0.5;
+/// The village HUD slots (cleared under a battle and when the screen ends).
+const HUD_SLOTS: [&str; 18] = ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"];
 /// The village HUD slots that go while you dive.
 const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "settings", "title", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "fade", "seekfade", "debug"];
 
@@ -441,9 +443,9 @@ impl PlayScreen {
         self.area = rooms::area_at(x, z);
         if let Some(cam) = self.camera {
             if !self.zoom.active {
+                // the pivot: your feet + 1.5 studs (the feet stand 0.6 studs up after `teleport`)
                 let off = CAM_OFFSET * ZOOM * STUD;
-                let foot = ctx.world.get::<&CharacterController>(h).map(|c| c.foot_offset()).unwrap_or(0.85);
-                let target = town::m(x, 0.6, z) + Vec3::Y * (1.5 * STUD - foot + foot);
+                let target = town::m(x, 0.6, z) + Vec3::Y * (1.5 * STUD);
                 if let Ok(mut c) = ctx.world.get::<&mut ThirdPersonCamera>(cam) {
                     c.pivot = None;
                 }
@@ -675,7 +677,6 @@ impl PlayScreen {
                 s.quest_part = true; // now find the suit (lab quest part)
                 data.save.mark();
             }
-            DialogAction::Sleep => self.sleep(ctx, data),
             DialogAction::GiveStarter => self.give_starter(ctx, data),
             DialogAction::DexScared => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::DexScared, s)),
             DialogAction::BattlePip if s.seek_played == 0 && s.seek_wins == 0 => self.dlg.open(ctx, &mut data.sound, dialog_for(DialogId::PipNotYet, s)),
@@ -804,10 +805,7 @@ impl PlayScreen {
                 data.settings.open = false;
                 Vox::clear_hud(ctx);
                 self.nearby = None;
-                for n in &mut self.npcs {
-                    let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
-                    n.marker_html.clear();
-                }
+                self.clear_markers(ctx);
                 self.dive.start(ctx);
                 self.help_hidden = true;
             }
@@ -844,6 +842,147 @@ impl PlayScreen {
         data.settings.applied = None;
     }
 
+    /// A villager in the way: the part of the move wish (`axis`, the input's x/y) that points into them is dropped
+    /// (you stop in front of them instead of sliding round their capsule; Kaigen's villagers are boxes).
+    fn npc_stop(&mut self, ctx: &Ctx, mut axis: Vec2) -> Vec2 {
+        let Some((p, _)) = self.hero_pos(ctx) else { return axis };
+        let wish = Vec2::new(axis.x, -axis.y); // world x/z
+        for i in 0..self.npcs.len() {
+            if self.npcs[i].area != self.area {
+                continue;
+            }
+            let Some(q) = self.npc_pos(ctx, i) else { continue };
+            let to = Vec2::new(q.x - p.x, q.z - p.z);
+            let d = to.length();
+            if d < 0.32 * 2.0 + 0.12 && d > 1e-3 {
+                let n = to / d;
+                let into = wish.dot(n);
+                if into > 0.0 {
+                    let w = wish - n * into;
+                    axis = Vec2::new(w.x, -w.y);
+                    self.npc_stops += 1;
+                }
+            }
+        }
+        axis
+    }
+
+    /// The tall grass: whoever walks through outside (you, the villagers, the Voxelmon) pushes the tufts aside. Fixed step.
+    fn grass_pushers(&mut self, ctx: &Ctx, dt: f32) {
+        let mut push: Vec<(Vec3, f32)> = vec![];
+        if self.area.is_none() {
+            if let Some((p, _)) = self.hero_pos(ctx) {
+                push.push((p, 0.3));
+            }
+            for (i, n) in self.npcs.iter().enumerate() {
+                if n.area.is_none() {
+                    if let Some(q) = self.npc_pos(ctx, i) {
+                        push.push((q, 0.3));
+                    }
+                }
+            }
+            push.extend(self.vox.pushers());
+        }
+        self.grass.set_pushers(push, dt);
+    }
+
+    /// Pip follows `life` (where he is, his pose, dancing along); the villagers within 7 m turn their head to you
+    /// (Kaigen fig_animate), dance along within 10 studs while you dance, and whoever you talk to turns to you.
+    /// `feet`: yours (studs). Fixed step.
+    fn animate_villagers(&mut self, ctx: &mut Ctx, feet: Vec3, kid: Option<usize>, dt: f32) {
+        let me = Vec2::new(feet.x, feet.z);
+        let dancing = self.life.dancing;
+        if let Some(k) = kid {
+            let (pos, yaw, sp) = (self.life.pip, self.life.pip_yaw, self.life.pip_speed);
+            let walk = self.life.pip_mode == life::PipMode::Walk;
+            let n = &mut self.npcs[k];
+            n.yaw = yaw;
+            n.fig.pose = if dancing && walk { Pose::ArmsUp } else { self.life.pip_pose };
+            n.fig.spin = if dancing && walk { n.fig.spin + dt * 4.0 } else { 0.0 };
+            if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
+                t.translation = town::m(pos.x, 0.0, pos.y);
+                t.rotation = Quat::from_rotation_y(yaw);
+            }
+            n.fig.animate(ctx, dt, sp > 0.1, (sp / life::PIP_WALK * 0.6).clamp(0.6, 1.6));
+        }
+        // the villagers: within 7 m they turn their head to you (Kaigen fig_animate); dancing, those within 10 studs
+        // dance along (arms up)
+        for i in 0..self.npcs.len() {
+            let Some(q) = self.npc_pos(ctx, i) else { continue };
+            let d = feet * STUD - q;
+            let near = Vec2::new(d.x, d.z).length() < 7.0 && self.npcs[i].area == self.area;
+            let n = &mut self.npcs[i];
+            n.fig.head_want = if near && (Some(i) != kid || self.life.pip_speed < 0.1) { life::wrap(d.x.atan2(d.z) - n.yaw) } else { 0.0 };
+            if Some(i) == kid || n.id == "gate-prof" {
+                continue; // (animated above / by their walk)
+            }
+            if near || n.fig.head_turned() || n.fig.pose != Pose::Normal || (dancing && (q / STUD - feet).length() < 10.0) {
+                n.fig.pose = if dancing && (q / STUD - feet).length() < 10.0 { Pose::ArmsUp } else { Pose::Normal };
+                n.fig.animate(ctx, dt, false, 1.0);
+            }
+        }
+        if let (true, Some(i)) = (self.dlg.is_open(), self.talk_npc) {
+            if Some(i) != kid {
+                if let Some(q) = self.npc_pos(ctx, i) {
+                    let want = (me.x * STUD - q.x).atan2(me.y * STUD - q.z);
+                    let n = &mut self.npcs[i];
+                    n.yaw += life::wrap(want - n.yaw) * (dt * 8.0).min(1.0);
+                    if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
+                        t.rotation = Quat::from_rotation_y(n.yaw);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Deck-o-Matic shows MISSING PART until the deck is printed, then READY (swapped by layer).
+    fn machine_screen(&mut self, ctx: &mut Ctx, ready: bool) {
+        let (Some((missing, rdy)), true) = (self.machine, self.machine_ready != Some(ready)) else { return };
+        self.machine_ready = Some(ready);
+        let lab = rooms::layer_of(Some(RoomId::Lab));
+        ctx.set_layer(missing, if ready { rooms::HIDDEN_LAYER } else { lab });
+        ctx.set_layer(rdy, if ready { lab } else { rooms::HIDDEN_LAYER });
+        // the hidden one also steps 2 m down: the engine's z-fighting check does not know layers
+        let [mx, my, mz] = rooms::MACHINE_SCREEN;
+        for (e, shown) in [(missing, !ready), (rdy, ready)] {
+            if let Ok(mut t) = ctx.world.get::<&mut Transform>(e) {
+                t.translation = town::m(mx, my, mz) - Vec3::Y * if shown { 0.0 } else { 2.0 };
+            }
+        }
+    }
+
+    /// A villager within talking reach (or talking) gets the talking prints for the close-up (loaded once, ahead);
+    /// whoever talks moves the mouth with the voice. `me`: your feet (metres).
+    fn mouths(&mut self, ctx: &mut Ctx, data: &Data, me: Option<Vec3>) {
+        if let Some(p) = me {
+            for i in 0..self.npcs.len() {
+                let near = self.npc_pos(ctx, i).is_some_and(|q| (q - p).length() < 4.0) && self.npcs[i].area == self.area;
+                if near || self.talk_npc == Some(i) {
+                    self.npcs[i].fig.want_mouths(ctx);
+                }
+            }
+        }
+        let speaking = if self.dlg.is_open() { data.sound.voice_mouth(ctx) } else { 0.0 };
+        for i in 0..self.npcs.len() {
+            let open = if self.talk_npc == Some(i) { speaking } else { 0.0 };
+            self.npcs[i].fig.set_mouth(ctx, open);
+        }
+    }
+
+    /// The "!" / "…" markers over the villagers go (a battle, the dive); `draw_hud` puts them back.
+    fn clear_markers(&mut self, ctx: &mut Ctx) {
+        for n in &mut self.npcs {
+            let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
+            n.marker_html.clear();
+        }
+    }
+
+    /// The toast line (`life.toast`) while it shows.
+    fn draw_toast(&self, ctx: &mut Ctx) {
+        let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
+        ctx.ui.set("toast", &toast);
+    }
+
     /// A dialog or a screen (computer, TV: they have their own close button) has the screen: no walking controls.
     /// (not a sign's close-up: the Use button or walking off closes it, so it keeps the buttons and the stick)
     fn talking(&self) -> bool {
@@ -857,7 +996,7 @@ impl PlayScreen {
         }
         // talking, at a computer / the TV, a close-up: tap the dialog or the screen, no Jump or Use (nor the stick)
         if cards_busy || self.fight || self.talking() {
-            // (a fight: its own buttons only, no Jump and Use: Kaigen 8cf909e)
+            // (a fight: its own buttons only)
             ctx.ui.set("touch", "");
             return;
         }
@@ -874,7 +1013,7 @@ impl PlayScreen {
             }
             Some(r) => {
                 let rd = talk::readable(r);
-                let lines: String = rd.lines.iter().map(|l| format!("<div class='bh-sign-l'>{}</div>", l.replace('&', "&amp;").replace('<', "&lt;"))).collect();
+                let lines: String = rd.lines.iter().map(|l| format!("<div class='bh-sign-l'>{}</div>", crate::esc(l))).collect();
                 let note = rd.note.map(|n| format!("<div class='bh-sign-n'>{n}</div>")).unwrap_or_default();
                 format!(
                     "<div class='bh-sign' style='background:{bg};color:{fg};border-color:{fg}'><div class='bh-sign-t'>{}</div><hr style='background:{fg}'>{lines}{note}<div class='bh-sign-c'>{}</div></div>",
@@ -1008,8 +1147,7 @@ impl PlayScreen {
         ctx.ui.set("title", &title);
         let dark = self.door_dark().max(self.surface_fade / SURFACE_FADE);
         ctx.ui.set("fade", &if dark > 0.0 { format!("<div class='bh-fade' style='opacity:{dark:.2}'></div>") } else { String::new() });
-        let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
-        ctx.ui.set("toast", &toast);
+        self.draw_toast(ctx);
         // markers: "!" over whoever matters for the goal, "…" for small talk; none while the camera is at a face
         let me = self.hero_pos(ctx).map(|(p, _)| p).unwrap_or_default();
         for i in 0..self.npcs.len() {
@@ -1055,10 +1193,8 @@ impl Screen<Data> for PlayScreen {
         if data.town.is_none() {
             data.town = Some(TownAssets::new(ctx));
         }
-        // the LEGO models are small and seen from 16 m: full detail (the engine's vertex-clustered
-        // LOD levels misshaped the figures and popped while walking)
-        // (tried auto_lod with lod_distance 3 on engine 890610b: no level switches at this camera
-        // distance, still 860k triangles, so nothing gained)
+        // the LEGO models are small and seen from 16 m: full detail (the engine's vertex-clustered LOD levels
+        // misshape the figures and pop while walking; a larger lod_distance never switches at this camera distance)
         ctx.gltf_defaults.auto_lod = false;
         let (solids, stats, occluders, tufts) = town::build(ctx, data.town.as_mut().unwrap());
         self.grass = crate::grass::Grass::new(tufts);
@@ -1153,15 +1289,12 @@ impl Screen<Data> for PlayScreen {
 
     fn pause(&mut self, ctx: &mut Ctx, _data: &mut Data) {
         // a battle covers the village: its HUD and the markers go
-        for slot in ["help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"] {
+        for slot in HUD_SLOTS {
             ctx.ui.set(slot, "");
         }
         self.life_view.stop(ctx, 0.4); // (the rain is outside; it plays again once the village is back)
         self.swipe.stop();
-        for n in &mut self.npcs {
-            let _ = ctx.world.remove_one::<WorldLabel>(n.marker);
-            n.marker_html.clear();
-        }
+        self.clear_markers(ctx);
     }
 
     fn resume(&mut self, ctx: &mut Ctx, data: &mut Data) {
@@ -1189,7 +1322,7 @@ impl Screen<Data> for PlayScreen {
         self.life_view.stop(ctx, 0.0);
         ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
         ctx.input.touch.set_stick_enabled(true);
-        for slot in ["dive", "dive_fx", "help", "touch", "goal", "prompt", "toast", "dialog", "menubtn", "settings", "title", "fade", "sign", "deck_btn", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade", "vox_wild", "vox_mine", "vox_pill", "studs", "seekfade", "debug"] {
+        for slot in HUD_SLOTS.into_iter().chain(["dive", "dive_fx", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade"]) {
             ctx.ui.set(slot, "");
         }
     }
@@ -1224,29 +1357,8 @@ impl Screen<Data> for PlayScreen {
             jump = false;
             run = false;
         }
-        // a villager in the way: the wish into them is dropped (you stop in front of them instead of sliding
-        // round their capsule; Kaigen's villagers are boxes)
         if axis.length() > 0.01 {
-            if let Some((p, _)) = self.hero_pos(ctx) {
-                let wish = Vec2::new(axis.x, -axis.y); // world x/z
-                for i in 0..self.npcs.len() {
-                    if self.npcs[i].area != self.area {
-                        continue;
-                    }
-                    let Some(q) = self.npc_pos(ctx, i) else { continue };
-                    let to = Vec2::new(q.x - p.x, q.z - p.z);
-                    let d = to.length();
-                    if d < 0.32 * 2.0 + 0.12 && d > 1e-3 {
-                        let n = to / d;
-                        let into = wish.dot(n);
-                        if into > 0.0 {
-                            let w = wish - n * into;
-                            axis = Vec2::new(w.x, -w.y);
-                            self.npc_stops += 1;
-                        }
-                    }
-                }
-            }
+            axis = self.npc_stop(ctx, axis);
         }
         self.move_dir = Vec2::new(axis.x, -axis.y).normalize_or_zero();
         let mut face = if self.dlg.is_open() { self.face_yaw } else { None };
@@ -1288,27 +1400,9 @@ impl Screen<Data> for PlayScreen {
         }
 
         self.gate_walk(ctx, dt);
-        // ---- the tall grass: whoever walks through pushes the tufts aside ----
-        if self.area.is_none() {
-            let mut push: Vec<(Vec3, f32)> = vec![];
-            if let Some((p, _)) = self.hero_pos(ctx) {
-                push.push((p, 0.3));
-            }
-            for (i, n) in self.npcs.iter().enumerate() {
-                if n.area.is_none() {
-                    if let Some(q) = self.npc_pos(ctx, i) {
-                        push.push((q, 0.3));
-                    }
-                }
-            }
-            push.extend(self.vox.pushers());
-            self.grass.set_pushers(push, dt);
-        } else {
-            self.grass.set_pushers(vec![], dt);
-        }
+        self.grass_pushers(ctx, dt);
         // ---- village life: golden studs, ducks, ball, chest, weather, Pip; whoever you talk to turns to you ----
         let feet = self.hero_pos(ctx).map(|(p, _)| p / STUD).unwrap_or_default();
-        let me = Vec2::new(feet.x, feet.z);
         let kid = self.npc_index("kid");
         let talking_pip = self.dlg.is_open() && self.talk_npc.is_some() && self.talk_npc == kid;
         let input = LifeIn {
@@ -1326,53 +1420,12 @@ impl Screen<Data> for PlayScreen {
             data.save.mark();
         }
         self.life_view.sync(ctx, &self.life, &data.save.data);
-        let dancing = self.life.dancing;
-        if let Some(k) = kid {
-            let (pos, yaw, sp) = (self.life.pip, self.life.pip_yaw, self.life.pip_speed);
-            let walk = self.life.pip_mode == life::PipMode::Walk;
-            let n = &mut self.npcs[k];
-            n.yaw = yaw;
-            n.fig.pose = if dancing && walk { Pose::ArmsUp } else { self.life.pip_pose };
-            n.fig.spin = if dancing && walk { n.fig.spin + dt * 4.0 } else { 0.0 };
-            if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
-                t.translation = town::m(pos.x, 0.0, pos.y);
-                t.rotation = Quat::from_rotation_y(yaw);
-            }
-            n.fig.animate(ctx, dt, sp > 0.1, (sp / life::PIP_WALK * 0.6).clamp(0.6, 1.6));
-        }
-        // the villagers: within 7 m they turn their head to you (Kaigen fig_animate); dancing, those within 10 studs
-        // dance along (arms up)
-        for i in 0..self.npcs.len() {
-            let Some(q) = self.npc_pos(ctx, i) else { continue };
-            let d = feet * STUD - q;
-            let near = Vec2::new(d.x, d.z).length() < 7.0 && self.npcs[i].area == self.area;
-            let n = &mut self.npcs[i];
-            n.fig.head_want = if near && (Some(i) != kid || self.life.pip_speed < 0.1) { life::wrap(d.x.atan2(d.z) - n.yaw) } else { 0.0 };
-            if Some(i) == kid || n.id == "gate-prof" {
-                continue; // (animated above / by their walk)
-            }
-            if near || n.fig.head_turned() || n.fig.pose != Pose::Normal || (dancing && (q / STUD - feet).length() < 10.0) {
-                n.fig.pose = if dancing && (q / STUD - feet).length() < 10.0 { Pose::ArmsUp } else { Pose::Normal };
-                n.fig.animate(ctx, dt, false, 1.0);
-            }
-        }
-        if let (true, Some(i)) = (self.dlg.is_open(), self.talk_npc) {
-            if Some(i) != kid {
-                if let Some(q) = self.npc_pos(ctx, i) {
-                    let want = (me.x * STUD - q.x).atan2(me.y * STUD - q.z);
-                    let n = &mut self.npcs[i];
-                    n.yaw += life::wrap(want - n.yaw) * (dt * 8.0).min(1.0);
-                    if let Ok(mut t) = ctx.world.get::<&mut Transform>(n.fig.root) {
-                        t.rotation = Quat::from_rotation_y(n.yaw);
-                    }
-                }
-            }
-        }
+        self.animate_villagers(ctx, feet, kid, dt);
     }
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
         data.loadbar(ctx);
-        // once the village is loaded: every pipeline variant drawn once off screen (engine bc6bc4d), so the first faded
+        // once the village is loaded: every pipeline variant drawn once off screen, so the first faded
         // tree or the first sun step doesn't make the phone's driver compile mid-walk (a 44-55 ms hitch, a jump ahead)
         if !self.prewarmed && ctx.assets_pending() == 0 && data.town.is_some() {
             self.prewarmed = true;
@@ -1423,8 +1476,7 @@ impl Screen<Data> for PlayScreen {
             self.life.update(dt);
             self.life_frame(ctx, data);
             data.save.update(ctx, dt);
-            let toast = if self.life.toast_t > 0.0 { format!("<div class='bh-toast'>{}</div>", self.life.toast) } else { String::new() };
-            ctx.ui.set("toast", &toast);
+            self.draw_toast(ctx);
             return Trans::None;
         }
         // the card screens (deck, packs) own the keys while they are open
@@ -1575,37 +1627,9 @@ impl Screen<Data> for PlayScreen {
         self.gate(ctx, data);
         self.indoor_light(ctx, dt);
         self.title_t = (self.title_t - dt).max(0.0);
-        let ready = data.save.data.has_deck;
-        if let (Some((missing, rdy)), true) = (self.machine, self.machine_ready != Some(ready)) {
-            self.machine_ready = Some(ready);
-            let lab = rooms::layer_of(Some(RoomId::Lab));
-            ctx.set_layer(missing, if ready { rooms::HIDDEN_LAYER } else { lab });
-            ctx.set_layer(rdy, if ready { lab } else { rooms::HIDDEN_LAYER });
-            // the hidden one also steps 2 m down: the engine's z-fighting check does not know layers
-            let [mx, my, mz] = rooms::MACHINE_SCREEN;
-            for (e, shown) in [(missing, !ready), (rdy, ready)] {
-                if let Ok(mut t) = ctx.world.get::<&mut Transform>(e) {
-                    t.translation = town::m(mx, my, mz) - Vec3::Y * if shown { 0.0 } else { 2.0 };
-                }
-            }
-        }
+        self.machine_screen(ctx, data.save.data.has_deck);
         self.dive.lab(ctx, &data.save.data);
-
-        // a villager within talking reach (or talking) gets the talking prints for the close-up
-        // (loaded once, ahead); whoever talks moves the mouth with the voice
-        if let Some((p, _)) = pos {
-            for i in 0..self.npcs.len() {
-                let near = self.npc_pos(ctx, i).is_some_and(|q| (q - p).length() < 4.0) && self.npcs[i].area == self.area;
-                if near || self.talk_npc == Some(i) {
-                    self.npcs[i].fig.want_mouths(ctx);
-                }
-            }
-        }
-        let speaking = if self.dlg.is_open() { data.sound.voice_mouth(ctx) } else { 0.0 };
-        for i in 0..self.npcs.len() {
-            let open = if self.talk_npc == Some(i) { speaking } else { 0.0 };
-            self.npcs[i].fig.set_mouth(ctx, open);
-        }
+        self.mouths(ctx, data, pos.map(|p| p.0));
         // the camera at your eyes, looking at whom you talk to (head and shoulders, above the dialog box)
         let board = match (self.dlg.is_open(), self.talk_npc, pos) {
             (true, Some(i), Some((p, _))) => self.npc_pos(ctx, i).map(|q| talk::face_board(q, p)),

@@ -1,6 +1,7 @@
 //! Brickhollow on the wasmOnly engine: the LEGO village of the three.js version (`src/lib/three/town.ts`
-//! in the repo root), ported in vertical slices. Slice 1: the walkable village with your minifig, the
-//! fixed top-down camera of the original and the villagers standing in it. Start: CLAUDE.md.
+//! in the repo root, and the Kaigen port). `Data` is shared by every screen (save, sound, settings, the town's
+//! assets, the card UI); the screens are `Title`, `PlayScreen` (play.rs) and `arena::BattleScreen`.
+//! Module map and hooks: PORT_STATUS.md.
 
 #![recursion_limit = "512"]
 
@@ -100,8 +101,7 @@ impl Data {
             let entropy = (js_sys::Math::random() * 4294967296.0) as u32 ^ (js_sys::Date::now() as u64 as u32).rotate_left(16);
             self.cg_seed = (ctx.rng.next_u64() as u32 ^ entropy) | 1;
         }
-        self.cg_seed = self.cg_seed.wrapping_mul(1664525).wrapping_add(1013904223);
-        self.cg_seed >> 8
+        lcg(&mut self.cg_seed)
     }
 
     /// Every frame (title, play, battle): while models load, a brick bar at the top shows how far it is (the page's
@@ -123,7 +123,7 @@ impl Data {
     }
 
     /// LEGO is shiny ABS plastic: every new opaque lit material (the code's bricks and the glTF minifigs, trees,
-    /// props, beasts; the glTFs come with 0.72) gets the plastic look of engine 12f937f: a smooth base
+    /// props, beasts; the glTFs come with 0.72) gets the plastic look: a smooth base
     /// (`PLASTIC_ROUGH`) under a clear coat (the sharp white highlight, the sky in it with `ambient_specular`) and a
     /// little subsurface light (`PLASTIC_SSS`: a softer terminator, the shade side lighter, light through thin edges).
     /// Not: cloth / wood / paper / rock (`NOT_PLASTIC` in the name, or rougher than 0.85), water, terrain, unlit,
@@ -160,8 +160,8 @@ impl Data {
             ctx.ui.set("style_debug", debugpanel::STYLE);
             ctx.ui.set("style_loadbar", LOADBAR_STYLE);
             self.cards = deck::CardUi::new();
-            // a phone (a coarse primary pointer, or touch points and a mobile browser) gets the phone profile from the start, not after the first touch:
-            // until then it ran the desktop look at full resolution
+            // a phone (a coarse primary pointer, or touch points and a mobile browser) gets the phone profile from the
+            // first frame, not after the first touch
             self.settings.touch = web_sys::window().is_some_and(|w| {
                 let coarse = w.match_media("(pointer: coarse)").ok().flatten().is_some_and(|m| m.matches());
                 let nav = w.navigator();
@@ -171,6 +171,23 @@ impl Data {
             });
         }
     }
+}
+
+/// Text into HTML (the HUD slots take markup).
+pub(crate) fn esc(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// The random generator of the Kaigen port (an LCG, the Numerical Recipes constants): steps `seed`, returns 24 bits.
+/// Every deterministic stream in the game uses it (town layout, life, battles, Voxelmon, synthesized sounds).
+pub(crate) fn lcg(seed: &mut u32) -> u32 {
+    *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+    *seed >> 8
+}
+
+/// [`lcg`] as 0..1.
+pub(crate) fn lcg_f(seed: &mut u32) -> f32 {
+    lcg(seed) as f32 / 16777216.0
 }
 
 /// LEGO plastic (`Data::plastic`): the base's roughness, the clear coat's, the subsurface amount; and the materials
@@ -205,18 +222,15 @@ pub(crate) fn setup_look(ctx: &mut Ctx) {
     // desktop: the default 11 ms budget held the resolution at 0.5-0.65 (GPU ~9 ms); 14 ms still fits a
     // 60 Hz frame and renders sharper. Phones get their own budget (phone_quality)
     s.frame_budget_ms = 14.0;
-    // desktop renders at the window's content resolution (CSS px x devicePixelRatio), fixed
-    s.auto_resolution = false;
-    s.render_scale = 1.0;
+    settings::native_resolution(s);
     // the sun moves 1 degree before the shadows follow (default 0.5): every step re-renders all
     // cascades, at a 6-minute day that was once a second
     s.shadow_step_deg = 1.0;
     // LEGO plastic (with `PLASTIC_ROUGH` bricks): the sky's sheen and a rim on the sides away from the sun, not only
-    // the sun's highlight (engine a928c1f)
+    // the sun's highlight
     s.ambient_specular = AMBIENT_SPECULAR;
     // a house or tree faded out between the camera and you (play.rs fader) shows only its front surface, like a
-    // picture with lowered alpha: blending every face showed the bricks inside the walls and the back walls
-    // through the front (engine 1d09788)
+    // picture with lowered alpha (blending every face would show the bricks inside the walls and the back walls)
     s.solid_fade = true;
     // the day/night cycle of the original: 6 minutes per day, starting in the morning. The engine
     // places the sun and moon and lights the scene; the sky and fog keep the original's flat colours
@@ -286,15 +300,12 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     s.bloom = false;
     s.water_ssr = false;
     s.lens_flare = 0.0;
-    // a tight budget (under the capped frame's 32.7 ms) keeps the resolution at half, which held up in the heavy parts
-    // of the village; it starts (a phone measured 235-307 ms per frame at full resolution before the
-    // adaptation walked it down, every step a hitch)
+    // a tight budget keeps the resolution at half, which holds up in the heavy parts of the village; it starts there
+    // (at full resolution a phone measured 235-307 ms per frame, and every adaptation step down is a hitch).
+    // No frame cap: the engine's frame pacing picks the fastest even cadence the GPU holds
     s.frame_budget_ms = 20.0;
     s.min_render_scale = 0.5;
     s.render_scale = 0.5;
-    // no frame cap: the engine's frame pacing picks the fastest even cadence the GPU holds (1eb2b91; a fixed 45 / 30 from
-    // the game either dropped frames in the tree-lined west or wasted the light parts)
-    s.max_fps = 0.0;
     s.auto_resolution = true;
 }
 

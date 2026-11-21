@@ -276,8 +276,7 @@ pub const STYLE: &str = "<style>
 
 impl Vox {
     fn rand(&mut self) -> f32 {
-        self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-        (self.seed >> 8) as f32 / 16777216.0
+        crate::lcg_f(&mut self.seed)
     }
 
     pub fn reseed(&mut self, seed: u32) {

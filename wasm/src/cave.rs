@@ -141,10 +141,8 @@ impl Build {
 
 const CORALS: [u32; 4] = [0xd63a3a, 0xff7aa8, 0xff9a3c, 0x9b4dd6];
 
-/// The static cave: its entity (on [`CAVE_LAYER`]), the solids, triangles.
+/// The static cave (its entity is on [`CAVE_LAYER`]): the solids, triangles.
 pub struct Cave {
-    #[allow(dead_code)]
-    pub root: Entity,
     pub solids: Vec<CaveBox>,
     pub triangles: usize,
 }
@@ -371,5 +369,5 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> Cave {
             mr.cast_shadows = false;
         }
     }
-    Cave { root, solids: t.solids, triangles }
+    Cave { solids: t.solids, triangles }
 }

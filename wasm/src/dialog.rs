@@ -7,11 +7,11 @@
 //!   dialogues are here: Mom, the Professor in the lab, Lumi, the Deck-o-Matic, Stonecrest, the battle
 //!   outcomes, ...). Open one with `DialogState::open`.
 //! * When a dialog closes, `DialogState::update` returns the chosen [`DialogAction`] (or the dialog's
-//!   `on_end`); the play screen acts on it (`PlayScreen::dialog_action`). Battles, hide and seek and the
-//!   quest steps are such actions: they arrive there and are logged until their part implements them.
+//!   `on_end`); the play screen acts on it (`PlayScreen::dialog_action`): battles, hide and seek, tag, the
+//!   quest steps.
 
-#![allow(dead_code)] // hooks for later parts (see the module doc)
 
+use crate::esc;
 use crate::save::GameSave;
 use crate::sound::Sound;
 use engine::prelude::*;
@@ -24,7 +24,6 @@ pub enum DialogAction {
     None,
     HideSeek,
     Tag,
-    Sleep,
     GiveStarter,
     BattleRival,
     BattlePractice,
@@ -272,10 +271,6 @@ pub fn dialog_for(id: DialogId, s: &GameSave) -> Dialog {
         _ => {}
     }
     dl
-}
-
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 #[derive(Default)]

@@ -12,7 +12,6 @@
 //! * [`goal_text`] is the quest line from the save flags. [`CamZoom`] eases the camera to any board
 //!   ([`Board`]: a sign, a TV screen, a face; `tilt` for screens leaning back) and back.
 
-#![allow(dead_code)] // hooks for later parts (see the module doc)
 
 use crate::dialog::DialogId;
 use crate::save::GameSave;
@@ -95,7 +94,6 @@ pub const TARGETS: [Target; 27] = [
 ];
 pub const CHEST_TARGET: usize = 26;
 pub const SIT_TARGET: usize = 25;
-pub const FEED_TARGET: usize = 24;
 pub const SUIT_TARGET: usize = 19;
 /// Prof. Quill at the gap: her spot moves aside once the way is open (`town::GATE_PROF_OPEN`).
 pub const GATE_TARGET: usize = 4;

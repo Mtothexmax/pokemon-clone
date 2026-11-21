@@ -41,7 +41,7 @@ pub struct Settings {
 
 /// Desktop: render at the browser window's content resolution (canvas CSS px x devicePixelRatio),
 /// no adaptive scaling. Phones keep the adaptive resolution (`phone_quality`); the frame rate is the engine's pacing.
-fn native_resolution(s: &mut engine::renderer::RenderSettings) {
+pub(crate) fn native_resolution(s: &mut engine::renderer::RenderSettings) {
     s.auto_resolution = false;
     s.render_scale = 1.0;
 }
@@ -172,10 +172,9 @@ impl Settings {
             self.applied = Some(step);
             apply_step(ctx, step);
         }
-        // the frame rate is the engine's (frame pacing 1eb2b91: back-pressure and an automatic cadence, no game cap); the
-        // simulation steps a whole number of times per drawn frame on phones (engine aa91b8f): at 45.9 fps the 60 Hz step
-        // ran 1, 1, 2 times per frame and everything the engine does not interpolate (the walk cycle, villagers, Pip)
-        // moved in that beat - a regular judder; locked, the steps follow the cadence the engine picks
+        // phones: the simulation steps a whole number of times per drawn frame (read `ctx.time.fixed_dt`, not 1/60). With
+        // free steps at e.g. 45.9 fps the 60 Hz step ran 1, 1, 2 times per frame and everything the engine does not
+        // interpolate (the walk cycle, villagers, Pip) juddered in that beat
         ctx.time.lock_fixed_to_frames = step == 2;
         out
     }

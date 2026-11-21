@@ -10,6 +10,7 @@
 //! cards in your deck framed green with a tick), `deck_side` (the side panel, or the sheet on phones),
 //! `deck_strip`, `deck_btn` (the HUD button), `packs`, `upgrade`. Every button is a `data-action` (phones).
 
+use crate::esc;
 use crate::cardface::{CardFaces, Face};
 use crate::cards::{self, CARD_COUNT, CARD_POOL, DECK_SIZE, GOLDBRICK, VOXEL_LEVEL};
 use crate::dialog::DialogId;
@@ -25,8 +26,6 @@ const PACK_REVEAL: f32 = 0.42;
 /// The foil is gone.
 const PACK_GONE: f32 = 1.1;
 /// The upgrade moment: the card turns edge-on, comes back in its new frame; a Voxelmon bursts; the button.
-#[allow(dead_code)] // (the turn runs in CSS: the .up-card keyframes)
-const UP_FLIP: f32 = 1.15;
 const UP_SWAP: f32 = 1.3;
 const UP_BURST: f32 = 1.25;
 const UP_DONE: f32 = 2.0;
@@ -74,10 +73,6 @@ pub struct CardUi {
     /// card faces asked for while the deck was open (tests)
     pub upgrades: u32,
     pub adds: u32,
-}
-
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 impl CardUi {

@@ -107,8 +107,6 @@ struct Step {
 
 #[derive(Clone, Debug)]
 pub struct Battle {
-    #[allow(dead_code)]
-    pub kind: BattleKind,
     pub opponent: String,
     pub c: Vec<BCard>,
     /// the three locations (indices into `cards::ZONES`) and whether they are revealed
@@ -155,8 +153,7 @@ pub fn other(s: usize) -> usize {
 
 impl Battle {
     fn rand_u(&mut self) -> u32 {
-        self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-        self.seed >> 8
+        crate::lcg(&mut self.seed)
     }
     fn rand(&mut self) -> f32 {
         self.rand_u() as f32 / 16777216.0
@@ -674,9 +671,8 @@ impl Battle {
 
     /// A new battle (Kaigen `b_init`): both decks shuffled, three locations, Game Start abilities, 3 cards each,
     /// turn 1. `player_deck` may be shorter than `DECK_SIZE` (the deck screen allows it).
-    pub fn new(kind: BattleKind, opponent: &str, player_deck: &[usize], ai_deck: &[usize], seed: u32) -> Self {
+    pub fn new(opponent: &str, player_deck: &[usize], ai_deck: &[usize], seed: u32) -> Self {
         let mut b = Battle {
-            kind,
             opponent: opponent.to_string(),
             c: vec![],
             zone: [0; 3],

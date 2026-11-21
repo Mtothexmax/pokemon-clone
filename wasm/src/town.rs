@@ -154,7 +154,6 @@ pub fn on_road(x: f32, z: f32) -> bool {
 /// A villager standing in the town (three.js `NPCS`): id, figure style folder, studs, yaw.
 pub struct NpcDef {
     pub id: &'static str,
-    pub name: &'static str,
     pub style: &'static str,
     pub x: f32,
     pub z: f32,
@@ -162,13 +161,13 @@ pub struct NpcDef {
 }
 
 pub const NPCS: [NpcDef; 5] = [
-    NpcDef { id: "rival", name: "Dex", style: "dex", x: 52.5, z: -3.4, rot: -std::f32::consts::FRAC_PI_2 },
-    NpcDef { id: "kid", name: "Pip", style: "pip", x: -8.0, z: 13.2, rot: 0.0 },
+    NpcDef { id: "rival", style: "dex", x: 52.5, z: -3.4, rot: -std::f32::consts::FRAC_PI_2 },
+    NpcDef { id: "kid", style: "pip", x: -8.0, z: 13.2, rot: 0.0 },
     // Prof. Quill guarding the way north (until you have a Voxelmon)
-    NpcDef { id: "gate-prof", name: "Prof. Hazel Quill", style: "quill", x: 0.0, z: -24.4, rot: 0.0 },
+    NpcDef { id: "gate-prof", style: "quill", x: 0.0, z: -24.4, rot: 0.0 },
     // Stonecrest: Sir Bricksworth on the square below the castle, Marla by the bakery
-    NpcDef { id: "knight", name: "Sir Bricksworth", style: "knight", x: 7.0, z: -146.2, rot: 0.0 },
-    NpcDef { id: "baker", name: "Marla", style: "baker", x: -8.0, z: -110.6, rot: 0.0 },
+    NpcDef { id: "knight", style: "knight", x: 7.0, z: -146.2, rot: 0.0 },
+    NpcDef { id: "baker", style: "baker", x: -8.0, z: -110.6, rot: 0.0 },
 ];
 /// Where Prof. Quill stands at the gap north: in the middle while it is closed, aside once it is open (studs, yaw).
 pub const GATE_PROF_CLOSED: [f32; 3] = [0.0, -24.4, 0.0];
@@ -178,8 +177,7 @@ pub const GATE_PROF_OPEN: [f32; 3] = [-5.4, -24.2, 0.4];
 pub struct TownRng(u32);
 impl TownRng {
     pub fn f(&mut self) -> f32 {
-        self.0 = self.0.wrapping_mul(1664525).wrapping_add(1013904223);
-        (self.0 >> 8) as f32 / 16777216.0
+        crate::lcg_f(&mut self.0)
     }
 }
 

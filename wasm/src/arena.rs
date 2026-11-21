@@ -55,8 +55,6 @@ pub const TRANS_BOARD: f32 = 1.55;
 pub struct Transition {
     pub t: f32,
     pub kind: BattleKind,
-    #[allow(dead_code)]
-    pub opponent: &'static str,
 }
 
 /// The opponent's fanned cards: the step between two along the card normal (metres; a card is ~1 cm thick).
@@ -71,7 +69,7 @@ pub fn start_transition(ctx: &mut Ctx, data: &mut Data, kind: BattleKind) {
         BattleKind::Wild => "???",
         BattleKind::Practice => "LUMI",
     };
-    data.trans = Some(Transition { t: 0.0, kind, opponent });
+    data.trans = Some(Transition { t: 0.0, kind });
     data.sound.music(ctx, Track::Intro);
     ctx.ui.set("bt_trans", &transition_html(opponent));
 }
@@ -613,8 +611,7 @@ impl BattleScreen {
     }
 
     fn rand(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-        self.rng >> 8
+        crate::lcg(&mut self.rng)
     }
 
     /// The opponent says something (Kaigen `cg_say`): the bubble and, for Dex and Lumi, the voice.
@@ -654,7 +651,7 @@ impl BattleScreen {
         if mine.is_empty() {
             mine = cards::DECKS[cards::DECK_STARTER].to_vec();
         }
-        let mut b = Battle::new(self.kind, opp, &mine, &cards::DECKS[deck], self.seed);
+        let mut b = Battle::new(opp, &mine, &cards::DECKS[deck], self.seed);
         if self.kind == BattleKind::Pip {
             // Pip's cards are all a little stronger: +1 Power each
             for c in &mut b.c {

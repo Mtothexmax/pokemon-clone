@@ -6,7 +6,6 @@
 //! Cards are indices (`usize`, Kaigen `CardId`): `CARDS[c]`. The collection is `GameSave::collection` (a bit
 //! per card), the deck `GameSave::deck` (card indices, up to `DECK_SIZE`), the stages `GameSave::card_level`.
 
-#![allow(dead_code)] // the battle part uses the zones, decks and EXP
 
 use crate::save::GameSave;
 
@@ -205,7 +204,6 @@ pub const STARTER: [usize; 18] = [
 
 // ---------------------------------------------------------------- upgrade stages (levels.ts)
 
-pub const STAGE_COUNT: usize = 5;
 pub const VOXEL_LEVEL: u8 = 4;
 pub const WILD_EXP: u32 = 20;
 
@@ -291,8 +289,7 @@ pub fn reward_card(s: &mut GameSave, seed: &mut u32, rare: bool) -> Option<usize
         return Option::None;
     }
     let rares: Vec<usize> = missing.iter().copied().filter(|&c| card(c).cost >= 5).collect();
-    *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-    let r = (*seed >> 8) as usize;
+    let r = crate::lcg(seed) as usize;
     let c = if rare && !rares.is_empty() { rares[r % rares.len()] } else { missing[r % missing.len()] };
     give_card(s, c);
     Some(c)
