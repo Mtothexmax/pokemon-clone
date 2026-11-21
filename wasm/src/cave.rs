@@ -1,9 +1,9 @@
 //! The pond cave (Kaigen `st_cave.c`): under the pond lies a flooded basin of LEGO rock, built far east of
 //! everything (x 600..680 studs) on its own render layer ([`CAVE_LAYER`]) and drawn only while you dive.
 //! Inspired by abyssal-garden (github.com/Noniv/abyssal-garden): a kelp forest, a purple grotto under an
-//! overhang, coral and sponges on the ledges, a stone whale tail, a sunken boat and a deep trench where the
-//! Stud Core lies. The living parts (kelp, fish, mantas, bubbles, glowing plants, pearls, lights) and the
-//! swimming are `dive.rs`. Cave coordinates are studs from (CAVE_X, 0, CAVE_Z).
+//! overhang, coral and sponges on the ledges, a stone whale tail, a sunken boat and a deep trench; from its bottom a
+//! tunnel runs through the north wall into the deep grotto, where the Stud Core lies. The living parts (kelp, fish,
+//! mantas, bubbles, glowing plants, pearls, lights) and the swimming are `dive.rs`. Cave coordinates are studs from (CAVE_X, 0, CAVE_Z).
 
 use crate::town::{self, TownAssets, STUD};
 use engine::geom::MeshBuilder;
@@ -19,6 +19,27 @@ pub const CAVE_R: f32 = 40.0;
 pub const CAVE_TOP: f32 = 80.0;
 pub const CAVE_HOLE: f32 = 5.0;
 const CAVE_CELL: f32 = 8.0;
+/// The tunnel from the bottom of the trench through the north wall (x within TUN_W / 2, y TUN_Y0..TUN_Y1, z from
+/// CAVE_R to DEEP_Z0) into the deep grotto (x within DEEP_W / 2, y DEEP_Y0..DEEP_Y1, z DEEP_Z0..DEEP_Z1), where the
+/// Stud Core waits on a rock column at the far end (`DEEP_CORE`).
+pub const TUN_W: f32 = 8.0;
+pub const TUN_Y0: f32 = -24.0;
+pub const TUN_Y1: f32 = -15.0;
+pub const DEEP_W: f32 = 36.0;
+pub const DEEP_Y0: f32 = -34.0;
+pub const DEEP_Y1: f32 = -6.0;
+pub const DEEP_Z0: f32 = 76.0;
+pub const DEEP_Z1: f32 = 116.0;
+pub const DEEP_CORE: Vec3 = Vec3::new(0.0, -19.6, 110.0);
+
+/// Where the diver is (dive.rs collision, the debug state).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub enum Zone {
+    Basin,
+    Tunnel,
+    Deep,
+}
+
 /// The cave's render layer (village 1, rooms 2..5, the battle 29, hidden 31).
 pub const CAVE_LAYER: u8 = 8;
 
@@ -165,7 +186,16 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> Cave {
             let c = if band % 2 == 1 { rock_a } else { rock_b };
             let len = 2.0 * CAVE_R + 12.0;
             let s = if side % 2 == 1 { 1.0 } else { -1.0 };
-            if side < 2 {
+            if side == 1 && band < 2 {
+                // the north wall's two lowest bands leave the tunnel's mouth open (x within TUN_W / 2, up to TUN_Y1)
+                let hw = TUN_W * 0.5;
+                let piece = (len * 0.5 - hw).max(1.0);
+                t.bx(c, piece, 11.6, 6.0, -(hw + piece * 0.5), y, CAVE_R + 3.0);
+                t.bx(c, piece, 11.6, 6.0, hw + piece * 0.5, y, CAVE_R + 3.0);
+                if band == 1 {
+                    t.bx(c, TUN_W, y + 11.6 - TUN_Y1, 6.0, 0.0, TUN_Y1, CAVE_R + 3.0);
+                }
+            } else if side < 2 {
                 t.bx(c, len, 11.6, 6.0, 0.0, y, s * (CAVE_R + 3.0));
             } else {
                 let s = if side == 3 { 1.0 } else { -1.0 };
@@ -264,9 +294,72 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> Cave {
             t.coral(x, y, z, CORALS[(i % 4) as usize], 0.9 + hash(i, 4) * 0.6);
         }
     }
-    // ---- the bottom of the trench: a pedestal for the Stud Core ----
-    t.rock(0x55606c, 5.0, 2.0, 5.0, 0.0, -24.0, 34.0, true);
-    t.rock(0x6a7582, 3.6, 1.0, 3.6, 0.0, -22.0, 34.0, true);
+    // ---- the tunnel: from the bottom of the trench north through the wall, a low passage of dark rock ----
+    {
+        let (z0, z1) = (CAVE_R, DEEP_Z0);
+        let (zc, d) = ((z0 + z1) * 0.5, z1 - z0);
+        let hw = TUN_W * 0.5;
+        let dark = 0x1f2733;
+        t.bx(dark, TUN_W + 4.0, 2.0, d, 0.0, TUN_Y0 - 2.0, zc); // floor
+        t.bx(rock_b, TUN_W + 4.0, 2.0, d, 0.0, TUN_Y1, zc); // roof
+        for sx in [-1.0, 1.0] {
+            t.bx(if sx < 0.0 { rock_a } else { rock_c }, 2.0, TUN_Y1 - TUN_Y0, d, sx * (hw + 1.0), TUN_Y0, zc);
+        }
+        // ribs every 8 studs, so the way reads as a passage (and the lamp catches them)
+        let mut z = z0 + 8.0;
+        while z < z1 - 2.0 {
+            t.bx(rock_c, TUN_W + 1.0, 1.0, 1.2, 0.0, TUN_Y1 - 1.0, z);
+            z += 8.0;
+        }
+    }
+    // ---- the deep grotto: a darker room past the tunnel, the Stud Core at its far end ----
+    {
+        let (hw, z0, z1) = (DEEP_W * 0.5, DEEP_Z0, DEEP_Z1);
+        let (zc, d) = ((z0 + z1) * 0.5, z1 - z0);
+        let h = DEEP_Y1 - DEEP_Y0;
+        let (wall_a, wall_b, deep_floor) = (0x232b38, 0x2e3846, 0x1a212b);
+        t.bx(deep_floor, DEEP_W + 6.0, 4.0, d + 6.0, 0.0, DEEP_Y0 - 4.0, zc);
+        t.bx(wall_b, DEEP_W + 6.0, 3.0, d + 6.0, 0.0, DEEP_Y1, zc); // the roof
+        for sx in [-1.0, 1.0] {
+            t.bx(if sx < 0.0 { wall_a } else { wall_b }, 3.0, h, d + 6.0, sx * (hw + 1.5), DEEP_Y0, zc);
+        }
+        t.bx(wall_a, DEEP_W + 6.0, h, 3.0, 0.0, DEEP_Y0, z1 + 1.5); // the far wall
+        // the near wall, around the tunnel's end
+        let tw = TUN_W * 0.5;
+        let piece = hw + 3.0 - tw;
+        for sx in [-1.0, 1.0] {
+            t.bx(wall_b, piece, h, 3.0, sx * (tw + piece * 0.5), DEEP_Y0, z0 - 1.5);
+        }
+        t.bx(wall_a, TUN_W, TUN_Y0 - DEEP_Y0, 3.0, 0.0, DEEP_Y0, z0 - 1.5);
+        t.bx(wall_a, TUN_W, DEEP_Y1 - TUN_Y1, 3.0, 0.0, TUN_Y1, z0 - 1.5);
+        // a ramp of steps down from the tunnel's floor to the grotto's
+        for k in 0..4 {
+            let y = TUN_Y0 - 2.5 * (k as f32 + 1.0);
+            t.rock(0x2b3440, TUN_W + 2.0, 2.5, 3.0, 0.0, y, z0 + 1.5 + k as f32 * 3.0, true);
+        }
+        // crystals (pale violet and cyan, lit by the grotto's lights), rocks and sponges on the floor
+        for i in 0..14 {
+            let x = -hw + 3.0 + hash(i, 21) * (DEEP_W - 6.0);
+            let z = z0 + 10.0 + hash(i, 22) * (d - 16.0);
+            if x.abs() < 6.0 && z > z1 - 14.0 {
+                continue; // the way to the core stays clear
+            }
+            let hh = 3.0 + hash(i, 23) * 7.0;
+            let col = if i % 2 == 0 { 0xb58cff } else { 0x7fe6ff };
+            t.rot(col, Vec3::new(1.4, hh, 1.4), Vec3::new(x, DEEP_Y0 + hh * 0.45, z), Vec3::new((hash(i, 24) - 0.5) * 0.6, hash(i, 25) * 3.0, (hash(i, 26) - 0.5) * 0.6));
+            if i % 3 == 0 {
+                t.rock(wall_b, 4.0, 2.0, 3.0, x + 2.5, DEEP_Y0, z - 1.0, true);
+            }
+            if i % 4 == 1 {
+                t.coral(x - 2.0, DEEP_Y0, z + 2.0, CORALS[(i % 4) as usize], 0.9);
+            }
+        }
+        // the Stud Core's column at the far end, at the tunnel's height
+        let (cx, cz) = (DEEP_CORE.x, DEEP_CORE.z);
+        t.rock(0x55606c, 6.0, 3.0, 6.0, cx, DEEP_Y0, cz, true);
+        t.rock(0x4a5361, 4.0, DEEP_CORE.y - 4.4 - DEEP_Y0, 4.0, cx, DEEP_Y0 + 3.0, cz, true);
+        t.rock(0x6a7582, 5.0, 2.0, 5.0, cx, DEEP_CORE.y - 3.4, cz, true);
+    }
 
     let triangles = t.mb.triangle_count();
     let parts = t.mb.finish();

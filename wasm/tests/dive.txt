@@ -1,7 +1,7 @@
 # The lab quest (Kaigen st_dive.c / st_cave.c): Prof. Quill's Deck-o-Matic misses its Stud Core; her old diving suit
 # stands hidden in a lab corner (find it, take it); the pond without the suit throws you back on the bank, with it you
 # sink into the flooded cave: swim down (the water darker and the fog thicker the deeper), collect a pearl, take the
-# Stud Core at the bottom of the trench, surface (button), and the machine prints your first deck.
+# Stud Core (through the tunnel at the trench's bottom, in the deep grotto), surface (button), and the machine prints your first deck.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/dive.txt --port 9223 --url http://localhost:8091/
 reload
 screen play
@@ -110,7 +110,7 @@ expect game_state.state.toast contains The suit takes you down
 wait_for game_state.state.dive.on == true 3000
 frames 2
 expect game_state.state.dive.cam_main == true
-expect game_state.state.dive.lights_on == 6
+expect game_state.state.dive.lights_on == 9
 expect game_state.state.stick == false
 expect ui.slots.goal == ""
 expect ui.slots.menubtn == ""
@@ -156,14 +156,19 @@ expect game_state.state.toast contains A glowing pearl! (1/8)
 expect game_state.state.sound.last_sfx == "coin"
 expect ui.slots.dive contains Pearls 1/8
 
-# ---- the bottom of the trench: the Stud Core ----
-call dive {"at": [0, -14, 26], "yaw": 3.14159, "pitch": -0.3}
+# ---- the bottom of the trench, the tunnel through the north wall, the deep grotto: the Stud Core ----
+call dive {"at": [0, -19.5, 32], "yaw": 3.14159, "pitch": 0}
 frames 2
 expect game_state.state.dive.depth > 0.85
 expect game_state.state.dive.fog > 0.13
+expect game_state.state.dive.zone == "Basin"
 screenshot shots/dive-deep.png
 down KeyW
-wait_for game_state.state.save.has_part == true 4000
+wait_for game_state.state.dive.zone == "Tunnel" 4000
+screenshot shots/dive-tunnel.png
+wait_for game_state.state.dive.zone == "Deep" 15000
+screenshot shots/dive-grotto.png
+wait_for game_state.state.save.has_part == true 15000
 up KeyW
 expect game_state.state.toast contains You found the Stud Core
 expect game_state.state.sound.last_sfx == "fanfare"

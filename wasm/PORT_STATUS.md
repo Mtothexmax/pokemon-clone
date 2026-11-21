@@ -302,6 +302,11 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   other and z-fought; battle_touch.txt expects `zfight{center BASE, radius 8}.pairs == 0`); your cards you cannot pay
   for are dimmed (`TableArt::face_mat_dim`, `hand[].dim`); the "+1" labels' CSS with `#ui` (the engine's dark label
   pill stayed behind as a black dash). Your front door's flowers have no pots.
+- Dive: from the trench's bottom a tunnel (`cave::TUN_*`, through the north wall's two lowest bands) leads to the
+  deep grotto (`cave::DEEP_*`: darker rock, violet / cyan crystals, a ramp down from the tunnel); the Stud Core
+  (`cave::DEEP_CORE`) stands on a column at its far end. `Dive::collide` keeps you in the basin, the tunnel's
+  cross-section or the grotto (`cave::Zone`, `game_state.state.dive.zone`); lights 9 (tunnel + two in the grotto).
+  Screens: on an upright phone the TV / PC picture stays in the 3D screen. Lab: one more lamp by the east wall.
 - Weather / night: rain haze `fog_density` x (1 + 0.6 rain), `fog_start` x (1 - 0.15 rain) (the old 1.5 / 0.5 put the
   village in milk under the 16 m camera); at night outside `ambient_scale` x (1 + `NIGHT_FILL` 1.4 x night); street
   lamps 8 x night, range 24 studs.

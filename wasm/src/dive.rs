@@ -3,7 +3,8 @@
 //! (`cave.rs`): you swim in first person - on a phone hold a finger to swim forward and move it to steer (as
 //! abyssal-garden), pinch to swim backwards, spread to swim faster; with keys and mouse W/S A/D, Space / Q up and
 //! down, Shift fast, drag to look - between swaying kelp, fish schools, mantas, rising bubbles, marine snow and glowing
-//! plants, the water darker the deeper you go. Eight pearls to find, and the Stud Core at the bottom of the trench.
+//! plants, the water darker the deeper you go. Eight pearls to find, and the Stud Core: down the trench, through the
+//! tunnel at its bottom, at the far end of the deep grotto.
 //! Swim up into the hole (or the Surface button / Esc) to leave.
 //!
 //! The dive has its own camera (`ctx.set_main_camera`, drawing only `cave::CAVE_LAYER`, a wide lens) and owns the
@@ -29,8 +30,8 @@ const TUFTS: usize = 40;
 pub const PEARLS: usize = 8;
 /// marine snow: specks drifting around the diver (wrapped in a box around you)
 const SNOW: usize = 96;
-/// Where the Stud Core lies (cave studs).
-const CORE_AT: Vec3 = Vec3::new(0.0, -19.6, 34.0);
+/// Where the Stud Core lies (cave studs): at the far end of the deep grotto, past the tunnel from the trench.
+const CORE_AT: Vec3 = cave::DEEP_CORE;
 /// Where the suit stands in the lab (studs) and its yaw (Kaigen).
 const SUIT_AT: Vec3 = Vec3::new(314.2, 0.4, -9.4);
 
@@ -319,13 +320,17 @@ impl Dive {
         let e = spawn(ctx, &surf, "cave surface", CAVE_LAYER);
         place(ctx, e, world(Vec3::new(0.0, CAVE_TOP + 19.0, 0.0)), Quat::IDENTITY, 1.0);
         // the lights: daylight down the hole, the grotto, the kelp, the trench, the core, the boat; and your helmet lamp
-        let lights: [([f32; 3], u32, f32, f32); 6] = [
+        let lights: [([f32; 3], u32, f32, f32); 9] = [
             ([0.0, CAVE_TOP - 4.0, 0.0], 0x8cd9ff, 40.0, 90.0),
             ([24.0, 14.0, -28.0], 0xd940d9, 22.0, 60.0),
             ([-22.0, 22.0, -22.0], 0x4df2b3, 22.0, 50.0),
             ([0.0, -6.0, 26.0], 0x3399ff, 18.0, 45.0),
-            ([0.0, -17.0, 34.0], 0xffbf40, 14.0, 40.0),
+            ([0.0, -14.0, 106.0], 0xffbf40, 20.0, 70.0),
             ([-24.0, 10.0, 18.0], 0x66ccff, 18.0, 45.0),
+            // the tunnel (a faint blue glow half way) and the deep grotto (violet and cyan over its crystals)
+            ([0.0, -19.0, 58.0], 0x3d7bff, 14.0, 35.0),
+            ([-10.0, -12.0, 88.0], 0xa64dff, 28.0, 90.0),
+            ([11.0, -14.0, 102.0], 0x40d9ff, 28.0, 90.0),
         ];
         for (p, hex, r, k) in lights {
             let e = ctx.world.spawn((Transform::from_translation(world(Vec3::from(p))), PointLight { color: srgb_hex(hex).truncate(), intensity: 0.0, range: r * STUD }));
@@ -441,15 +446,45 @@ impl Dive {
         Vec3::new(-self.yaw.sin() * cp, self.pitch.sin(), -self.yaw.cos() * cp)
     }
 
-    /// Keep the diver in the water: in the basin, above the floor, below the ceiling (but up the hole), out of the rocks.
+    /// Where `p` is: the basin, the tunnel (past the basin's north wall, in the tunnel's cross-section) or the deep
+    /// grotto behind it.
+    fn zone(p: Vec3) -> cave::Zone {
+        if p.z > cave::DEEP_Z0 {
+            cave::Zone::Deep
+        } else if p.z > CAVE_R - 1.0 && p.x.abs() < cave::TUN_W * 0.5 && p.y < cave::TUN_Y1 {
+            cave::Zone::Tunnel
+        } else {
+            cave::Zone::Basin
+        }
+    }
+
+    /// Keep the diver in the water: in the basin (above the floor, below the ceiling but up the hole), in the
+    /// tunnel's cross-section, in the deep grotto (its near wall open only at the tunnel), out of the rocks.
     fn collide(&mut self) {
         let r = 1.2;
         let mut p = self.p;
-        let in_hole = p.x.abs() < CAVE_HOLE - 1.0 && p.z.abs() < CAVE_HOLE - 1.0;
-        p.x = p.x.clamp(-CAVE_R + r + 0.5, CAVE_R - r - 0.5);
-        p.z = p.z.clamp(-CAVE_R + r + 0.5, CAVE_R - r - 0.5);
-        p.y = p.y.min(if in_hole { CAVE_TOP + 16.0 } else { CAVE_TOP - r });
-        p.y = p.y.max(floor(p.x, p.z) + r);
+        let hw = cave::TUN_W * 0.5 - r;
+        let in_mouth = p.x.abs() < hw + 0.3 && p.y > cave::TUN_Y0 + r - 0.3 && p.y < cave::TUN_Y1 - r + 0.3;
+        if p.z > cave::DEEP_Z0 + r || (p.z > cave::DEEP_Z0 - r && !in_mouth && Self::zone(self.p) == cave::Zone::Deep) {
+            // the deep grotto
+            let dw = cave::DEEP_W * 0.5 - r;
+            p.x = p.x.clamp(-dw, dw);
+            p.y = p.y.clamp(cave::DEEP_Y0 + r, cave::DEEP_Y1 - r);
+            p.z = p.z.min(cave::DEEP_Z1 - r);
+            if p.z < cave::DEEP_Z0 + r && !in_mouth {
+                p.z = cave::DEEP_Z0 + r;
+            }
+        } else if p.z > CAVE_R - r - 0.5 && (in_mouth || Self::zone(self.p) == cave::Zone::Tunnel) {
+            // the tunnel (and its mouth in the north wall)
+            p.x = p.x.clamp(-hw, hw);
+            p.y = p.y.clamp(cave::TUN_Y0 + r, cave::TUN_Y1 - r);
+        } else {
+            let in_hole = p.x.abs() < CAVE_HOLE - 1.0 && p.z.abs() < CAVE_HOLE - 1.0;
+            p.x = p.x.clamp(-CAVE_R + r + 0.5, CAVE_R - r - 0.5);
+            p.z = p.z.clamp(-CAVE_R + r + 0.5, CAVE_R - r - 0.5);
+            p.y = p.y.min(if in_hole { CAVE_TOP + 16.0 } else { CAVE_TOP - r });
+            p.y = p.y.max(floor(p.x, p.z) + r);
+        }
         for b in &self.solids {
             if p.x < b.x0 - r || p.x > b.x1 + r || p.y < b.y0 - r || p.y > b.y1 + r || p.z < b.z0 - r || p.z > b.z1 + r {
                 continue;
@@ -801,6 +836,7 @@ impl Dive {
             "fog": r(ctx.renderer.settings.fog_density), "sun_scale": r(ctx.renderer.settings.sun_scale), "ambient": r(ctx.renderer.settings.ambient_scale),
             "suit_shown": self.suit_shown, "built": self.built, "cave_tris": self.cave_tris, "solids": self.solids.len(),
             "near_core": r((self.p - CORE_AT).length()),
+            "zone": Self::zone(self.p),
         })
     }
 
