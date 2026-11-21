@@ -111,6 +111,7 @@ wait_for game_state.state.dive.on == true 3000
 frames 2
 expect game_state.state.dive.cam_main == true
 expect game_state.state.dive.lights_on == 10
+expect game_state.state.dive.sharks == 4
 expect game_state.state.stick == false
 expect ui.slots.goal == ""
 expect ui.slots.menubtn == ""

@@ -105,6 +105,12 @@ fn glow(ctx: &mut Ctx, c: Vec3, k: f32) -> MaterialId {
     ctx.renderer.add_material(Material { base_color: (c * 0.3).extend(1.0), emissive: c * k, roughness: 0.5, ..Material::default() })
 }
 
+/// The sharks' circles (cave studs: centre x, y, z, radius; speed rad/s, its sign the way round): three in the basin
+/// at different depths, one in the deep grotto.
+const SHARKS: [[f32; 5]; 4] = [[0.0, 22.0, 0.0, 24.0, 0.16], [-6.0, 44.0, 4.0, 18.0, -0.2], [10.0, 8.0, -8.0, 14.0, 0.24], [0.0, -20.0, 92.0, 9.0, -0.3]];
+/// The shark's size: the model is ~1 m long, so ~6.7 studs.
+const SHARK_SCALE: f32 = 2.55;
+
 /// The yaw that turns a shape's -z (its head) to the direction `v`.
 fn head_to(v: Vec3) -> f32 {
     (-v.x).atan2(-v.z)
@@ -168,6 +174,8 @@ pub struct Dive {
     kelp: Vec<(Entity, Vec3, f32)>,
     fish: Vec<Entity>,
     manta: Vec<Entity>,
+    /// the LEGO sharks (assets/props/shark.glb, the user's model repaired: one closed mesh of 6000 triangles)
+    sharks: Vec<Entity>,
     bubble: Vec<Entity>,
     pearl: Vec<(Entity, Vec3)>,
     snow: Vec<Entity>,
@@ -254,6 +262,12 @@ impl Dive {
         for _ in 0..MANTAS {
             let e = spawn(ctx, &manta, "manta", CAVE_LAYER);
             self.manta.push(e);
+        }
+        for _ in 0..SHARKS.len() {
+            let opts = engine::gltf_loader::GltfOpts { auto_lod: true, ..Default::default() };
+            let e = ctx.load_gltf_with("assets/props/shark.glb", Transform::from_xyz(0.0, -200.0, 0.0), opts);
+            ctx.set_layer(e, CAVE_LAYER);
+            self.sharks.push(e);
         }
         // bubbles and snow: unit cubes (scaled), glowing softly
         let bub_mat = ctx.renderer.add_material(Material { base_color: Vec4::new(0.5, 0.7, 0.85, 1.0), emissive: Vec3::new(0.3, 0.45, 0.6), roughness: 0.1, ..Material::default() }.transparent(0.45));
@@ -424,7 +438,7 @@ impl Dive {
         if let Some(Ok(mut l)) = self.lamp.map(|e| ctx.world.get::<&mut PointLight>(e)) {
             l.intensity = 0.0;
         }
-        for e in self.fish.iter().chain(&self.snow).chain(&self.manta).chain(&self.bubble) {
+        for e in self.fish.iter().chain(&self.snow).chain(&self.manta).chain(&self.bubble).chain(&self.sharks) {
             hide(ctx, *e);
         }
         ctx.input.touch.set_stick_enabled(true);
@@ -688,6 +702,18 @@ impl Dive {
             let yaw = head_to(v) + (t * 6.0 + j).sin() * 0.15;
             place(ctx, self.fish[i], world(p), Quat::from_rotation_y(yaw), 1.4);
         }
+        for (i, sh) in SHARKS.iter().enumerate() {
+            // the sharks: slow circles (centre x, y, z, radius, speed), the tail swaying the body a little
+            let a = t * sh[4] + i as f32 * 2.1;
+            let p = Vec3::new(sh[0] + a.sin() * sh[3], sh[1] + (t * 0.5 + i as f32).sin() * 1.5, sh[2] + a.cos() * sh[3]);
+            let v = Vec3::new(a.cos(), 0.0, -a.sin()) * sh[4].signum();
+            // (the model's head is its -z, as the other shapes')
+            let yaw = head_to(v) + (t * 2.2 + i as f32).sin() * 0.12;
+            let bank = -0.15 * sh[4].signum();
+            if let Some(&e) = self.sharks.get(i) {
+                place(ctx, e, world(p), Quat::from_rotation_y(yaw) * Quat::from_rotation_z(bank), SHARK_SCALE);
+            }
+        }
         for i in 0..MANTAS {
             // two mantas gliding wide circles, wings flapping slowly
             let fi = i as f32;
@@ -871,6 +897,7 @@ impl Dive {
             "near_core": r((self.p - CORE_AT).length()),
             "zone": Self::zone(self.p),
             "warps": self.warps,
+            "sharks": self.sharks.len(),
         })
     }
 

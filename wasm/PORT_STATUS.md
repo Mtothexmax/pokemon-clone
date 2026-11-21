@@ -104,6 +104,9 @@ comes from.
   grotto's far end a green warp pipe (`PIPE_AT`, Super Mario Land): down into its opening = a moment of black and the
   pipe sound, out of the core room's pipe (`CR_*`, `PIPE2_AT`), a small warm cave where the Stud Core lies
   (`DEEP_CORE`); its pipe takes you back (`Zone::Core`, `dive.warps`).
+- **Sharks:** four LEGO sharks (assets/props/shark.glb, repaired from the user's Tripo model by
+  tools/fish/repair_fish.py: seams welded, 6000 triangles, grey) circle in the pond cave (`SHARKS`: three in the
+  basin at different depths, one in the deep grotto), the tail swaying the body.
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
   of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)
