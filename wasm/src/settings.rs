@@ -127,6 +127,9 @@ impl Settings {
                     if let Some(n) = a.strip_prefix("set_music:").and_then(|n| n.parse::<u8>().ok()) {
                         g.music_level = n.min(3);
                         changed = true;
+                    } else if let Some(n) = a.strip_prefix("set_day:").and_then(|n| n.parse::<u8>().ok()) {
+                        g.day_fast = n == 1;
+                        changed = true;
                     } else if let Some(n) = a.strip_prefix("set_touch:").and_then(|n| n.parse::<u8>().ok()) {
                         g.touch_mode = n.min(1);
                         changed = true;
@@ -232,12 +235,13 @@ impl Settings {
              <div class='bh-prog'><span class='gold'>&#9733; {}/15</span><span>&#9679; {} studs</span></div>\
              <button class='bh-row' data-action='set_voices'><b>Voices</b><span>{}</span></button>\
              <div class='bh-cap'>MUSIC</div><div class='bh-seg'>{}</div>\
-             <div class='bh-cap'>GRAPHICS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>{}{}\
+             <div class='bh-cap'>DAY</div><div class='bh-seg'>{}</div>             <div class='bh-cap'>GRAPHICS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>{}{}\
              <button class='bh-row' data-action='map'><b>Map</b><span>M</span></button>             <div class='bh-cap'>SAVE GAME</div><div class='bh-seg'><button data-action='save_export'>Export</button><button data-action='save_import'>Import</button></div>{}             <button class='bh-row' data-action='dbg_toggle'><b>Debug panel</b><span>{}</span></button><button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
             g.golden_count(),
             g.studs,
             if g.voices_off { "off" } else { "on" },
             seg(&MUSIC_LEVEL_NAMES, sound.music_level(), "set_music"),
+            seg(&["Clock", "6 min"], g.day_fast as usize, "set_day"),
             seg(&GFX_NAMES, g.gfx as usize, "set_gfx"),
             hint,
             controls,

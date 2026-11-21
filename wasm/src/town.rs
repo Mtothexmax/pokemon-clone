@@ -618,14 +618,86 @@ impl Town {
 
     /// A window with a white frame, glass and a mullion; `along_z` = in a wall facing +-z.
     fn window(&mut self, x: f32, y: f32, z: f32, w: f32, h: f32, along_z: bool, out: f32) {
+        self.window_c(x, y, z, w, h, along_z, out, C_WHITE);
+    }
+
+    /// A window with a frame in `frame` (white; the home's wooden brown), glass and a cross of the same.
+    fn window_c(&mut self, x: f32, y: f32, z: f32, w: f32, h: f32, along_z: bool, out: f32, frame: u32) {
         if along_z {
-            self.brick(C_WHITE, w + 0.4, h + 0.4, 0.3, x, y - 0.2, z + out * 0.05, false);
+            self.brick(frame, w + 0.4, h + 0.4, 0.3, x, y - 0.2, z + out * 0.05, false);
             self.brick(C_GLASS, w - 0.2, h - 0.2, 0.3, x, y + 0.1, z + out * 0.2, false);
-            self.brick(C_WHITE, 0.15, h, 0.2, x, y, z + out * 0.3, false);
+            self.brick(frame, 0.15, h, 0.2, x, y, z + out * 0.3, false);
+            if frame != C_WHITE {
+                self.brick(frame, w - 0.2, 0.15, 0.2, x, y + h * 0.5, z + out * 0.3, false);
+            }
         } else {
-            self.brick(C_WHITE, 0.3, h + 0.4, w + 0.4, x + out * 0.05, y - 0.2, z, false);
+            self.brick(frame, 0.3, h + 0.4, w + 0.4, x + out * 0.05, y - 0.2, z, false);
             self.brick(C_GLASS, 0.3, h - 0.2, w - 0.2, x + out * 0.2, y + 0.1, z, false);
-            self.brick(C_WHITE, 0.2, h, 0.15, x + out * 0.3, y, z, false);
+            self.brick(frame, 0.2, h, 0.15, x + out * 0.3, y, z, false);
+            if frame != C_WHITE {
+                self.brick(frame, 0.2, 0.15, w - 0.2, x + out * 0.3, y + h * 0.5, z, false);
+            }
+        }
+    }
+
+    /// A flower box under a window in a wall facing +-z (`out` its side): a brown box, green, flowers.
+    fn flower_box(&mut self, x: f32, y: f32, z: f32, w: f32, out: f32) {
+        self.brick(0x7a4a2a, w, 0.55, 0.7, x, y - 0.6, z + out * 0.45, false);
+        let n = ((w / 0.6) as i32).max(2);
+        for i in 0..n {
+            let fx = x - w * 0.5 + 0.3 + (w - 0.6) * i as f32 / (n - 1) as f32;
+            let col = [C_RED, C_YELLOW, C_PINK, C_WHITE, C_ORANGE][(i as usize + (x * 3.0) as usize) % 5];
+            self.brick(C_GREEN, 0.4, 0.3, 0.4, fx, y - 0.05, z + out * 0.45, false);
+            self.brick(col, 0.45, 0.25, 0.45, fx, y + 0.22, z + out * 0.45, false);
+        }
+    }
+
+    /// Facing bricks on a wall's outer face (the home's): rows 1.2 tall of bricks 2 long, each row's joints offset,
+    /// each brick a shade of `hex`, left out where `holes` (along0, along1, bottom, top) are. Exact boxes that meet
+    /// edge to edge (no grooves: thin ones flicker without anti-aliasing). `along_z`: the face runs along x at z = `face`.
+    fn facing(&mut self, hex: u32, along_z: bool, face: f32, out: f32, a0: f32, a1: f32, y0: f32, y1: f32, holes: &[(f32, f32, f32, f32)]) {
+        let (t0, t1) = if out > 0.0 { (face, face + 0.06) } else { (face - 0.06, face) };
+        let mut row = 0;
+        let mut y = y0;
+        while y < y1 - 0.05 {
+            let yt = (y + 1.2).min(y1);
+            let mut a = a0;
+            let mut k = 0;
+            let mut next = a0 + if row % 2 == 1 { 1.0 } else { 2.0 };
+            while a < a1 - 0.01 {
+                let e = next.min(a1);
+                let mut segs = vec![(a, e)];
+                for &(h0, h1, hy0, hy1) in holes {
+                    if hy1 <= y || hy0 >= yt {
+                        continue;
+                    }
+                    let mut ns = vec![];
+                    for (s0, s1) in segs {
+                        if h1 <= s0 || h0 >= s1 {
+                            ns.push((s0, s1));
+                            continue;
+                        }
+                        if h0 - s0 > 0.05 {
+                            ns.push((s0, h0));
+                        }
+                        if s1 - h1 > 0.05 {
+                            ns.push((h1, s1));
+                        }
+                    }
+                    segs = ns;
+                }
+                let k2 = (row * 7 + k * 3 + (a0.abs() as i32)) % 4;
+                let col = shade(hex, [0.92, 1.0, 0.96, 0.87][k2 as usize]);
+                for (s0, s1) in segs {
+                    let (cx, cz, sx, sz) = if along_z { ((s0 + s1) * 0.5, (t0 + t1) * 0.5, s1 - s0, t1 - t0) } else { ((t0 + t1) * 0.5, (s0 + s1) * 0.5, t1 - t0, s1 - s0) };
+                    self.brick_exact(col, sx, yt - y, sz, cx, y, cz);
+                }
+                a = e;
+                next = a + 2.0;
+                k += 1;
+            }
+            y = yt;
+            row += 1;
         }
     }
 
@@ -647,10 +719,34 @@ impl Town {
         self.block_h(x0 - 0.6, x1 + 0.6, z0 - 0.6, z1 + 0.5, 11.0 * STUD);
         self.brick(C_GRAY, w + 1.0, 0.4, d + 1.0, cx, 0.0, cz, false);
         const H: f32 = 7.2;
-        self.wall(wall, w, H, 1.0, cx, z1 - 0.5);
-        self.wall(wall, w, H, 1.0, cx, z0 + 0.5);
-        self.wall(wall, 1.0, H, d - 2.0, x0 + 0.5, cz);
-        self.wall(wall, 1.0, H, d - 2.0, x1 - 0.5, cz);
+        // (your home, after the key art: brick walls, wooden windows with flower boxes, a canopy, a hip roof)
+        let home = sign.contains("home");
+        if home {
+            self.brick(wall, w, H, 1.0, cx, 0.4, z1 - 0.5, false);
+            self.brick(wall, w, H, 1.0, cx, 0.4, z0 + 0.5, false);
+            self.brick(wall, 1.0, H, d - 2.0, x0 + 0.5, 0.4, cz, false);
+            self.brick(wall, 1.0, H, d - 2.0, x1 - 0.5, 0.4, cz, false);
+            let sw = 3.4f32.min(w - 7.4);
+            let sh = sw / 4.0;
+            let mut front = vec![(cx - 1.2, cx + 1.2, 0.0, 4.5), (cx - sw * 0.5 - 0.3, cx + sw * 0.5 + 0.3, 5.8 - sh - 0.4, 6.1)];
+            let mut back = vec![];
+            for s in [-1.0f32, 1.0] {
+                let wx = cx + s * (w * 0.5 - 2.3);
+                front.push((wx - 1.45, wx + 1.45, 1.3, 3.7));
+                front.push((wx - 1.2, wx + 1.2, 4.7, 6.9));
+                back.push((wx - 1.2, wx + 1.2, 4.7, 6.9));
+            }
+            let side = [(cz - 1.45, cz + 1.45, 4.7, 6.9)];
+            self.facing(wall, true, z1, 1.0, x0, x1, 0.4, 0.4 + H, &front);
+            self.facing(wall, true, z0, -1.0, x0, x1, 0.4, 0.4 + H, &back);
+            self.facing(wall, false, x0, -1.0, z0, z1, 0.4, 0.4 + H, &side);
+            self.facing(wall, false, x1, 1.0, z0, z1, 0.4, 0.4 + H, &side);
+        } else {
+            self.wall(wall, w, H, 1.0, cx, z1 - 0.5);
+            self.wall(wall, w, H, 1.0, cx, z0 + 0.5);
+            self.wall(wall, 1.0, H, d - 2.0, x0 + 0.5, cz);
+            self.wall(wall, 1.0, H, d - 2.0, x1 - 0.5, cz);
+        }
         self.brick(wall, w - 2.0, 0.4, d - 2.0, cx, H, cz, false);
         self.brick(C_WHITE, w + 0.2, 0.4, d + 0.2, cx, 3.8, cz, false);
         // door (front faces +z)
@@ -658,24 +754,39 @@ impl Town {
         self.brick(door, 1.8, 3.6, 0.4, cx, 0.4, z1 + 0.25, false);
         self.brick(C_YELLOW, 0.3, 0.3, 0.3, cx + 0.55, 2.05, z1 + 0.5, false);
         self.brick(C_DARK_GRAY, 3.0, 0.4, 1.2, cx, 0.4, z1 + 0.7, true);
+        let frame = if home { 0x7a4a2a } else { C_WHITE };
         for s in [-1.0, 1.0] {
             let wx = cx + s * (w * 0.5 - 2.3);
-            self.window(wx, 1.6, z1, 2.4, 1.8, true, 1.0);
-            self.window(wx, 5.0, z1, 1.9, 1.6, true, 1.0);
-            self.window(cx + s * w * 0.5, 5.0, cz, 2.4, 1.6, false, s);
-            self.window(wx, 5.0, z0, 1.9, 1.6, true, -1.0);
+            self.window_c(wx, 1.6, z1, 2.4, 1.8, true, 1.0, frame);
+            self.window_c(wx, 5.0, z1, 1.9, 1.6, true, 1.0, frame);
+            self.window_c(cx + s * w * 0.5, 5.0, cz, 2.4, 1.6, false, s, frame);
+            self.window_c(wx, 5.0, z0, 1.9, 1.6, true, -1.0, frame);
+            if home {
+                self.flower_box(wx, 1.4, z1, 2.6, 1.0);
+                self.flower_box(wx, 4.8, z1, 2.2, 1.0);
+            }
         }
-        // stepped brick roof
+        if home {
+            // a blue canopy over the door on two brackets
+            self.brick_rot(roof, Vec3::new(3.8, 0.3, 1.8), Vec3::new(cx, 4.62, z1 + 0.85), Vec3::new(0.32, 0.0, 0.0));
+            for s in [-1.0f32, 1.0] {
+                self.brick(C_WHITE, 0.25, 0.9, 0.25, cx + s * 1.6, 3.7, z1 + 1.1, false);
+            }
+        }
+        // stepped brick roof (the home's a hip roof: stepping in on all sides)
         let ov = 0.8;
+        let mut top_w = w + ov * 2.0;
         for i in 0..6 {
             let dd = d + ov * 2.0 - i as f32 * 1.9;
-            if dd <= 0.6 {
+            let ww = if home { w + ov * 2.0 - i as f32 * 1.9 } else { w + ov * 2.0 };
+            if dd <= 0.6 || ww <= 0.6 {
                 break;
             }
+            top_w = ww;
             let c = if i % 2 == 0 { roof } else { shade(roof, 0.92) };
-            self.brick(c, w + ov * 2.0, 0.6, dd, cx, 0.4 + H + i as f32 * 0.6, cz, false);
+            self.brick(c, ww, 0.6, dd, cx, 0.4 + H + i as f32 * 0.6, cz, false);
         }
-        self.brick(roof, w + ov * 2.0, 0.4, 1.0, cx, 0.4 + H + 6.0 * 0.6, cz, true);
+        self.brick(roof, top_w, 0.4, 1.0, cx, 0.4 + H + 6.0 * 0.6, cz, true);
         self.brick(C_RED_BROWN, 1.6, 3.4, 1.6, cx + w * 0.5 - 2.2, 0.4 + H + 0.6, cz - 1.5, true);
         // the sign board above the door
         let sw = 3.4f32.min(w - 7.4);
@@ -748,14 +859,70 @@ impl Town {
         // chimney with a hole
         self.brick(C_RED_BROWN, 2.6, 2.4, 2.6, x1 - 2.8, 0.4 + H + 0.6, z0 + 2.8, false);
         self.brick(C_BLACK, 1.4, 0.1, 1.4, x1 - 2.8, 0.4 + H + 3.0, z0 + 2.8, false);
-        // satellite dish on a pole
-        self.brick(C_DARK_GRAY, 0.4, 1.6, 0.4, cx + 1.0, 0.4 + H + 0.6, cz, false);
-        self.here(cx + 1.0, cz);
-        self.cone(C_WHITE, m(cx + 1.0, 0.4 + H + 3.0, cz + 0.6), m(cx + 1.0, 0.4 + H + 2.3, cz - 0.2), 1.4 * STUD, 14);
-        // the lab sign: a blue board with a white frame over the door
-        self.brick(C_WHITE, 5.4, 2.1, 0.15, cx, 4.7, fz + 0.02, false);
-        self.brick(0x1e5aa8, 5.0, 1.7, 0.1, cx, 4.9, fz + 0.1, false);
-        self.prop("assets/signs/lab.glb", cx, fz + 0.17, 5.75, 1.0, 0.0);
+        // satellite dish on a pole, at the front right corner (as in the key art)
+        let (dx, dz) = (x1 - 2.2, z1 - 2.6);
+        self.brick(C_DARK_GRAY, 0.4, 1.6, 0.4, dx, 0.4 + H + 0.6, dz, false);
+        self.here(dx, dz);
+        self.cone(C_WHITE, m(dx - 0.4, 0.4 + H + 3.0, dz + 0.5), m(dx + 0.2, 0.4 + H + 2.3, dz - 0.2), 1.4 * STUD, 14);
+        // battlements on the rim: tan merlons every other stud
+        let ry = 0.4 + H + 1.4;
+        let mut x = x0 - 0.2;
+        while x < x1 + 0.2 {
+            for zz in [z0 - 0.2, z1 + 0.2] {
+                self.brick(C_TAN, 0.9, 0.8, 0.6, x + 0.45, ry, zz, false);
+            }
+            x += 1.8;
+        }
+        let mut z = z0 + 1.6;
+        while z < z1 - 1.0 {
+            for xx in [x0 - 0.2, x1 + 0.2] {
+                self.brick(C_TAN, 0.6, 0.8, 0.9, xx, ry, z, false);
+            }
+            z += 1.8;
+        }
+        // the glass dome: a dark ring, a glass half-sphere with dark ribs, a cap and a finial
+        let (gx, gz, gy) = (cx - 3.0, cz + 1.4, 0.4 + H + 0.85);
+        self.here(gx, gz);
+        self.b(C_DARK_GRAY).with(Mat4::from_translation(m(gx, gy, gz)), |b| {
+            b.lathe(&[Vec2::new(0.0, 0.0), Vec2::new(3.1 * STUD, 0.0), Vec2::new(3.1 * STUD, 0.7 * STUD), Vec2::new(0.0, 0.7 * STUD)], 20);
+        });
+        let r = 2.8;
+        let dome: Vec<Vec2> = (0..=8).map(|i| {
+            let a = i as f32 / 8.0 * std::f32::consts::FRAC_PI_2;
+            Vec2::new(a.cos() * r * STUD, a.sin() * r * STUD)
+        }).collect();
+        let mut prof = vec![Vec2::ZERO];
+        prof.extend(dome.iter().copied());
+        self.b(C_GLASS).with(Mat4::from_translation(m(gx, gy + 0.7, gz)), |b| {
+            b.lathe(&prof, 20);
+        });
+        for k in 0..6 {
+            let a = k as f32 / 6.0 * std::f32::consts::TAU;
+            for i in 0..6 {
+                let t = (i as f32 + 0.5) / 6.0 * std::f32::consts::FRAC_PI_2;
+                let (rr, yy) = ((r + 0.05) * t.cos(), gy + 0.7 + (r + 0.05) * t.sin());
+                self.brick_rot(C_DARK_GRAY, Vec3::new(0.18, 0.6, 0.18), Vec3::new(gx + a.cos() * rr, yy, gz + a.sin() * rr), Vec3::new(0.0, -a, t - std::f32::consts::FRAC_PI_2));
+            }
+        }
+        self.brick(C_DARK_GRAY, 0.9, 0.4, 0.9, gx, gy + 0.7 + r - 0.1, gz, false);
+        self.brick(C_TAN, 0.3, 1.2, 0.3, gx, gy + 0.7 + r + 0.3, gz, false);
+        // two little turrets at the front corners, an antenna on the left one
+        for (tx, ant) in [(x0 + 0.9, true), (x1 - 0.9, false)] {
+            let tz = z1 - 0.9;
+            self.brick(C_TAN, 1.8, 2.6, 1.8, tx, 0.4 + H + 0.6, tz, false);
+            self.brick(shade(C_TAN, 0.85), 2.1, 0.4, 2.1, tx, 0.4 + H + 3.2, tz, true);
+            if ant {
+                self.brick(C_DARK_GRAY, 0.25, 3.4, 0.25, tx, 0.4 + H + 3.6, tz, false);
+                self.brick(C_RED, 0.45, 0.45, 0.45, tx, 0.4 + H + 7.0, tz, false);
+            }
+        }
+        // the entrance canopy: a dark grey slab over the door
+        self.brick(C_DARK_GRAY, 4.2, 0.35, 1.8, cx, 4.6, fz + 0.9, false);
+        self.brick(C_GRAY, 4.4, 0.15, 0.25, cx, 4.5, fz + 1.75, false);
+        // the lab sign: a blue board with a white frame over the canopy
+        self.brick(C_WHITE, 5.4, 2.1, 0.15, cx, 5.05, fz + 0.02, false);
+        self.brick(0x1e5aa8, 5.0, 1.7, 0.1, cx, 5.25, fz + 0.1, false);
+        self.prop("assets/signs/lab.glb", cx, fz + 0.17, 6.1, 1.0, 0.0);
     }
 
     /// A white picket fence from (x0, z0) to (x1, z1): a post every stud, two rails, one collider.
@@ -1154,6 +1321,18 @@ impl Town {
             while y < 2.5 {
                 self.brick(0xdfe6ea, 0.05, 0.05, z1 - z0, x1, y, (z0 + z1) * 0.5, false);
                 y += 0.5;
+            }
+            // the top: the back bar, and the net over it (strands along and across)
+            self.brick(C_WHITE, 0.25, 0.25, z1 - z0, x1, 2.5, (z0 + z1) * 0.5, false);
+            let mut z = z0 + 0.4;
+            while z < z1 - 0.1 {
+                self.brick(0xdfe6ea, x1 - x0, 0.05, 0.05, (x0 + x1) * 0.5, 2.62, z, false);
+                z += 0.4;
+            }
+            let mut x = x0 + 0.5;
+            while x < x1 - 0.1 {
+                self.brick(0xdfe6ea, 0.05, 0.05, z1 - z0, x, 2.66, (z0 + z1) * 0.5, false);
+                x += 0.5;
             }
             self.block(x1 - 0.2, x1 + 0.2, z0, z1);
         }

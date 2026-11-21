@@ -137,7 +137,8 @@ down KeyS
 frames 5
 up KeyS
 expect game_state.state.life.sitting == false
-expect game_state.state.day_length == 6
+# (the day follows the clock again: a day a day; the menu's DAY row has the quick 6-minute day)
+expect game_state.state.day_length == 1440
 # ---- dancing: Q, the villagers close by join in; moving stops it ----
 call teleport {"x": 52.5, "z": 1.5}
 frames 10

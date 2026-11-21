@@ -110,6 +110,12 @@ comes from.
   `Figure::spawn_spec`, `Figure::tint` once the parts loaded, `TintCache`). Debug `minifig {seed | spec, at}`. Each
   town's people walk their ways (`people_ways`: Brickton's sidewalks and plaza, Saltwick's street and pier, across
   Dewmere's green), resting at the ends; drawn and moved only within `PEOPLE_R` 90 studs. Test: people.
+- **The day:** follows the clock by default (`GameSave.day_fast` false: a day lasts 1440 real minutes and starts at
+  the local time, `local_hours`); the menu's DAY row (Clock / 6 min) switches to the quick day (`day_minutes`). The
+  bench's fast-forward and sleeping work as before.
+- **Lab and home after the key art:** the lab with battlements, a ribbed glass dome, corner turrets (antenna), the
+  dish at the front corner, an entrance canopy; your home with facing bricks in shades (`Town::facing`, exact boxes),
+  wooden window frames (`window_c`), flower boxes, a blue door canopy and a hip roof. The football goal's top net.
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, the TV tower `tv_tower` north-west of it, shops /
   offices south), Port Saltwick (two rows

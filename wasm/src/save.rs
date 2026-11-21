@@ -54,6 +54,9 @@ pub struct GameSave {
     pub voices_off: bool,
     /// Music volume step: 0 off, 1 quiet, 2 normal (the Kaigen level), 3 loud.
     pub music_level: u8,
+    /// The day: false follows the clock (a day lasts a day, the time is yours), true the quick 6-minute day.
+    #[serde(default)]
+    pub day_fast: bool,
     // ---- the first deck's quest and the pond cave ----
     pub quest_part: bool,
     pub has_suit: bool,
@@ -109,6 +112,7 @@ impl Default for GameSave {
             auto_step: 0,
             voices_off: false,
             music_level: 2,
+            day_fast: false,
             quest_part: false,
             has_suit: false,
             has_part: false,

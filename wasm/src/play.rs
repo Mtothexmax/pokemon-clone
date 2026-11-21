@@ -166,6 +166,8 @@ pub struct PlayScreen {
     /// the save's place applied (first frames), seconds since your place was last looked at (`keep_place`)
     place_restored: bool,
     place_t: f32,
+    /// the day's setting applied (`day_minutes`)
+    day_fast: Option<bool>,
     /// the outdoor music wanted where you are, and how long it has been wanted (a zone's edge doesn't flap)
     music_want: Option<Track>,
     music_t: f32,
@@ -269,6 +271,17 @@ const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot
 const HELP_S: f32 = 9.0;
 /// How often where you stand goes into the save (seconds).
 const PLACE_EVERY: f32 = 2.0;
+
+/// The day's length (real minutes): a whole day when it follows the clock, else the quick `DAY_MINUTES`.
+fn day_minutes(g: &crate::save::GameSave) -> f32 {
+    if g.day_fast { crate::DAY_MINUTES } else { 24.0 * 60.0 }
+}
+
+/// The local time of day (hours, 0..24).
+fn local_hours() -> f32 {
+    let d = js_sys::Date::new_0();
+    d.get_hours() as f32 + d.get_minutes() as f32 / 60.0 + d.get_seconds() as f32 / 3600.0
+}
 /// Seconds a new place's music must be the one before it plays.
 const MUSIC_HOLD: f32 = 2.0;
 /// How far geometry is drawn (m): from the fixed tilt (~16 m above you, the screen's top edge some 80 m away) to the
@@ -1546,7 +1559,10 @@ impl Screen<Data> for PlayScreen {
         data.settings.applied = None; // setup_look reset the graphics: apply the menu's level again
         data.save.data.plays += 1;
         data.save.mark();
-        ctx.renderer.settings.time_of_day = data.save.data.time_of_day.rem_euclid(24.0);
+        // the day follows the clock (the time it is now), or the quick day goes on from where it was
+        ctx.renderer.settings.time_of_day = if data.save.data.day_fast { data.save.data.time_of_day.rem_euclid(24.0) } else { local_hours() };
+        ctx.renderer.settings.day_length_minutes = day_minutes(&data.save.data);
+        self.day_fast = Some(data.save.data.day_fast);
         if data.town.is_none() {
             data.town = Some(TownAssets::new(ctx));
         }
@@ -1690,7 +1706,7 @@ impl Screen<Data> for PlayScreen {
         self.dive.abort(ctx);
         ctx.renderer.set_pushers(&[]);
         self.life_view.stop(ctx, 0.0);
-        ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+        ctx.renderer.settings.day_length_minutes = day_minutes(&data.save.data);
         ctx.input.touch.set_stick_enabled(true);
         for slot in HUD_SLOTS.into_iter().chain(["dive", "dive_fx", "deck_head", "deck_coll", "deck_marks", "deck_side", "deck_strip", "packs", "upgrade"]) {
             ctx.ui.set(slot, "");
@@ -1983,7 +1999,7 @@ impl Screen<Data> for PlayScreen {
         let fell = self.hero_pos(ctx).is_some_and(|(p, _)| p.y < -20.0);
         if (ctx.input.key_pressed("KeyR") && !self.busy && !self.fight) || (fell && !self.dive.on && self.sink_t <= 0.0) {
             self.life.sit(&mut data.save.data, false);
-            ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+            ctx.renderer.settings.day_length_minutes = day_minutes(&data.save.data);
             self.move_to(ctx, START[0], START[1], std::f32::consts::PI);
             self.respawns += 1;
         }
@@ -1991,7 +2007,7 @@ impl Screen<Data> for PlayScreen {
         let moving = ctx.input.move_axis().length() > 0.2 || self.swipe.on;
         if self.life.sitting && moving && !self.busy {
             self.life.sit(&mut data.save.data, false);
-            ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+            ctx.renderer.settings.day_length_minutes = day_minutes(&data.save.data);
         }
         if ctx.input.key_pressed("KeyQ") && !self.busy && !self.life.sitting && !self.fight {
             self.life.dancing = !self.life.dancing;
@@ -2128,6 +2144,16 @@ impl Screen<Data> for PlayScreen {
         self.fountain.set_visible(layers, self.area.is_none());
         self.fountain.update(ctx, dt);
 
+        // ---- the day: switched in the menu (to the clock: the time it is now) ----
+        if self.day_fast != Some(data.save.data.day_fast) {
+            self.day_fast = Some(data.save.data.day_fast);
+            if !data.save.data.day_fast {
+                ctx.renderer.settings.time_of_day = local_hours();
+            }
+            if !self.life.sitting {
+                ctx.renderer.settings.day_length_minutes = day_minutes(&data.save.data);
+            }
+        }
         // ---- the music outdoors: the village's tune on the strip and indoors, the island's by place, day and night ----
         self.outdoor_music(ctx, data, dt);
         // ---- the save: where you are (a reload starts there), the clock every 20 s ----
@@ -2265,7 +2291,7 @@ impl Screen<Data> for PlayScreen {
                     if on {
                         self.use_target(ctx, data, talk::SIT_TARGET);
                     } else if self.life.sit(&mut data.save.data, false) {
-                        ctx.renderer.settings.day_length_minutes = crate::DAY_MINUTES;
+                        ctx.renderer.settings.day_length_minutes = day_minutes(&data.save.data);
                     }
                 }
                 if let Some(i) = a["to_fly"].as_u64() {
