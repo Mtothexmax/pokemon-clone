@@ -329,6 +329,7 @@ pub const STYLE: &str = "<style>
 #ui [data-slot=dialog]{position:fixed;left:0;right:0;bottom:22px;display:flex;justify-content:center;pointer-events:none}
 .bh-dialog{width:min(760px,calc(100vw - 32px));box-sizing:border-box;background:rgba(250,250,246,.96);color:#1b2a34;border:3px solid #1b2a34;border-radius:12px;padding:14px 20px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;pointer-events:auto;cursor:pointer}
 .bh-dialog.touch{margin-bottom:118px}
+@media (orientation:portrait){#ui [data-slot=dialog]{bottom:max(8px,env(safe-area-inset-bottom));z-index:5}.bh-dialog.touch{margin-bottom:0}.bh-dialog{width:calc(100vw - 16px);background:rgb(250,250,246)}.bh-dialog.night{background:rgb(24,32,42)}}
 .bh-dialog.night{background:rgba(24,32,42,.95);color:#ecf1f6;border-color:#465668}
 .bh-speaker{background:#f2cd37;color:#1b2a34;border-radius:6px;padding:3px 10px;font-size:16px;font-weight:700}
 .bh-line{font-size:20px;line-height:1.35}
