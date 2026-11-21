@@ -94,7 +94,11 @@ impl Data {
     /// A random number of the card game (Kaigen `cg_rand`).
     pub fn cg_rand(&mut self, ctx: &mut Ctx) -> u32 {
         if self.cg_seed == 0 {
-            self.cg_seed = ctx.rng.next_u64() as u32 | 1;
+            // a fresh seed per session: `ctx.rng` starts from the same fixed seed on every page load, so the first
+            // battle always dealt the same deck order and locations (Sky Ledge, Brick Gym, ...). Mixed with the
+            // engine's generator; tests that need one battle pass `battle {seed}`
+            let entropy = (js_sys::Math::random() * 4294967296.0) as u32 ^ (js_sys::Date::now() as u64 as u32).rotate_left(16);
+            self.cg_seed = (ctx.rng.next_u64() as u32 ^ entropy) | 1;
         }
         self.cg_seed = self.cg_seed.wrapping_mul(1664525).wrapping_add(1013904223);
         self.cg_seed >> 8
