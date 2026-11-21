@@ -306,7 +306,7 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   cross-section or the grotto (`cave::Zone`, `game_state.state.dive.zone`); lights 9 (tunnel + two in the grotto).
   Screens: on an upright phone the TV / PC picture stays in the 3D screen. Lab: one more lamp by the east wall.
 - Phones: the profile from the first frame (`Data::ensure_loaded`: coarse pointer, or touch points + a mobile UA),
-  `PHONE_MAX_FPS` 50 (every 2nd refresh at 91.7 Hz; prewarm once the village is loaded), half resolution at the start, 20 ms budget,
+  `PHONE_MAX_FPS` 31 (every 3rd refresh at 90 Hz: at every 2nd the GPU fell behind in the tree-lined west; prewarm once the village is loaded), half resolution at the start, 20 ms budget,
   `ctx.time.lock_fixed_to_frames` (engine aa91b8f: whole steps per drawn frame; read `ctx.time.fixed_dt`, it is not
   always 1/60). A GPU that falls behind the cap (no timestamps on the phone): the engine's latency fallback adds a
   refresh per frame (9c3f2ce, `stats.render.auto_frame_step`, `late_presents`). The play camera never turns
