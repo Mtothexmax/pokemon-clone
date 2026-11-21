@@ -447,12 +447,9 @@ impl Screens {
             let h = w * if kind == ScreenKind::Tv { 0.55 } else { 0.62 };
             [(sw - w) * 0.5, (sh - h) * 0.45, w, h]
         });
-        // a phone held upright: the real screen is too small to read, a panel that fits the phone
-        if sh > sw * 1.15 {
-            let pw = sw - 16.0;
-            let ph = if kind == ScreenKind::Tv { pw * 0.62 } else { (pw * 1.25).min(sh * 0.72) };
-            r = [(sw - pw) * 0.5, (sh - ph) * 0.42, pw, ph];
-        }
+        // (a phone held upright too: the picture stays in the TV / monitor, the close-up frames the screen to the
+        // phone's width; it used to be a separate panel over the room)
+        let _ = sh;
         let fs = match kind {
             ScreenKind::Tv => r[3] / 14.0,
             ScreenKind::Pc => (r[3] / 17.0).min(r[2] / 22.0),
