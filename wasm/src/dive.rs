@@ -161,9 +161,7 @@ pub struct Dive {
     click_surface: bool,
     /// since the Stud Core was taken (-1: not this dive)
     core_t: f32,
-    /// seconds before a pipe takes you again; pipe journeys (for tests)
-    warp_cd: f32,
-    pub warps: u32,
+
     /// pearls taken on this dive
     pub pearls_now: u32,
     dives: u32,
@@ -349,7 +347,7 @@ impl Dive {
             ([0.0, -19.0, 58.0], 0x3d7bff, 14.0, 35.0),
             ([-10.0, -12.0, 88.0], 0xa64dff, 28.0, 90.0),
             ([11.0, -14.0, 102.0], 0x40d9ff, 28.0, 90.0),
-            ([0.0, cave::CR_Y0 + 12.0, 139.0], 0xffbf40, 24.0, 80.0),
+            ([0.0, cave::CR_Y0 + 12.0, 108.0], 0xffbf40, 24.0, 80.0),
         ];
         for (p, hex, r, k) in lights {
             let e = ctx.world.spawn((Transform::from_translation(world(Vec3::from(p))), PointLight { color: srgb_hex(hex).truncate(), intensity: 0.0, range: r * STUD }));
@@ -468,7 +466,10 @@ impl Dive {
     /// Where `p` is: the basin, the tunnel (past the basin's north wall, in the tunnel's cross-section) or the deep
     /// grotto behind it.
     fn zone(p: Vec3) -> cave::Zone {
-        if p.z > cave::DEEP_Z1 + 2.0 && p.y < cave::CR_Y1 {
+        let axis = Vec2::new(p.x - cave::PIPE_AT.x, p.z - cave::PIPE_AT.z).length();
+        if axis < cave::PIPE_IN && p.y < cave::PIPE_TOP && p.y > cave::PIPE2_BOTTOM {
+            cave::Zone::Pipe
+        } else if p.y < cave::CR_Y1 && p.z > cave::CR_Z0 - 2.0 {
             cave::Zone::Core
         } else if p.z > cave::DEEP_Z0 {
             cave::Zone::Deep
@@ -486,21 +487,62 @@ impl Dive {
         let mut p = self.p;
         let hw = cave::TUN_W * 0.5 - r;
         let in_mouth = p.x.abs() < hw + 0.3 && p.y > cave::TUN_Y0 + r - 0.3 && p.y < cave::TUN_Y1 - r + 0.3;
-        if Self::zone(self.p) == cave::Zone::Core {
-            // the core room (closed: the way out is its pipe, or Surface)
+        // the pipe's wall: inside its shaft you stay in it (out only at its ends); outside, its body and rims push you
+        // off sideways (or up / down off a rim), its openings let you in
+        let pipe_wall = |p: &mut Vec3, inside: bool| {
+            let mut v = Vec2::new(p.x - cave::PIPE_AT.x, p.z - cave::PIPE_AT.z);
+            let d = v.length();
+            if inside {
+                let lim = cave::PIPE_IN - r * 0.9;
+                if d > lim {
+                    v *= lim / d;
+                }
+            } else {
+                let out = cave::PIPE_R + 0.8 + r;
+                let in_top = p.y > cave::PIPE_TOP - r && p.y < cave::PIPE_TOP + r;
+                let in_bottom = p.y > cave::PIPE2_BOTTOM - r && p.y < cave::PIPE2_BOTTOM + r;
+                let along = p.y < cave::PIPE_TOP + r && p.y > cave::PIPE2_BOTTOM - r;
+                if along && d < out && !((in_top || in_bottom) && d < cave::PIPE_IN - 0.3) {
+                    if in_top && d > cave::PIPE_IN - 0.3 {
+                        p.y = cave::PIPE_TOP + r; // on the rim
+                    } else if in_bottom && d > cave::PIPE_IN - 0.3 {
+                        p.y = cave::PIPE2_BOTTOM - r;
+                    } else if d > 1e-3 {
+                        v *= out / d;
+                    }
+                }
+            }
+            p.x = cave::PIPE_AT.x + v.x;
+            p.z = cave::PIPE_AT.z + v.y;
+        };
+        let zone_now = Self::zone(self.p);
+        if zone_now == cave::Zone::Pipe {
+            pipe_wall(&mut p, true);
+        } else if zone_now == cave::Zone::Core {
+            // the core room (the way out is the pipe, or Surface)
             let cw = cave::CR_W * 0.5 - r;
             p.x = p.x.clamp(-cw, cw);
-            p.y = p.y.clamp(cave::CR_Y0 + r, cave::CR_Y1 - r);
             p.z = p.z.clamp(cave::CR_Z0 + r, cave::CR_Z1 - r);
+            p.y = p.y.max(cave::CR_Y0 + r);
+            let up_pipe = Vec2::new(p.x - cave::PIPE_AT.x, p.z - cave::PIPE_AT.z).length() < cave::PIPE_IN - 0.3;
+            if !up_pipe {
+                p.y = p.y.min(cave::CR_Y1 - r);
+            }
+            pipe_wall(&mut p, false);
         } else if p.z > cave::DEEP_Z0 + r || (p.z > cave::DEEP_Z0 - r && !in_mouth && Self::zone(self.p) == cave::Zone::Deep) {
             // the deep grotto
             let dw = cave::DEEP_W * 0.5 - r;
             p.x = p.x.clamp(-dw, dw);
-            p.y = p.y.clamp(cave::DEEP_Y0 + r, cave::DEEP_Y1 - r);
+            let into_pipe = Vec2::new(p.x - cave::PIPE_AT.x, p.z - cave::PIPE_AT.z).length() < cave::PIPE_IN - 0.3;
+            p.y = p.y.min(cave::DEEP_Y1 - r);
+            if !into_pipe {
+                p.y = p.y.max(cave::DEEP_Y0 + r);
+            }
             p.z = p.z.min(cave::DEEP_Z1 - r);
             if p.z < cave::DEEP_Z0 + r && !in_mouth {
                 p.z = cave::DEEP_Z0 + r;
             }
+            pipe_wall(&mut p, false);
         } else if p.z > CAVE_R - r - 0.5 && (in_mouth || Self::zone(self.p) == cave::Zone::Tunnel) {
             // the tunnel (and its mouth in the north wall)
             p.x = p.x.clamp(-hw, hw);
@@ -631,26 +673,6 @@ impl Dive {
         self.vel = self.vel.lerp(want, kf);
         self.p += self.vel * dt;
         self.collide();
-        // a warp pipe: down into its opening and out of the other one (a moment of black, the pipe's sound)
-        self.warp_cd = (self.warp_cd - dt).max(0.0);
-        if self.warp_cd <= 0.0 && !self.leaving {
-            let near = |at: Vec3, top: f32, p: Vec3| Vec2::new(p.x - at.x, p.z - at.z).length() < cave::PIPE_R - 0.4 && p.y < top + 1.6;
-            let to = match Self::zone(self.p) {
-                cave::Zone::Deep if near(cave::PIPE_AT, cave::PIPE_TOP, self.p) => Some((Vec3::new(cave::PIPE2_AT.x, cave::PIPE2_TOP + 3.0, cave::PIPE2_AT.z), std::f32::consts::PI)),
-                cave::Zone::Core if near(cave::PIPE2_AT, cave::PIPE2_TOP, self.p) => Some((Vec3::new(cave::PIPE_AT.x, cave::PIPE_TOP + 3.0, cave::PIPE_AT.z - 2.0), 0.0)),
-                _ => None,
-            };
-            if let Some((at, yaw)) = to {
-                self.p = at;
-                self.vel = Vec3::ZERO;
-                self.yaw = yaw;
-                self.pitch = 0.0;
-                self.fade = 1.0;
-                self.warp_cd = 1.5;
-                self.warps += 1;
-                data.sound.sfx(ctx, Sfx::Pop, 0.45, 0.9);
-            }
-        }
         // up the hole: back to the pond
         let esc = ctx.input.key_pressed("Escape");
         if !self.leaving && (self.p.y > CAVE_TOP + 12.0 || self.click_surface || esc) && self.t > 1.0 {
@@ -896,7 +918,6 @@ impl Dive {
             "suit_shown": self.suit_shown, "built": self.built, "cave_tris": self.cave_tris, "solids": self.solids.len(),
             "near_core": r((self.p - CORE_AT).length()),
             "zone": Self::zone(self.p),
-            "warps": self.warps,
             "sharks": self.sharks.len(),
         })
     }

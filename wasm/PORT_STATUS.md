@@ -101,12 +101,10 @@ comes from.
   Play over the sky; music `Track::Title` (assets/music/title.ogg).
 - **Pond cave additions:** the user's LEGO coral (`cave::lego_coral`: base plates with studs, the green branching
   element swept along Catmull-Rom curves with closed round tips, four small companions) east of the hole; at the
-  grotto's far end a green warp pipe (`PIPE_AT`, Super Mario Land): down into its opening = a moment of black and the
-  pipe sound, out of the core room's pipe (`CR_*`, `PIPE2_AT`), a small warm cave where the Stud Core lies
-  (`DEEP_CORE`); its pipe takes you back (`Zone::Core`, `dive.warps`).
-- **Sharks:** four LEGO sharks (assets/props/shark.glb, repaired from the user's Tripo model by
-  tools/fish/repair_fish.py: seams welded, 6000 triangles, grey) circle in the pond cave (`SHARKS`: three in the
-  basin at different depths, one in the deep grotto), the tail swaying the body.
+  grotto's far end a green pipe (`PIPE_AT`, Super Mario Land), an open shaft you swim down through the grotto's
+  floor into the core room under it (`CR_*`, the pipe hanging from its ceiling to `PIPE2_BOTTOM`), where the Stud
+  Core lies (`DEEP_CORE`); `Zone::Pipe` keeps you in the shaft, its rims and body push you off outside. Every cave
+  brick grows and shifts by its own 1..6 cm (`Build::bx`), so no two faces share a plane.
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
   of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)

@@ -171,20 +171,18 @@ screenshot shots/dive-tunnel.png
 wait_for game_state.state.dive.zone == "Deep" 15000
 screenshot shots/dive-grotto.png
 up KeyW
-# the warp pipe at the grotto's far end: down into its opening, out of the core room's pipe (Super Mario Land)
-call dive {"at": [0, -18, 104], "yaw": 3.14159, "pitch": -1.4}
+# the pipe at the grotto's far end (Super Mario Land): down into its opening, through its shaft, out into the core room
+call dive {"at": [0, -18, 104], "yaw": 3.14159, "pitch": -1.45}
 frames 2
 expect game_state.state.save.has_part == false
 down KeyW
-wait_for game_state.state.dive.zone == "Core" 4000
-up KeyW
-expect game_state.state.dive.warps == 1
-expect game_state.state.sound.last_sfx == "pop"
-frames 40
+wait_for game_state.state.dive.zone == "Pipe" 4000
+screenshot shots/dive-pipe.png
+wait_for game_state.state.dive.zone == "Core" 8000
+frames 20
 screenshot shots/dive-core-room.png
 # the Stud Core lies ahead on its stone: swim to it
-call dive {"pitch": 0, "yaw": 3.14159}
-down KeyW
+call dive {"pitch": -0.35, "yaw": 3.14159}
 wait_for game_state.state.save.has_part == true 15000
 up KeyW
 expect game_state.state.toast contains You found the Stud Core
