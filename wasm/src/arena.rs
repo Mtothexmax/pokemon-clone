@@ -154,7 +154,7 @@ pub const STYLE: &str = "<style>
 .bt-port.lit{border-color:#ffd23d;animation:btpulse .8s ease-in-out infinite alternate}
 @keyframes btpulse{from{box-shadow:0 0 8px 2px rgba(255,210,61,.55)}to{box-shadow:0 0 18px 5px rgba(255,210,61,.95)}}
 .bt-badge{position:absolute;right:-10px;top:-7px;font-size:11px;font-weight:900;padding:1px 4px;border-radius:7px;background:#3a3f4a;border:1px solid #fff;color:#fff;line-height:13px}
-.bt-badge.first{background:#ffd23d;color:#2a1a00}
+.bt-badge.first{background:#ffd23d;color:#2a1a00}.bt-badge.tie{background:#8a929c}
 .bt-name{display:flex;flex-direction:column;line-height:1.1;min-width:0}.bt-name b{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bt-name small{font-size:11px;opacity:.8;font-weight:600}
 .bt-sp{flex:1}
 .bt-stakes{display:flex;gap:5px;align-items:center;padding:2px 10px;border-radius:14px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.35);font-size:19px;font-weight:800}
@@ -2072,8 +2072,22 @@ impl BattleScreen {
         let plan = b.phase == Phase::Plan;
         // ---- the top bar: the opponent with the 1st / 2nd badge, the stakes, the turn, Log / SNAP / Retreat ----
         let ini = if self.kind == BattleKind::Wild { "?".to_string() } else { b.opponent.chars().next().unwrap_or('?').to_string() };
-        let foe_first = b.first == SIDE_AI;
-        let badge = |first: bool| if over { String::new() } else { format!("<span class='bt-badge{}'>{}</span>", if first { " first" } else { "" }, if first { "1st" } else { "2nd" }) };
+        // the badges rank the sides as the battle stands (`Battle::leader`: locations, then total power), so
+        // "2nd" is always whoever would lose if it ended now; a dead heat: "Tie" on both (not who reveals first)
+        let leader = b.leader();
+        let foe_first = leader == Some(SIDE_AI);
+        let badge = |side: usize| {
+            if over {
+                String::new()
+            } else {
+                let (cls, txt) = match leader {
+                    None => (" tie", "Tie"),
+                    Some(l) if l == side => (" first", "1st"),
+                    _ => ("", "2nd"),
+                };
+                format!("<span class='bt-badge{cls}'>{txt}</span>")
+            }
+        };
         let foe_col = match self.kind {
             BattleKind::Rival => "#c0392b",
             BattleKind::Pip => "#2e9d5a",
@@ -2085,7 +2099,7 @@ impl BattleScreen {
              <div class='bt-stakes{hot}'><i></i>{stakes}</div><div class='bt-turn'>T<b>{turn}</b>/{max}</div><div class='bt-sp'></div>\
              <button class='bt-btn' data-action='bt_log'>Log</button><button class='bt-btn snap' data-action='bt_snap'{snapd}>SNAP</button><button class='bt-btn' data-action='bt_retreat'{retd}>{ret}</button></div>",
             lit = if foe_first && !over { " lit" } else { "" },
-            fb = badge(foe_first),
+            fb = badge(SIDE_AI),
             name = b.opponent,
             hot = if b.stakes > 1 { " hot" } else { "" },
             stakes = b.stakes,
@@ -2097,7 +2111,7 @@ impl BattleScreen {
         );
         // ---- the bottom: the energy orb with your portrait, Undo / End Turn ----
         let no_moves = b.no_moves();
-        let me_first = b.first == SIDE_P;
+        let me_first = leader == Some(SIDE_P);
         let bottom = format!(
             "<div class='bt-bot{ph}' style='--bh:{bh:.0}px;--orb:{orb:.0}px'><div class='bt-orb{spent}'><b>{left}<small>/{en}</small></b><span>ENERGY</span></div>\
              <div class='bt-me'><div class='bt-port{lit}' style='background:#1e6fe0;width:34px;height:34px;font-size:10px'>YOU{mb}</div></div>\
@@ -2109,7 +2123,7 @@ impl BattleScreen {
             left = b.energy_left,
             en = b.energy,
             lit = if me_first && !over { " lit" } else { "" },
-            mb = badge(me_first),
+            mb = badge(SIDE_P),
             go = if no_moves { " go" } else { "" },
             endd = if plan && !over { "" } else { " disabled" },
             endl = if b.phase == Phase::Reveal { "\u{2026}" } else { "End Turn" },
@@ -2254,7 +2268,7 @@ impl BattleScreen {
         .collect();
         json!({
             "kind": self.kind, "opponent": b.opponent, "phase": b.phase, "turn": b.turn, "max_turns": b.max_turns,
-            "energy": b.energy, "energy_left": b.energy_left, "stakes": b.stakes, "first": if b.first == SIDE_P { "you" } else { "foe" },
+            "energy": b.energy, "energy_left": b.energy_left, "stakes": b.stakes, "first": if b.first == SIDE_P { "you" } else { "foe" }, "rank": match b.leader() { Some(SIDE_P) => "you", Some(_) => "foe", None => "tie" },
             "result": b.result, "p_snapped": b.p_snapped, "ai_snapped": b.ai_snapped,
             "hand": hand, "hand_n": b.hand[SIDE_P].len(), "ai_hand_n": b.hand[SIDE_AI].len(),
             "deck_n": b.deck[SIDE_P].len(), "ai_deck_n": b.deck[SIDE_AI].len(),

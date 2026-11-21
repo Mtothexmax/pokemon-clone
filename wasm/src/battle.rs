@@ -887,25 +887,28 @@ impl Battle {
         self.wait = 0.35;
     }
 
+    /// Who would win if the battle ended now (the final scoring: more locations won, a tie: the higher total
+    /// power of the revealed cards); None = a draw. The HUD's 1st / 2nd badges show this.
+    pub fn leader(&self) -> Option<usize> {
+        let (pw, aw) = (self.winning_zones(SIDE_P), self.winning_zones(SIDE_AI));
+        if pw != aw {
+            return Some(if pw > aw { SIDE_P } else { SIDE_AI });
+        }
+        let tp: i32 = (0..3).map(|z| self.zone_power(z, SIDE_P)).sum();
+        let ta: i32 = (0..3).map(|z| self.zone_power(z, SIDE_AI)).sum();
+        match tp.cmp(&ta) {
+            std::cmp::Ordering::Greater => Some(SIDE_P),
+            std::cmp::Ordering::Less => Some(SIDE_AI),
+            std::cmp::Ordering::Equal => None,
+        }
+    }
+
     fn finish(&mut self) {
         self.phase = Phase::Over;
-        let (pw, aw) = (self.winning_zones(SIDE_P), self.winning_zones(SIDE_AI));
-        self.result = if pw != aw {
-            if pw > aw {
-                Outcome::Win
-            } else {
-                Outcome::Lose
-            }
-        } else {
-            let tp: i32 = (0..3).map(|z| self.zone_power(z, SIDE_P)).sum();
-            let ta: i32 = (0..3).map(|z| self.zone_power(z, SIDE_AI)).sum();
-            if tp > ta {
-                Outcome::Win
-            } else if ta > tp {
-                Outcome::Lose
-            } else {
-                Outcome::Draw
-            }
+        self.result = match self.leader() {
+            Some(SIDE_P) => Outcome::Win,
+            Some(_) => Outcome::Lose,
+            None => Outcome::Draw,
         };
         self.say(match self.result {
             Outcome::Win => "Victory!",

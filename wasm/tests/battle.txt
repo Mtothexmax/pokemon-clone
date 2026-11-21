@@ -57,6 +57,9 @@ wait_for game_state.state.battle.voice == "assets/voices/7e9bc202.ogg" 4000
 expect ui.slots.bt_top contains Lumi
 expect ui.slots.bt_bottom contains ENERGY
 expect ui.slots.bt_over contains Tap a card
+# nothing on the table yet: a dead heat, both badges say Tie
+expect game_state.state.battle.rank == "tie"
+expect ui.slots.bt_bottom contains >Tie<
 wait_for game_state.state.battle.pictures >= 13 5000
 frames 30
 screenshot shots/battle-table.png
@@ -145,6 +148,16 @@ key Enter
 wait_for game_state.state.battle.turn == 6 6000
 wait_for game_state.state.battle.phase == "Plan" 6000
 expect game_state.state.battle.stakes >= 2
+# ---- the 1st / 2nd badges: whoever would lose now is 2nd. Lumi wins two locations, you one with far more power
+# (32 : 12, totals 32 : 25): locations count first, so you are 2nd ----
+call battle_cheat {"power": 30}
+frames 2
+expect game_state.state.battle.locations.0.power.0 >= 30
+expect game_state.state.battle.locations.1.power.1 > 0
+expect game_state.state.battle.locations.2.power.1 > 0
+expect game_state.state.battle.rank == "foe"
+expect ui.slots.bt_top contains >1st<
+expect ui.slots.bt_bottom contains >2nd<
 key Enter
 wait_for game_state.state.battle.phase == "Over" 8000
 expect game_state.state.battle.result == "Lose"
