@@ -16,6 +16,8 @@ frames 60
 expect game_state.state.hiding >= 1
 expect game_state.state.faded >= 1
 expect game_state.state.camera.2 > 15
+# solid fade: the faded lab is drawn as its front surface only (no inner bricks / back walls showing)
+expect stats.render.solid_fade_draws > 0
 screenshot shots/fade-lab.png
 # north of your house
 call teleport {"x": -15, "z": -18}

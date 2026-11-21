@@ -202,6 +202,10 @@ pub(crate) fn setup_look(ctx: &mut Ctx) {
     // LEGO plastic (with `PLASTIC_ROUGH` bricks): the sky's sheen and a rim on the sides away from the sun, not only
     // the sun's highlight (engine a928c1f)
     s.ambient_specular = AMBIENT_SPECULAR;
+    // a house or tree faded out between the camera and you (play.rs fader) shows only its front surface, like a
+    // picture with lowered alpha: blending every face showed the bricks inside the walls and the back walls
+    // through the front (engine 1d09788)
+    s.solid_fade = true;
     // the day/night cycle of the original: 6 minutes per day, starting in the morning. The engine
     // places the sun and moon and lights the scene; the sky and fog keep the original's flat colours
     // (day_colours, every frame)

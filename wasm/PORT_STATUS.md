@@ -327,6 +327,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   felt, card, cave, paper, rock, sand), rougher than 0.85, glowing, metal, water, unlit or transparent stay as they
   are: name new non-plastic materials accordingly. `setup_look` sets `ambient_specular` = `AMBIENT_SPECULAR` 0.8
   (sky sheen and rim).
+- Solid fade: `setup_look` sets `solid_fade` (engine 1d09788): a house / tree the fader (play.rs) turns see-through is
+  drawn as its front surface only, with lowered alpha (no inner bricks or back walls through it); test fade.txt
+  (`stats.render.solid_fade_draws`). Glass, water and render textures keep the blended path.
 - Phones: `phone_quality` sets `max_fps` = `PHONE_MAX_FPS` 45 (every 2nd refresh at 90 Hz: walking juddered with
   11 / 22 ms frames in turn); `Settings::update` lifts it on a display under 80 Hz; desktop steps set 0.
 
