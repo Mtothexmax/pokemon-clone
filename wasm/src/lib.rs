@@ -303,7 +303,8 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     let s = &mut ctx.renderer.settings;
     s.shadow_cascades = 2;
     s.shadow_distance = 30.0;
-    s.lod_bias = 3.0;
+    // (the engine multiplies the LOD switch distances by this: under 1 the simpler levels come sooner)
+    s.lod_bias = 0.6;
     s.depth_darkening = 0.0;
     s.bloom = false;
     s.water_ssr = false;

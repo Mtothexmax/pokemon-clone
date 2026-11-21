@@ -112,13 +112,14 @@ expect stats.render.triangles < 60000
 call stats
 call teleport {"x": -100, "z": -800}
 frames 100
+# (the toast lasts 2.6 s: checked before the slower checks below)
+expect game_state.state.toast contains Brickton
 expect game_state.state.hero.grounded == true
 expect game_state.state.island.ground_gap < 0.2
 expect game_state.state.island.ground_gap > -0.2
 screenshot shots/island-city-pad.png
 # ---- a pad is found by walking onto it: title, toast, its name on the map ----
 expect game_state.state.island.found == 1
-expect game_state.state.toast contains Brickton
 # ---- a cliff (2 risers of a brick and more) stops you; you only walk down it ----
 call teleport {"x": -66, "z": -999.5}
 frames 40

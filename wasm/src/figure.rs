@@ -73,7 +73,9 @@ impl Figure {
             let _ = ctx.world.insert_one(root, Parent(p));
         }
         let parts = std::array::from_fn(|i| {
-            let e = ctx.load_gltf(&format!("assets/minifig/{style}/{}.glb", PARTS[i]), Transform::from_translation(PIVOT[i]));
+            // (full detail always: the engine's clustered LOD levels misshape the small parts)
+            let opts = engine::gltf_loader::GltfOpts { auto_lod: false, ..Default::default() };
+            let e = ctx.load_gltf_with(&format!("assets/minifig/{style}/{}.glb", PARTS[i]), Transform::from_translation(PIVOT[i]), opts);
             let _ = ctx.world.insert_one(e, Parent(root));
             e
         });

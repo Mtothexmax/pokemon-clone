@@ -139,7 +139,8 @@ screenshot shots/dive-mid.png
 call dive {"yaw": 0, "pitch": 0}
 call input {"button": 0}
 call input {"dx": 100, "dy": -40}
-frames 1
+# (the drag is read by the next update: a held-back frame must not drop it)
+frames 3
 call input {"button": 0, "down": false}
 expect game_state.state.dive.yaw < -0.25
 expect game_state.state.dive.pitch > 0.1

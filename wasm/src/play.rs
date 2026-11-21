@@ -167,6 +167,8 @@ pub struct PlayScreen {
     cam_turns: bool,
     /// a PC camera tilted low (it sees far over the ground): every band and the island's far chunks are drawn
     cam_low: bool,
+    /// how low it is tilted (0 the fixed tilt or steeper .. 1 the lowest): the haze recedes
+    far_view: f32,
     // ---- the lab quest's dive (dive.rs, cave.rs) ----
     dive: Dive,
     /// > 0: you jumped into the pond with the suit and sink in (seconds; then the dive)
@@ -1301,9 +1303,15 @@ impl PlayScreen {
         // the camera (~16 m above you): halving the start put the whole village in milk on a phone
         if !self.dive.on {
             let k = self.life.rain_level;
+            // a PC camera tilted low looks far over the land: the haze starts later and thins (`far_view` 0 at the
+            // fixed tilt .. 1 lowest); the models far away are their simpler LOD levels
+            let fv = self.far_view;
             let s = &mut ctx.renderer.settings;
-            s.fog_density = 0.055 * (1.0 + 0.6 * k);
-            s.fog_start = 90.0 * STUD * (1.0 - 0.15 * k);
+            s.fog_density = 0.055 * (1.0 + 0.6 * k) * (1.0 - 0.6 * fv);
+            s.fog_start = 90.0 * STUD * (1.0 - 0.15 * k) * (1.0 + 2.2 * fv);
+            // (the graphics step's LOD bias, which multiplies the switch distances, divided by up to 3: the far trees
+            // switch to their simpler levels sooner)
+            s.lod_bias = [1.0, 0.75, 0.6][data.settings.applied.unwrap_or(0).min(2)] / (1.0 + 2.0 * fv);
         }
         self.life_view.frame(ctx, &self.life);
         self.golden_seen = data.save.data.golden_mask;
@@ -1390,9 +1398,10 @@ impl Screen<Data> for PlayScreen {
         if data.town.is_none() {
             data.town = Some(TownAssets::new(ctx));
         }
-        // the LEGO models are small and seen from 16 m: full detail (the engine's vertex-clustered LOD levels
-        // misshape the figures and pop while walking; a larger lod_distance never switches at this camera distance)
-        ctx.gltf_defaults.auto_lod = false;
+        // the props get the engine's LOD levels: from the play camera (~16 m) they stay at full detail (the first
+        // switch is at 40x a model's radius), a PC camera tilted low sees far and gets the simpler levels there. The
+        // minifigs keep full detail (figure.rs: the clustered levels misshape them)
+        ctx.gltf_defaults.auto_lod = true;
         let (solids, stats, occluders, tufts) = town::build(ctx, data.town.as_mut().unwrap());
         self.grass = crate::grass::Grass::new(tufts);
         self.fountain = crate::fountain::Fountain::spawn(ctx);
@@ -1555,6 +1564,8 @@ impl Screen<Data> for PlayScreen {
             }
             cam_yaw = c.yaw;
             self.cam_low = cam_free && c.pitch < CAM_LOW;
+            let fixed_tilt = CAM_OFFSET.y.atan2(CAM_OFFSET.z);
+            self.far_view = if cam_free { ((fixed_tilt - c.pitch) / (fixed_tilt - CAM_PITCH.0)).clamp(0.0, 1.0) } else { 0.0 };
         }
         let dt = ctx.time.fixed_dt;
         let space = ctx.input.key_down_or_pressed("Space");

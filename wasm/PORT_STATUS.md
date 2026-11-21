@@ -52,7 +52,7 @@ comes from.
 | module | what it does |
 |---|---|
 | `lib.rs` | `main`, `Data` (shared by all screens: save, sound, settings, town assets, card faces, card UI, battle art, the battle transition, the card game's seed), `Title`, `setup_look` (sky, fog, sun, shadows, plastic, solid fade, day cycle: `DAY_MINUTES` 6, `START_HOUR`), `day_colours`, `phone_quality`, `loadbar` (asset bar + plastic pass), `lcg`, `esc` |
-| `play.rs` | `PlayScreen`: the village, you (character controller + `Figure`), the villagers (`Npc`, kinematic capsules, markers), the top-down camera (`CAM_OFFSET`; phones: fixed, never turns; a PC turns and tilts it with the left or right mouse button, `cam_free` / `CAM_TURN` / `CAM_PITCH`, the keys walk the way it looks; tilted below `CAM_LOW` everything far is drawn), talking, doors and rooms, indoor light, the colour grade (`set_grade`, `DAY` / `NIGHT`, `NIGHT_FILL`), the pond and the dive hand-off, the gate, the HUD (help line, goal, prompt, toast, title, studs, markers, touch buttons), battles in and out, the debug commands |
+| `play.rs` | `PlayScreen`: the village, you (character controller + `Figure`), the villagers (`Npc`, kinematic capsules, markers), the top-down camera (`CAM_OFFSET`; phones: fixed, never turns; a PC turns and tilts it with the left or right mouse button, `cam_free` / `CAM_TURN` / `CAM_PITCH`, the keys walk the way it looks; tilted below `CAM_LOW` everything far is drawn; `far_view` pushes the fog back and divides `lod_bias`), talking, doors and rooms, indoor light, the colour grade (`set_grade`, `DAY` / `NIGHT`, `NIGHT_FILL`), the pond and the dive hand-off, the gate, the HUD (help line, goal, prompt, toast, title, studs, markers, touch buttons), battles in and out, the debug commands |
 | `town.rs` | the town built in code (chunks of bricks per colour, instanced studs, glTF props, roads, the pond, lamps, clouds, tall-grass tufts), `TownAssets` (meshes / materials made once, `deferred` Stonecrest models via `load_deferred`), `NPCS`, `GRASSES`, `ROADS`, `POND`, `LAMPS`, zones (`zone_at`, `ZONE_NAMES`), layers (`layer_at`, `bands_near`, `all_bands`), the gate spots |
 | `rooms.rs` (`town::rooms`) | the interiors far east (x >= 187): `RoomId`, `ROOMS`, `room_def`, `area_at`, `door_at`, `ROOM_NPCS` (Mom, Lumi, the lab Prof), `room_lights`, `MACHINE_SCREEN`, layers |
 | `north.rs` | `Town::build_north`: Route 1 (trail, creek + bridge, three grass patches, forest with LODs `FOREST_LOD`), Stonecrest (roads, six houses, the fountain's stone, castle), signs, walls |
@@ -87,6 +87,9 @@ comes from.
   it pops, `PlayScreen::resume` -> `battle_done` pays out (studs, EXP, reward packs, `rival_wins` / `pip_wins`) and
   opens the after-dialogue. `BattleScreen::pauses_below` is false. Call `data.loadbar(ctx)` every frame from any
   new screen.
+- **LOD:** props load with the engine's auto-LOD (`gltf_defaults.auto_lod`), minifig parts never (figure.rs). `lod_bias`
+  multiplies the switch distances (bigger = more detail): desktop 1.0, medium 0.75, phones 0.6; a low PC camera divides
+  it by up to 3.
 - **Save:** the ☰ menu's SAVE GAME row exports the whole `GameSave` as a JSON download and imports one through the
   file picker (`savefile.rs`: refused unless it is a save; applied, written, page reloaded).
   Add fields to `save::GameSave` (serde default), change them, `data.save.mark()`. `save_reset` keeps
@@ -152,7 +155,7 @@ Drive cards with touch input (`input {touch}`), not the mouse.
 |---|---|
 | camera_turn | the PC camera: the mouse alone doesn't turn it, left / right button drags turn and tilt it, W walks the way it looks |
 | savefile | the menu's Export / Import row, export JSON, an import persists over a reload, non-saves refused |
-| smoke, town | the village loads, walking, jumping, collision, studs, LODs (`lods_village == 0`) |
+| smoke, town | the village loads, walking, jumping, collision, studs, LODs (props have them: `lods_village > 0`; minifigs never) |
 | touch, phone_start, swipe | the stick, Jump, the phone profile from the first frame, swipe walking |
 | menu | sound, the ☰ menu, graphics steps |
 | dialog, life, village, seek, npc_block, goal | dialogues + voices, Pip and village life, hide and seek / tag, solid villagers, the quest chain |
