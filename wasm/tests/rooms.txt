@@ -147,7 +147,7 @@ down KeyW
 wait_for game_state.state.area == "Lab" 3000
 up KeyW
 frames 30
-expect game_state.state.room_lights_on == 8
+expect game_state.state.room_lights_on == 9
 expect game_state.state.machine == "missing"
 call teleport {"x": 333, "z": 1.8}
 frames 20

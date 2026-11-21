@@ -104,6 +104,10 @@ pub fn room_lights(id: RoomId) -> Vec<(Vec3, f32)> {
             v.push((Vec3::new(r.ox - r.w * 0.5 + r.w * (c as f32 + 0.5) / cols as f32, 10.0, r.oz + r.d * z), k));
         }
     }
+    // the lab's right side (the dark machines along the east wall): one more, lower, by that wall
+    if id == RoomId::Lab {
+        v.push((Vec3::new(r.ox + r.w * 0.4, 8.0, r.oz), 0.9));
+    }
     v
 }
 
