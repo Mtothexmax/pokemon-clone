@@ -16,6 +16,9 @@ expect game_state.state.hero.grounded == true
 # the props have the engine's LOD levels (a PC camera tilted low sees far); the minifigs stay at full detail
 expect game_state.state.lods_village > 0
 expect game_state.state.lods_left > 0
+# far away: the bricks have HLOD cells (one simplified mesh each), the trees impostors (one baked card each)
+expect game_state.state.town.hlods > 0
+expect game_state.state.town.hlod_triangles > 100
 expect game_state.state.hero.x ~= -15
 expect game_state.state.hero.z ~= -2.5
 

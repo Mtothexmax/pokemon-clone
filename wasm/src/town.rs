@@ -22,6 +22,10 @@ pub const STUD: f32 = 0.38;
 const STUD_H: f32 = 0.17;
 const STUD_R: f32 = 0.3;
 const CHUNK: f32 = 32.0;
+/// The HLOD cells of the village's bricks (m; two chunks) and the camera distance beyond which a cell is its one
+/// simplified mesh (m from the cell's centre, times the LOD distance scale).
+const HLOD_CELL: f32 = 2.0 * CHUNK * STUD;
+const HLOD_DISTANCE: f32 = 60.0;
 
 // the LEGO palette (sRGB)
 pub const C_GREEN: u32 = 0x4b9f4a;
@@ -219,6 +223,9 @@ pub struct TownStats {
     pub colliders: usize,
     pub colours: usize,
     pub occluders: usize,
+    /// the HLOD cells of the bricks and their triangles
+    pub hlods: usize,
+    pub hlod_triangles: usize,
 }
 
 /// Something tall that fades out while it hides the hero (see `fade.rs`).
@@ -1217,14 +1224,34 @@ pub fn load_deferred(ctx: &mut Ctx, assets: &mut TownAssets) -> usize {
     }
     let list = std::mem::take(&mut assets.deferred);
     for (root, path, lod) in &list {
-        let opts = engine::gltf_loader::GltfOpts { auto_lod: *lod > 0.0, lod_distance: if *lod > 0.0 { *lod } else { 1.0 }, ..Default::default() };
-        let opts = if *lod > 0.0 { opts } else { ctx.gltf_defaults };
+        let opts = prop_opts(ctx, path, *lod);
         let e = ctx.load_gltf_with(path, Transform::default(), opts);
         let _ = ctx.world.insert_one(e, Parent(*root));
         let layer = ctx.world.get::<&engine::scene::RenderLayer>(*root).map(|l| l.0).unwrap_or(0);
         ctx.set_layer(e, layer);
     }
     list.len()
+}
+
+/// A tree model (the forests round the village: most of what a PC camera tilted low draws).
+pub fn is_tree(path: &str) -> bool {
+    ["tree", "spruce", "cypress", "pine", "palm", "bush"].iter().any(|k| path.contains(k))
+}
+
+/// How far (times the model's radius) a tree stays a model: beyond, it is the engine's impostor, one baked card
+/// (2 triangles, lit with baked normals, turned toward the camera). 60 x radius is ~20 px on a 1350 px PC view.
+pub const TREE_IMPOSTOR: f32 = 30.0;
+
+/// The load options of a prop: its engine LOD levels (`lod` > 0: their switch distance), trees also an impostor.
+fn prop_opts(ctx: &Ctx, path: &str, lod: f32) -> engine::gltf_loader::GltfOpts {
+    let mut o = if lod > 0.0 { engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: lod, ..Default::default() } } else { ctx.gltf_defaults };
+    if is_tree(path) {
+        o.impostor = true;
+        o.impostor_distance = TREE_IMPOSTOR;
+        o.impostor_views = 8;
+        o.impostor_res = 128;
+    }
+    o
 }
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
@@ -1360,6 +1387,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
 
     // ---- the bricks, chunk by chunk, one part per colour ----
     let chunks = std::mem::take(&mut t.chunks);
+    let bricks = ctx.world.spawn((Transform::default(), Name("town bricks".into())));
     for ((cx, cz, chunk_layer), mb) in chunks {
         stats.triangles += mb.triangle_count();
         let parts = mb.finish();
@@ -1373,8 +1401,14 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             .collect();
         let e = ctx.spawn_parts(&format!("town chunk {cx},{cz} (layer {chunk_layer})"), &parts, |p| mats[p], Transform::default());
         ctx.set_layer(e, chunk_layer);
+        let _ = ctx.world.insert_one(e, Parent(bricks));
         stats.chunks += 1;
     }
+    // far away (a PC camera tilted low) each cell of bricks is one simplified mesh (the engine's HLOD: vertices
+    // clustered at a stud, the colours baked in): the near cells keep their bricks
+    let rep = ctx.batch_static_with(bricks, HLOD_CELL, Some(engine::batch::Hlod { distance: HLOD_DISTANCE, cluster: STUD }));
+    stats.hlods = rep.hlods;
+    stats.hlod_triangles = rep.hlod_triangles;
 
     // ---- buildings: their own meshes, so they can fade while they hide the hero ----
     let mut occluders = vec![];
@@ -1442,13 +1476,12 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             let root = ctx.world.spawn((t, Name(format!("later:{}", p.path))));
             assets.deferred.push((root, p.path.clone(), p.lod));
             root
-        } else if p.lod > 0.0 {
-            ctx.load_gltf_with(&p.path, t, engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: p.lod, ..Default::default() })
         } else {
-            ctx.load_gltf(&p.path, t)
+            let opts = prop_opts(ctx, &p.path, p.lod);
+            ctx.load_gltf_with(&p.path, t, opts)
         };
         ctx.set_layer(root, if p.area < 0 { layer_at(p.pos.x / STUD, p.pos.z / STUD) } else { layer(p.area) });
-        if p.path.contains("tree") || p.path.contains("spruce") || p.path.contains("cypress") || p.path.contains("pine") || p.path.contains("castle") {
+        if is_tree(&p.path) || p.path.contains("castle") {
             occluders.push(OccluderSpec::Model { root });
         }
     }

@@ -52,7 +52,7 @@ comes from.
 | module | what it does |
 |---|---|
 | `lib.rs` | `main`, `Data` (shared by all screens: save, sound, settings, town assets, card faces, card UI, battle art, the battle transition, the card game's seed), `Title`, `setup_look` (sky, fog, sun, shadows, plastic, solid fade, day cycle: `DAY_MINUTES` 6, `START_HOUR`), `day_colours`, `phone_quality`, `loadbar` (asset bar + plastic pass), `lcg`, `esc` |
-| `play.rs` | `PlayScreen`: the village, you (character controller + `Figure`), the villagers (`Npc`, kinematic capsules, markers), the top-down camera (`CAM_OFFSET`; phones: fixed, never turns; a PC turns and tilts it with the left or right mouse button, `cam_free` / `CAM_TURN` / `CAM_PITCH`, the keys walk the way it looks; tilted below `CAM_LOW` everything far is drawn; `far_view` pushes the fog back and divides `lod_bias`), talking, doors and rooms, indoor light, the colour grade (`set_grade`, `DAY` / `NIGHT`, `NIGHT_FILL`), the pond and the dive hand-off, the gate, the HUD (help line, goal, prompt, toast, title, studs, markers, touch buttons), battles in and out, the debug commands |
+| `play.rs` | `PlayScreen`: the village, you (character controller + `Figure`), the villagers (`Npc`, kinematic capsules, markers), the top-down camera (`CAM_OFFSET`; phones: fixed, never turns; a PC turns and tilts it with the left or right mouse button, `cam_free` / `CAM_TURN` / `CAM_PITCH`, the keys walk the way it looks; tilted below `CAM_LOW` everything far is drawn; `far_view` pushes the fog back and divides `lod_distance_scale` and raises `view_distance`), talking, doors and rooms, indoor light, the colour grade (`set_grade`, `DAY` / `NIGHT`, `NIGHT_FILL`), the pond and the dive hand-off, the gate, the HUD (help line, goal, prompt, toast, title, studs, markers, touch buttons), battles in and out, the debug commands |
 | `town.rs` | the town built in code (chunks of bricks per colour, instanced studs, glTF props, roads, the pond, lamps, clouds, tall-grass tufts), `TownAssets` (meshes / materials made once, `deferred` Stonecrest models via `load_deferred`), `NPCS`, `GRASSES`, `ROADS`, `POND`, `LAMPS`, zones (`zone_at`, `ZONE_NAMES`), layers (`layer_at`, `bands_near`, `all_bands`), the gate spots |
 | `rooms.rs` (`town::rooms`) | the interiors far east (x >= 187): `RoomId`, `ROOMS`, `room_def`, `area_at`, `door_at`, `ROOM_NPCS` (Mom, Lumi, the lab Prof), `room_lights`, `MACHINE_SCREEN`, layers |
 | `north.rs` | `Town::build_north`: Route 1 (trail, creek + bridge, three grass patches, forest with LODs `FOREST_LOD`), Stonecrest (roads, six houses, the fountain's stone, castle), signs, walls |
@@ -87,9 +87,14 @@ comes from.
   it pops, `PlayScreen::resume` -> `battle_done` pays out (studs, EXP, reward packs, `rival_wins` / `pip_wins`) and
   opens the after-dialogue. `BattleScreen::pauses_below` is false. Call `data.loadbar(ctx)` every frame from any
   new screen.
-- **LOD:** props load with the engine's auto-LOD (`gltf_defaults.auto_lod`), minifig parts never (figure.rs). `lod_bias`
-  multiplies the switch distances (bigger = more detail): desktop 1.0, medium 0.75, phones 0.6; a low PC camera divides
-  it by up to 3.
+- **LOD:** props load with the engine's auto-LOD (`gltf_defaults.auto_lod`), minifig parts never (figure.rs).
+  `lod_distance_scale` multiplies the switch distances (bigger = more detail): desktop 1.0, medium 0.75, phones 0.6; a
+  low PC camera divides it by up to 3.
+- **Far view:** trees (`town::is_tree`) are also engine impostors (`prop_opts`: one baked card beyond
+  `TREE_IMPOSTOR` 30 x their radius, 8 views, 128 px); the village's bricks are batched under "town bricks" with an
+  HLOD per 24 m cell (`HLOD_CELL`, beyond `HLOD_DISTANCE` 60 m, clustered at a stud; `town.hlods`). `view_distance`
+  120 m at the fixed tilt .. 260 m at the lowest PC tilt (`VIEW_NEAR` / `VIEW_FAR`, faded into the haze). Village,
+  PC camera lowest: 656k -> 197k triangles; the top-down views (PC and phone) show no cards.
 - **Save:** the ☰ menu's SAVE GAME row exports the whole `GameSave` as a JSON download and imports one through the
   file picker (`savefile.rs`: refused unless it is a save; applied, written, page reloaded).
   Add fields to `save::GameSave` (serde default), change them, `data.save.mark()`. `save_reset` keeps

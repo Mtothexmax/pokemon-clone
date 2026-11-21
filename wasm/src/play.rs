@@ -257,6 +257,10 @@ const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot
 const HELP_S: f32 = 9.0;
 /// How often where you stand goes into the save (seconds).
 const PLACE_EVERY: f32 = 2.0;
+/// How far geometry is drawn (m): from the fixed tilt (~16 m above you, the screen's top edge some 80 m away) to the
+/// lowest PC tilt (`far_view` 1, the haze thin).
+const VIEW_NEAR: f32 = 120.0;
+const VIEW_FAR: f32 = 260.0;
 /// How fast a mouse drag turns the PC camera (radians per CSS px), and how far it tilts (pitch, radians: 0.3 low
 /// over the ground .. 1.45 nearly straight down; the fixed view is atan(32 / 17) = 1.08).
 const CAM_TURN: f32 = 0.005;
@@ -1351,6 +1355,9 @@ impl PlayScreen {
             // (the graphics step's LOD bias, which multiplies the switch distances, divided by up to 3: the far trees
             // switch to their simpler levels sooner)
             s.lod_distance_scale = [1.0, 0.75, 0.6][data.settings.applied.unwrap_or(0).min(2)] / (1.0 + 2.0 * fv);
+            // (and nothing beyond the view distance is drawn: the land there fades into the haze over its last fifth)
+            s.view_distance = VIEW_NEAR + (VIEW_FAR - VIEW_NEAR) * fv;
+            s.view_fade = 0.2;
         }
         self.life_view.frame(ctx, &self.life);
         self.golden_seen = data.save.data.golden_mask;
