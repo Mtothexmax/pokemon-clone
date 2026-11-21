@@ -293,6 +293,15 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   `head_flat.glb` (the flat-shaded original, the source: change that one and rerun). `Figure::want_detail` loads it once (out of sight) and makes
   it LOD 0 of the head within `HI_DIST` 3 m (matched by material name); play.rs calls it for villagers within 4 m
   and the one you talk to; `game_state.state.fine_heads`.
+- HUD: the help line (`KEYS_HELP` / `TOUCH_HELP` / `SWIPE_HELP`, no place name) shows `HELP_S` 9 s at the start or
+  after a controls change and fades (CSS `bh-help`); the place is the `title` at the top (also at the start).
+  `PlayScreen::talking()` (dialog, screen, close-up): no touch buttons, no stick.
+- Grade (engine 2466128): `play::set_grade` blends `DAY` (slightly warm) to `NIGHT` (the engine's "night" preset values)
+  by the night outside, grain `NIGHT_GRAIN` 0.22 x night; the battle resets both.
+- Battle: the opponent's fanned hand in one tilted plane, `AI_HAND_GAP` 0.024 along the normal (they cut through each
+  other and z-fought; battle_touch.txt expects `zfight{center BASE, radius 8}.pairs == 0`); your cards you cannot pay
+  for are dimmed (`TableArt::face_mat_dim`, `hand[].dim`); the "+1" labels' CSS with `#ui` (the engine's dark label
+  pill stayed behind as a black dash). Your front door's flowers have no pots.
 - Weather / night: rain haze `fog_density` x (1 + 0.6 rain), `fog_start` x (1 - 0.15 rain) (the old 1.5 / 0.5 put the
   village in milk under the 16 m camera); at night outside `ambient_scale` x (1 + `NIGHT_FILL` 1.4 x night); street
   lamps 8 x night, range 24 studs.

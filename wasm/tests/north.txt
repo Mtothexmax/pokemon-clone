@@ -90,7 +90,7 @@ expect game_state.state.gate_stops == 3
 expect game_state.state.hero.z < -27
 expect game_state.state.zone == "Route 1"
 expect game_state.state.title == "Route 1"
-expect ui.slots.help contains Route 1
+expect ui.slots.title contains Route 1
 # ---- the route sign ----
 call teleport {"x": 5.5, "z": -47}
 frames 10
@@ -158,7 +158,7 @@ up KeyW
 frames 5
 expect game_state.state.zone == "Stonecrest"
 expect game_state.state.title == "Welcome to Stonecrest!"
-expect ui.slots.help contains Stonecrest
+expect ui.slots.title contains Stonecrest
 call teleport {"x": 5.5, "z": -106.5}
 frames 10
 expect game_state.state.nearby == "the town sign"

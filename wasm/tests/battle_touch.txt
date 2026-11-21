@@ -21,6 +21,10 @@ expect game_state.state.battle.hand.0.screen.1 > 650
 expect game_state.state.battle.locations.0.screen.1 < 400
 expect ui.slots.bt_bottom contains phone
 screenshot shots/battle-touch.png
+# no z-fighting on the table (the opponent's fanned hand once flickered: cards 1.6 mm apart through each other)
+pause
+expect zfight{"center": [0, 0, 900], "radius": 8}.pairs == 0
+resume
 # ---- tap Quickhop: the big card, "Play to:" ----
 call input {"touch": {"id": 1, "x": 63, "y": 708, "phase": "start"}}
 frames 2

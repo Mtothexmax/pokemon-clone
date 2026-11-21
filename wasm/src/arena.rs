@@ -59,6 +59,9 @@ pub struct Transition {
     pub opponent: &'static str,
 }
 
+/// The opponent's fanned cards: the step between two along the card normal (metres; a card is ~1 cm thick).
+const AI_HAND_GAP: f32 = 0.024;
+
 /// Starts the way into a battle (the intro fanfare, the bricks).
 pub fn start_transition(ctx: &mut Ctx, data: &mut Data, kind: BattleKind) {
     let opponent = match kind {
@@ -195,9 +198,9 @@ pub const STYLE: &str = "<style>
 .bt-endp h2{margin:0;font-size:44px;font-weight:900}.bt-endp h2.win{color:#fde047;text-shadow:0 0 18px rgba(253,224,71,.6)}
 .bt-sc{display:flex;gap:18px}.bt-sc div{display:flex;flex-direction:column;align-items:center;gap:2px}.bt-sc small{font-size:12px;opacity:.8}.bt-sc b{font-size:24px}.bt-sc i{font-style:normal;font-size:20px;font-weight:900}
 .bt-studs{display:flex;gap:8px;align-items:center;font-size:20px;font-weight:700}.bt-studs i{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff3a8,#d9a300)}
-.world-label.bt-fx{background:none;padding:0;pointer-events:none}
-.bt-fx span{display:block;transform:translateY(50%);font-size:26px;font-weight:900;color:#fff;text-shadow:0 0 6px #000,0 2px 0 #000}
-.bt-fx span.up{color:#8dff6a}.bt-fx span.dn{color:#ff6a5a}
+#ui .world-label.bt-fx{background:none;padding:0;border-radius:0;pointer-events:none}
+#ui .bt-fx span{display:block;transform:translateY(50%);font-size:26px;font-weight:900;color:#fff;text-shadow:0 0 6px #000,0 2px 0 #000}
+#ui .bt-fx span.up{color:#8dff6a}#ui .bt-fx span.dn{color:#ff6a5a}
 </style>";
 
 // ---------------------------------------------------------------- the 3D objects
@@ -307,6 +310,8 @@ struct CardObj {
     badge: Entity,
     glow: Entity,
     face_now: Option<Face>,
+    /// the face shows dimmed (not enough energy)
+    dim: bool,
     face_shown: bool,
     badge_now: Option<(usize, i32)>,
     glow_now: Option<MaterialId>,
@@ -746,6 +751,7 @@ impl BattleScreen {
             badge,
             glow,
             face_now: None,
+            dim: false,
             face_shown: false,
             badge_now: None,
             glow_now: Some(gold),
@@ -969,8 +975,12 @@ impl BattleScreen {
             }
             let off = i as f32 - (n as f32 - 1.0) * 0.5;
             let sp = (l.bw * 0.62).min(2.6 / n.max(1) as f32);
-            let pos = l.ai_hand() + Vec3::new(off * sp, -off.abs() * 0.01, off.abs() * 0.02 - i as f32 * 0.002) + Vec3::Y * (i as f32 * 0.004);
-            let rot = Quat::from_rotation_y(off * 0.06) * Quat::from_rotation_x(-FRAC_PI_2 + 0.5) * Quat::from_rotation_z(off * 0.05);
+            // fanned in one tilted plane (a turn about the card's normal only) and each card AI_HAND_GAP above the one
+            // before along that normal: turned about the vertical as well, neighbours cut through each other and
+            // 4 mm apart they flickered on phones (depth precision at the table's distance)
+            let rot = Quat::from_rotation_x(-FRAC_PI_2 + 0.5) * Quat::from_rotation_z(off * 0.05);
+            let normal = rot * Vec3::Z;
+            let pos = l.ai_hand() + Vec3::new(off * sp, -off.abs() * 0.01, off.abs() * 0.02) + normal * (i as f32 * AI_HAND_GAP);
             return (Place::Hand(i, n), Pose { pos, rot, flip: PI, scale: l.bw * 0.9 });
         }
         if let Some(i) = b.deck[side].iter().position(|&d| d == ci) {
@@ -1587,14 +1597,17 @@ impl BattleScreen {
         } else {
             None
         };
+        // your cards in hand that cost more energy than you have left: dimmed (`TableArt::face_mat_dim`)
+        let dim = c.owner == SIDE_P && c.zone < 0 && plan && !b.playable(ci);
         // apply
-        if self.cards[ci].face_now != Some(face) && show_face {
+        if (self.cards[ci].face_now != Some(face) || self.cards[ci].dim != dim) && show_face {
             if let Some(t) = data.faces.texture(ctx, face) {
-                let m = data.art.face_mat(ctx, t);
+                let m = if dim { data.art.face_mat_dim(ctx, t) } else { data.art.face_mat(ctx, t) };
                 if let Ok(mut mr) = ctx.world.get::<&mut MeshRenderer>(self.cards[ci].face) {
                     mr.material = m;
                 }
                 self.cards[ci].face_now = Some(face);
+                self.cards[ci].dim = dim;
             }
         }
         let o = &mut self.cards[ci];
@@ -2234,6 +2247,7 @@ impl BattleScreen {
             let mut v = card(ci);
             v["playable"] = json!(b.playable(ci));
             v["cost"] = json!(cards::card(b.c[ci].id).cost);
+            v["dim"] = json!(self.cards[ci].dim);
             v["screen"] = json!(self.cards.get(ci).and_then(|o| self.screen_of(ctx, o.pose.pos)));
             v
         })
@@ -2319,6 +2333,9 @@ impl Screen<Data> for BattleScreen {
         s.sun_intensity = 3.2;
         s.sun_scale = 1.0;
         s.ambient_scale = 1.0;
+        // the table is lit the same at any hour: no night grade or grain from the village
+        s.grade = Default::default();
+        s.grain = 0.0;
         s.daylight_intensity = 1.0;
         s.atmosphere_intensity = 1.0;
         s.sky_color = engine::renderer::srgb_hex(0xdfeaff).truncate() * 0.6;

@@ -18,6 +18,8 @@ use web_sys::{CanvasRenderingContext2d as C2d, HtmlCanvasElement, HtmlImageEleme
 /// The printed cards' tint (linear): the sun (3.2) plus the sky light took a white card face past white (washed-out
 /// art, a glow from the bloom); a little darker, the prints keep their colours.
 const CARD_TINT: Vec4 = Vec4::new(0.72, 0.72, 0.72, 1.0);
+/// A card you cannot pay for (in your hand): much darker, a little blue-grey.
+const CARD_DIM: Vec4 = Vec4::new(0.17, 0.18, 0.21, 1.0);
 
 /// Card slab: width 1 (scale the entity by the card's width), height 1.4, this thick (local units).
 pub const CARD_H: f32 = 1.4;
@@ -60,6 +62,7 @@ pub struct TableArt {
     pub back_mat: Option<MaterialId>,
     /// materials of textured faces (cards, tiles), per texture
     face_mats: HashMap<TextureId, MaterialId>,
+    face_mats_dim: HashMap<TextureId, MaterialId>,
     num_tex: Option<TextureId>,
     pub num_mat: Option<MaterialId>,
     num_meshes: HashMap<(usize, i32), MeshId>,
@@ -288,6 +291,11 @@ impl TableArt {
     }
 
     /// The material of a textured face (cards, tiles; opaque, double-sided for the shards).
+    /// A card face dimmed (in your hand, too expensive for the energy left).
+    pub fn face_mat_dim(&mut self, ctx: &mut Ctx, tex: TextureId) -> MaterialId {
+        *self.face_mats_dim.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face dim".into(), texture: Some(tex), double_sided: true, base_color: CARD_DIM, ..Material::color(0xffffff).rough(0.6) }))
+    }
+
     pub fn face_mat(&mut self, ctx: &mut Ctx, tex: TextureId) -> MaterialId {
         *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face".into(), texture: Some(tex), double_sided: true, base_color: CARD_TINT, ..Material::color(0xffffff).rough(0.6) }))
     }

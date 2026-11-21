@@ -988,7 +988,11 @@ impl Town {
         for f in [[8.0, -9.5], [8.0, -16.0], [22.0, -16.0]] {
             self.flower(f[0], f[1], C_ORANGE, 0.0);
         }
-        for p in [[-11.8, -4.3], [-22.5, -4.3], [23.5, 12.0], [55.5, -4.6]] {
+        // (by your own front door the flowers stand without their pots; the others keep them)
+        for p in [[-11.8, -4.3], [-22.5, -4.3]] {
+            self.flower_pot(p[0], p[1], false);
+        }
+        for p in [[23.5, 12.0], [55.5, -4.6]] {
             self.flower_pot(p[0], p[1], true);
         }
         // crates by the lab

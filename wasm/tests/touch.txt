@@ -40,6 +40,9 @@ frames 20
 expect game_state.state.dialog.id == "Dex"
 expect ui.slots.dialog contains tap to continue
 wait_for game_state.state.talk_cam == 1 3000
+# talking: no Jump / Use buttons and no stick (tap the dialog to go on)
+expect ui.slots.touch == ""
+expect game_state.state.stick == false
 screenshot shots/touch-dialog.png
 action use
 frames 5
@@ -48,8 +51,8 @@ action use
 frames 5
 expect game_state.state.dialog == null
 call teleport {"x": -10, "z": 0.5}
-frames 20
-expect ui.slots.touch contains >Jump<
+# (the camera comes back from the close-up first)
+wait_for ui.slots.touch contains >Jump< 3000
 expect game_state.state.nearby == null
 # the ☰ button opens the menu on phones too, and closes it
 action menu

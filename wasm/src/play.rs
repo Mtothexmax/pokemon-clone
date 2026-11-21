@@ -34,6 +34,28 @@ const INDOOR_SUN: f32 = 0.04;
 /// A room lamp's intensity (`rooms::room_lights`: 6 to 8 per room, soft and even).
 const ROOM_LAMP: f32 = 6.0;
 const INDOOR_SKY: f32 = 0.45;
+/// The colour grade (display space after tonemapping, engine 2466128): a little warm by day (`DAY`), the engine's
+/// "night" preset's values at night (`NIGHT`), blended by the night; `NIGHT_GRAIN` film grain at night.
+/// (temperature, tint, lift, gain, contrast, saturation)
+struct Look(f32, f32, [f32; 3], [f32; 3], f32, f32);
+const DAY: Look = Look(0.12, 0.02, [0.0, 0.0, 0.0], [1.01, 1.0, 0.98], 1.04, 1.0);
+const NIGHT: Look = Look(-0.5, 0.0, [0.0, 0.01, 0.04], [0.92, 0.95, 1.05], 1.0, 0.85);
+const NIGHT_GRAIN: f32 = 0.22;
+
+/// Sets the grade between `DAY` and `NIGHT` (k 0..1).
+fn set_grade(s: &mut engine::renderer::RenderSettings, k: f32) {
+    let f = |x: f32, y: f32| x + (y - x) * k;
+    let v = |x: [f32; 3], y: [f32; 3]| [f(x[0], y[0]), f(x[1], y[1]), f(x[2], y[2])];
+    let g = &mut s.grade;
+    g.temperature = f(DAY.0, NIGHT.0);
+    g.tint = f(DAY.1, NIGHT.1);
+    g.lift = v(DAY.2, NIGHT.2);
+    g.gain = v(DAY.3, NIGHT.3);
+    g.contrast = f(DAY.4, NIGHT.4);
+    g.saturation = f(DAY.5, NIGHT.5);
+    s.grain = NIGHT_GRAIN * k;
+}
+
 /// At night outside the sky light is (1 + this) times the day cycle's (too dark away from the lamps on a phone).
 const NIGHT_FILL: f32 = 1.4;
 
@@ -133,6 +155,8 @@ pub struct PlayScreen {
     /// a fight in the tall grass holds you (you only step back to watch it)
     fight: bool,
     help_hidden: bool,
+    /// seconds the help line has been up (`HELP_S`: gone)
+    help_t: f32,
     // ---- the lab quest's dive (dive.rs, cave.rs) ----
     dive: Dive,
     /// > 0: you jumped into the pond with the suit and sink in (seconds; then the dive)
@@ -189,16 +213,21 @@ const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "s
 
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
-/// (the heading is the zone you are in: Kaigen `g_hud_place`)
-const TOUCH_HELP: &str = "<div class='panel bh-thelp'><b>{place}</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
-const SWIPE_HELP: &str = "<div class='panel bh-thelp'><b>{place}</b><br>swipe: walk that way &middot; tap: stop &middot; two fingers: zoom</div>";
-const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
+/// Shown when the game starts (or the controls change) and faded out after `HELP_S`; where you are is the title at the
+/// top (`title`, also at the start).
+const TOUCH_HELP: &str = "<div class='panel bh-thelp bh-help'>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
+const SWIPE_HELP: &str = "<div class='panel bh-thelp bh-help'>swipe: walk that way &middot; tap: stop &middot; two fingers: zoom</div>";
+const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
+/// Seconds the help line stays (it fades out over its last 1.2 s, CSS `bh-help`).
+const HELP_S: f32 = 9.0;
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
 
 /// The game's HUD styles (dialog box, goal pill, markers, prompt, toast, the menu), in a style slot.
 pub const STYLE: &str = "<style>
 #ui [data-slot=help]{position:fixed;left:16px;bottom:16px}
+#ui .bh-help{animation:bhhelp 1.2s ease 7.8s forwards}
+@keyframes bhhelp{to{opacity:0;transform:translateY(8px)}}
 /* touch: the place and hints stay left of the Use and Jump buttons (2 x 84 px from 20 px on the right) */
 #ui .bh-thelp{max-width:calc(100vw - 236px);box-sizing:border-box;font-size:12px;line-height:1.35}
 #ui [data-slot=goal]{position:fixed;left:14px;top:14px;max-width:calc(100vw - 90px)}
@@ -260,10 +289,12 @@ pub const STYLE: &str = "<style>
 </style>";
 
 impl PlayScreen {
-    /// The help line (keys or touch) under the zone's name (Brickhollow / Route 1 / Stonecrest).
+    /// The help line (keys or touch) while it is shown (`help_t` < `HELP_S`), else nothing.
     fn help(&self) -> String {
-        let place = if self.area.is_some() { "Brickhollow" } else { town::ZONE_NAMES[self.zone] };
-        (if self.swipe_mode { SWIPE_HELP } else if self.touch_ui { TOUCH_HELP } else { KEYS_HELP }).replace("{place}", place)
+        if self.help_t >= HELP_S {
+            return String::new();
+        }
+        (if self.swipe_mode { SWIPE_HELP } else if self.touch_ui { TOUCH_HELP } else { KEYS_HELP }).to_string()
     }
 
     /// Outside: the zone you walk into gets its title (three.js `zoneLabel` toast, Kaigen `world_doors`), the help
@@ -279,9 +310,6 @@ impl PlayScreen {
             self.zone = zone;
             self.title = ["Back in Brickhollow", "Route 1", "Welcome to Stonecrest!"][zone];
             self.title_t = 3.5;
-            if !self.help_hidden {
-                ctx.ui.set("help", &self.help());
-            }
         }
         let bands = if self.zoom.active || self.fight || self.vox.cam_on { town::all_bands() } else { town::bands_near(z, 30.0, 40.0) };
         if bands != self.bands {
@@ -447,7 +475,8 @@ impl PlayScreen {
             }
         }
         self.title = self.area.map(|r| rooms::room_def(r).label).unwrap_or(town::ZONE_NAMES[self.zone]);
-        self.title_t = if first && self.area.is_none() { 0.0 } else { 3.5 };
+        // (also at the start: where you are, at the top, then it fades)
+        self.title_t = if first { 4.5 } else { 3.5 };
     }
 
     /// Doors and stairs: walking into one fades out, moves you, fades in (Kaigen `world_doors`).
@@ -496,6 +525,8 @@ impl PlayScreen {
         let s = &mut ctx.renderer.settings;
         s.sun_scale = 1.0 + (INDOOR_SUN - 1.0) * k;
         s.ambient_scale = (1.0 + (INDOOR_SKY - 1.0) * k) * (1.0 + NIGHT_FILL * night);
+        // colour grading: a little warm by day, blue and a touch of film grain at night outside
+        set_grade(s, night);
     }
 
     fn npc_index(&self, id: &str) -> Option<usize> {
@@ -811,12 +842,18 @@ impl PlayScreen {
         data.settings.applied = None;
     }
 
+    /// A dialog, a screen (computer, TV) or a close-up has the screen: no walking controls.
+    fn talking(&self) -> bool {
+        self.dlg.is_open() || self.scr.is_open() || self.zoom.active
+    }
+
     /// The touch buttons: Use only in reach of someone or in a dialog (Kaigen touch button 0).
     fn touch_buttons(&self, ctx: &mut Ctx, cards_busy: bool) {
         if !self.touch_ui {
             return;
         }
-        if cards_busy || self.fight {
+        // talking, at a computer / the TV, a close-up: tap the dialog or the screen, no Jump or Use (nor the stick)
+        if cards_busy || self.fight || self.talking() {
             // (a fight: its own buttons only, no Jump and Use: Kaigen 8cf909e)
             ctx.ui.set("touch", "");
             return;
@@ -1329,9 +1366,17 @@ impl Screen<Data> for PlayScreen {
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
         data.loadbar(ctx);
+        // the help line fades out (CSS) and goes
+        if self.help_t < HELP_S {
+            self.help_t += dt;
+            if self.help_t >= HELP_S {
+                ctx.ui.set("help", "");
+            }
+        }
         // phones: once a finger touched the screen, swap the keyboard hints for touch hints and buttons
         if ctx.input.touch.touch_device && !self.touch_ui {
             self.touch_ui = true;
+            self.help_t = 0.0; // the touch controls: shown once more
             ctx.ui.set("help", &self.help());
             data.settings.touch = true; // Auto: the phone profile
         }
@@ -1455,12 +1500,13 @@ impl Screen<Data> for PlayScreen {
         let swipe_mode = self.touch_ui && data.save.data.touch_mode == 0;
         if swipe_mode != self.swipe_mode {
             self.swipe_mode = swipe_mode;
+            self.help_t = 0.0;
             if !self.help_hidden {
                 ctx.ui.set("help", &self.help());
             }
         }
         if !self.fight && !self.dive.on {
-            let want_stick = !self.swipe_mode;
+            let want_stick = !self.swipe_mode && !self.talking();
             if ctx.input.touch.stick_enabled() != want_stick {
                 ctx.input.touch.set_stick_enabled(want_stick);
             }
