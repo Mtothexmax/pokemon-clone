@@ -44,7 +44,7 @@ const INDOOR_SKY: f32 = 0.45;
 struct Look(f32, f32, [f32; 3], [f32; 3], f32, f32);
 const DAY: Look = Look(0.12, 0.02, [0.0, 0.0, 0.0], [1.01, 1.0, 0.98], 1.04, 1.0);
 const NIGHT: Look = Look(-0.5, 0.0, [0.0, 0.01, 0.04], [0.92, 0.95, 1.05], 1.0, 0.85);
-const NIGHT_GRAIN: f32 = 0.22;
+const NIGHT_GRAIN: f32 = 0.08;
 
 /// Sets the grade between `DAY` and `NIGHT` (k 0..1).
 fn set_grade(s: &mut engine::renderer::RenderSettings, k: f32) {
