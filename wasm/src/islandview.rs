@@ -326,22 +326,29 @@ fn mesh(job: &Job) -> Built {
     let mut boxes = vec![];
     if job.fine {
         // (i32::MAX: a hole, no box)
-        let key = |k: &Cell| if k.hole { i32::MAX } else if k.plates < WADE_MIN { i32::MIN } else { k.plates };
+        // (no deep-water wall under the harbour's pier: it has its own deck and railings, places.rs)
+        let pier = island::pier_rect();
+        let key = |a: i32, b: i32| {
+            let k = c(a, b);
+            let (x, z) = (x0 + (a as f32 + 0.5) * cs, z0 + (b as f32 + 0.5) * cs);
+            let on_pier = x > pier.0 && x < pier.1 && z > pier.2 && z < pier.3;
+            if k.hole || (on_pier && k.plates < WADE_MIN) { i32::MAX } else if k.plates < WADE_MIN { i32::MIN } else { k.plates }
+        };
         let mut seen = vec![false; n * n];
         for b in 0..ni {
             for a in 0..ni {
                 if seen[(b * ni + a) as usize] {
                     continue;
                 }
-                let kk = key(c(a, b));
+                let kk = key(a, b);
                 let mut a1 = a + 1;
-                while a1 < ni && !seen[(b * ni + a1) as usize] && key(c(a1, b)) == kk {
+                while a1 < ni && !seen[(b * ni + a1) as usize] && key(a1, b) == kk {
                     a1 += 1;
                 }
                 let mut b1 = b + 1;
                 'g: while b1 < ni {
                     for aa in a..a1 {
-                        if seen[(b1 * ni + aa) as usize] || key(c(aa, b1)) != kk {
+                        if seen[(b1 * ni + aa) as usize] || key(aa, b1) != kk {
                             break 'g;
                         }
                     }

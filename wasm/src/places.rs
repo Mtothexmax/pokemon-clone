@@ -153,18 +153,29 @@ fn shop(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, floors: u32, front: f
     let wall = r.pick(&[0xe4cd9e, 0xf4f4f4, 0xc91a09, 0x0055bf, 0xfe8a18, 0x82422a, 0xa0a5a9, 0x4b9f4a]);
     let awning = r.pick(&[0xc91a09, 0xf2cd37, 0x0055bf, 0x237841, 0xff8ac0]);
     let (x0, x1, z0, z1) = (c.x - w * 0.5, c.x + w * 0.5, c.z - d * 0.5, c.z + d * 0.5);
-    let h = 4.0 + floors as f32 * 3.2;
+    // a tall shop floor (a minifig is 4 studs: the awning hangs well above you), offices above
+    let ground = 7.2;
+    let h = ground + floors as f32 * 3.2;
     b.bx(wall, Vec3::new(x0, c.y, z0), Vec3::new(x1, c.y + h, z1));
     // the front faces the street (+z or -z)
     let (zf, out) = if front > 0.0 { (z1, 1.0) } else { (z0, -1.0) };
     let fz = |t: f32| zf + out * t;
     let span = |a: f32, b2: f32| if out > 0.0 { (a, b2) } else { (-b2, -a) };
     let (sa, sb) = span(0.0, 0.15);
-    b.bx(0x9fd8ef, Vec3::new(x0 + 1.0, c.y + 0.4, zf + sa), Vec3::new(x1 - 1.0, c.y + 3.0, zf + sb));
-    let (aa, ab) = span(0.0, 2.0);
-    b.bx(awning, Vec3::new(x0 + 0.5, c.y + 3.2, zf + aa), Vec3::new(x1 - 0.5, c.y + 3.6, zf + ab));
+    b.bx(0x9fd8ef, Vec3::new(x0 + 1.0, c.y + 0.4, zf + sa), Vec3::new(x1 - 1.0, c.y + 5.6, zf + sb));
+    // the door in the shop window: a dark frame, glass, a handle
+    let (da, db) = span(0.15, 0.3);
+    b.bx(0x1b2a34, Vec3::new(c.x - 1.4, c.y + 0.4, zf + da), Vec3::new(c.x + 1.4, c.y + 5.0, zf + db));
+    let (ga, gb) = span(0.3, 0.4);
+    b.bx(0xbfe6f4, Vec3::new(c.x - 1.1, c.y + 0.4, zf + ga), Vec3::new(c.x + 1.1, c.y + 4.7, zf + gb));
+    b.bx(0xa0a5a9, Vec3::new(c.x + 0.6, c.y + 2.2, zf + ga), Vec3::new(c.x + 0.8, c.y + 3.0, zf + gb + 0.1));
+    // the awning over it, with a hanging strip
+    let (aa, ab) = span(0.0, 2.4);
+    b.bx(awning, Vec3::new(x0 + 0.5, c.y + 6.0, zf + aa), Vec3::new(x1 - 0.5, c.y + 6.5, zf + ab));
+    let (va, vb) = span(2.2, 2.4);
+    b.bx(shade(awning, 0.8), Vec3::new(x0 + 0.5, c.y + 5.4, zf + va), Vec3::new(x1 - 0.5, c.y + 6.0, zf + vb));
     let _ = fz;
-    window_bands(b, 0x9fd8ef, x0, x1, z0, z1, c.y + 4.0, c.y + h, 3.2, 1.6);
+    window_bands(b, 0x9fd8ef, x0, x1, z0, z1, c.y + ground, c.y + h, 3.2, 1.6);
     b.bx(shade(wall, 0.8), Vec3::new(x0 - 0.2, c.y + h, z0 - 0.2), Vec3::new(x1 + 0.2, c.y + h + 0.5, z1 + 0.2));
 }
 
@@ -442,16 +453,35 @@ fn house(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, st: &HouseStyle) {
 }
 
 /// The harbour's pier east into the sea, a boat moored at it.
-fn pier(b: &mut Bld, c: Vec3, len: f32) {
+/// Returns the boxes you walk on and lean against (studs): the deck and the railings along the sides and the end.
+fn pier(b: &mut Bld, c: Vec3, len: f32) -> Vec<(Vec3, Vec3)> {
     let deck = c.y + 0.2;
     b.bx(0x82422a, Vec3::new(c.x, deck - 0.4, c.z - 2.0), Vec3::new(c.x + len, deck, c.z + 2.0));
+    // planks across (a seam every stud) and the posts down into the sea, railing posts and rails
+    let mut x = c.x + 1.0;
+    while x < c.x + len - 0.5 {
+        b.bx(0x583927, Vec3::new(x - 0.05, deck, c.z - 1.9), Vec3::new(x + 0.05, deck + 0.03, c.z + 1.9));
+        x += 1.0;
+    }
     let mut x = c.x + 2.0;
     while x < c.x + len {
         for s in [-1.0, 1.0] {
-            b.bx(0x583927, Vec3::new(x - 0.3, island::SEA_Y - 2.0, c.z + s * 1.9 - 0.3), Vec3::new(x + 0.3, deck + 0.8, c.z + s * 1.9 + 0.3));
+            b.bx(0x583927, Vec3::new(x - 0.3, island::SEA_Y - 2.0, c.z + s * 1.9 - 0.3), Vec3::new(x + 0.3, deck + 1.6, c.z + s * 1.9 + 0.3));
         }
-        x += 5.0;
+        x += 4.0;
     }
+    for s in [-1.0, 1.0] {
+        b.bx(0x82422a, Vec3::new(c.x + 2.0, deck + 1.2, c.z + s * 1.9 - 0.15), Vec3::new(c.x + len, deck + 1.5, c.z + s * 1.9 + 0.15));
+    }
+    let xe = c.x + len;
+    b.bx(0x583927, Vec3::new(xe - 0.3, island::SEA_Y - 2.0, c.z - 0.3), Vec3::new(xe + 0.3, deck + 1.6, c.z + 0.3));
+    b.bx(0x82422a, Vec3::new(xe - 0.15, deck + 1.2, c.z - 2.0), Vec3::new(xe + 0.15, deck + 1.5, c.z + 2.0));
+    vec![
+        (Vec3::new(c.x, deck - 0.4, c.z - 2.0), Vec3::new(c.x + len, deck, c.z + 2.0)),
+        (Vec3::new(c.x + 2.0, deck, c.z - 2.3), Vec3::new(c.x + len + 0.3, deck + 3.0, c.z - 1.7)),
+        (Vec3::new(c.x + 2.0, deck, c.z + 1.7), Vec3::new(c.x + len + 0.3, deck + 3.0, c.z + 2.3)),
+        (Vec3::new(xe - 0.3, deck, c.z - 2.3), Vec3::new(xe + 0.3, deck + 3.0, c.z + 2.3)),
+    ]
 }
 
 fn boat(b: &mut Bld, c: Vec3) {
@@ -486,6 +516,8 @@ fn lighthouse(b: &mut Bld, c: Vec3) {
 #[derive(Default)]
 struct Plan {
     blds: Vec<Bld>,
+    /// boxes to stand on or lean against that are no building (the pier's deck and railings)
+    cols: Vec<(Vec3, Vec3)>,
     trees: Vec<(&'static str, Vec3, f32)>,
     ponds: Vec<(Vec3, Vec2)>,
 }
@@ -584,11 +616,12 @@ fn saltwick(y: f32) -> Plan {
         x += 16.0;
     }
     let mut b = Bld::new();
-    pier(&mut b, Vec3::new(p.x + p.hx - 2.0, y, p.z), 34.0);
+    plan.cols = pier(&mut b, Vec3::new(p.x + p.hx - 2.0, y, p.z), island::PIER_LEN);
     b.solid = false;
     plan.blds.push(b);
     let mut b = Bld::new();
-    boat(&mut b, Vec3::new(p.x + p.hx + 24.0, y, p.z + 5.6));
+    // (moored near the pier's end, where the water is deep: the beach runs ~45 studs east of the pad)
+    boat(&mut b, Vec3::new(p.x + p.hx + 78.0, y, p.z + 5.6));
     b.solid = false;
     plan.blds.push(b);
     let mut b = Bld::new();
@@ -690,6 +723,11 @@ impl Places {
                 specs.push(OccluderSpec::Bricks { root, extra: vec![], min: m(lo.x, lo.y, lo.z), max: m(hi.x, hi.y, hi.z) });
             }
             self.buildings += 1;
+        }
+        for (lo, hi) in &plan.cols {
+            let (c, h) = ((*lo + *hi) * 0.5, (*hi - *lo) * 0.5);
+            let hd = ctx.physics.add_static(ColliderBuilder::cuboid(h.x * STUD, h.y * STUD, h.z * STUD), m(c.x, c.y, c.z));
+            self.colliders.push(hd);
         }
         for (path, at, s) in &plan.trees {
             let opts = town::prop_opts(ctx, path, 0.0, *s);

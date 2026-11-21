@@ -204,6 +204,15 @@ fn sd_box(p: Vec2, c: Vec2, half: Vec2) -> f32 {
 
 // ------------------------------------------------------------------------- the law
 
+/// Port Saltwick's pier into the sea (studs: x0, x1, z0, z1): its deck and railings are places.rs', the deep-water
+/// walls leave it out.
+pub const PIER_LEN: f32 = 92.0;
+pub fn pier_rect() -> (f32, f32, f32, f32) {
+    let p = &PADS[1];
+    let x0 = p.x + p.hx - 2.0;
+    (x0 - 1.0, x0 + PIER_LEN + 1.0, p.z - 2.6, p.z + 2.6)
+}
+
 /// The strip's plates (village; Route 1 and Stonecrest) as a signed distance (studs; < 0 on them).
 pub fn strip_sd(x: f32, z: f32) -> f32 {
     let p = Vec2::new(x, z);
