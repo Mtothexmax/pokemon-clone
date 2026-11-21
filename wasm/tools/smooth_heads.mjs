@@ -1,24 +1,19 @@
 #!/usr/bin/env node
-// Finer minifig heads for close-ups: every triangle becomes a curved PN-triangle patch (Vlachos et al. 2001),
-// tessellated LEVEL x LEVEL, so round parts (the head cylinder, helmets, hair) get round silhouettes while flat
-// parts stay flat and hard edges stay sharp. Crack-free: an edge's curve depends only on that edge's data. At a hard
-// edge (split normals: the cap and the side of the head) the curve's tangent at each end is perpendicular to both
-// normals (cross product), so the rim of a cylinder becomes a circle on both sides of the crease.
-// UVs are linear, normals are the vertex normals interpolated (Phong shading), so prints keep their place.
+// Smooth-shaded minifig heads: the minifig parts come flat shaded (a normal per facet), which shows every facet of the
+// round head. This gives each corner the normal of the facets around it within `--smooth` degrees (auto smooth, as
+// Blender's), welds equal corners and writes the glb again (the same triangles; images kept).
 //
-//   node tools/subdivide.mjs <in.glb> <out.glb> [--level 4]
-//   node tools/subdivide.mjs --heads            (assets/minifig/*/head.glb smooth shaded, no subdivision;
-//                                                the flat-shaded original is kept as head_flat.glb)
+//   node tools/smooth_heads.mjs                  assets/minifig/*/head_flat.glb -> head.glb (head_flat.glb is the
+//                                                source: change that one and rerun; it is made from head.glb once)
+//   node tools/smooth_heads.mjs <in.glb> <out.glb> [--smooth 46]
 //
-// The game's heads are made with --heads (smoothing only); <in> <out> [--level N] still subdivides any glTF.
 // Zero npm dependencies.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
-const args = process.argv.slice(2);
-const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
-let LEVEL = Number(opt('--level', 4));
+const args = process.argv.slice(2).filter((a, i, all) => a !== '--smooth' && all[i - 1] !== '--smooth');
+const opt = (n, d) => { const all = process.argv.slice(2); const i = all.indexOf(n); return i >= 0 ? all[i + 1] : d; };
 
 function readGlb(file) {
   const b = fs.readFileSync(file);
@@ -94,90 +89,27 @@ function smoothCorners(P, UV, I) {
   return { P: P2, N: N2, UV: UV2, I: I2 };
 }
 
-/** One primitive: positions, normals, uvs, indices -> the tessellated arrays. */
-function tessellate(P0, N0, UV0, I0) {
-  const { P, N, UV, I } = smoothCorners(P0, UV0, I0);
-  // which normals meet along each edge (by welded positions): a hard edge has two different ones at an end
-  const edgeNormals = new Map(); // "ka|kb" (sorted) -> { [ka]: [normals], [kb]: [normals] }
-  const ek = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-  for (let t = 0; t < I.length; t += 3) {
-    for (let e = 0; e < 3; e++) {
-      const i = I[t + e], j = I[t + (e + 1) % 3];
-      const ki = key(P[i]), kj = key(P[j]);
-      const k = ek(ki, kj);
-      let m = edgeNormals.get(k);
-      if (!m) edgeNormals.set(k, (m = { [ki]: [], [kj]: [] }));
-      m[ki].push(N[i]);
-      m[kj].push(N[j]);
-    }
-  }
-  // the control point one third along edge i -> j (shared by both triangles of the edge)
-  const ctrl = (i, j) => {
-    const e = sub(P[j], P[i]);
-    const ns = edgeNormals.get(ek(key(P[i]), key(P[j])))[key(P[i])];
-    const n0 = norm(ns[0]);
-    const other = ns.find((n) => dot(norm(n), n0) < 0.999);
-    if (other) {
-      // crease: along the line both surfaces share
-      let t = norm(cross(n0, norm(other)));
-      const d = dot(t, e);
-      if (d < 0) t = mul(t, -1);
-      if (len(cross(n0, norm(other))) < 1e-4) return add(P[i], mul(e, 1 / 3));
-      return add(P[i], mul(t, Math.abs(d) / 3));
-    }
-    // smooth (also a boundary): the edge projected onto the tangent plane (PN triangles)
-    const w = dot(e, n0);
-    return mul(add(mul(P[i], 2), sub(P[j], mul(n0, w))), 1 / 3);
-  };
-
+/** Welds equal corners (position, normal, uv) into shared vertices. */
+function weld({ P, N, UV, I }) {
   const outP = [], outN = [], outUV = [], outI = [];
-  const weld = new Map();
-  const vert = (p, n, uv) => {
+  const ids = new Map();
+  for (const v of I) {
+    const p = P[v], n = norm(N[v]), uv = UV ? UV[v] : [0, 0];
     const k = `${key(p)}/${n.map((x) => Math.round(x * 1e3)).join(',')}/${uv.map((x) => Math.round(x * 1e5)).join(',')}`;
-    let id = weld.get(k);
+    let id = ids.get(k);
     if (id === undefined) {
       id = outP.length;
-      weld.set(k, id);
+      ids.set(k, id);
       outP.push(p);
       outN.push(n);
       outUV.push(uv);
     }
-    return id;
-  };
-  const L = LEVEL;
-  for (let t = 0; t < I.length; t += 3) {
-    const [a, b, c] = [I[t], I[t + 1], I[t + 2]];
-    const b300 = P[a], b030 = P[b], b003 = P[c];
-    const b210 = ctrl(a, b), b120 = ctrl(b, a), b021 = ctrl(b, c), b012 = ctrl(c, b), b102 = ctrl(c, a), b201 = ctrl(a, c);
-    const E = mul([b210, b120, b021, b012, b102, b201].reduce(add), 1 / 6);
-    const V = mul(add(add(b300, b030), b003), 1 / 3);
-    const b111 = add(E, mul(sub(E, V), 0.5));
-    const grid = [];
-    for (let i = 0; i <= L; i++) {
-      grid.push([]);
-      for (let j = 0; j <= L - i; j++) {
-        const w = i / L, u = j / L, v = 1 - w - u; // w: towards c, u: towards b, v: towards a
-        // a point on an edge of the triangle is on that edge's curve: the same for both triangles
-        const p = [b300, b030, b003, b210, b120, b021, b012, b102, b201, b111];
-        const k = [v ** 3, u ** 3, w ** 3, 3 * v * v * u, 3 * v * u * u, 3 * u * u * w, 3 * u * w * w, 3 * w * w * v, 3 * w * v * v, 6 * u * v * w];
-        let pos = [0, 0, 0];
-        for (let m = 0; m < 10; m++) pos = add(pos, mul(p[m], k[m]));
-        const n = norm(add(add(mul(N[a], v), mul(N[b], u)), mul(N[c], w)));
-        const uv = UV ? [UV[a][0] * v + UV[b][0] * u + UV[c][0] * w, UV[a][1] * v + UV[b][1] * u + UV[c][1] * w] : [0, 0];
-        grid[i].push(vert(pos, n, uv));
-      }
-    }
-    for (let i = 0; i < L; i++) {
-      for (let j = 0; j < L - i; j++) {
-        outI.push(grid[i][j], grid[i][j + 1], grid[i + 1][j]);
-        if (j < L - i - 1) outI.push(grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]);
-      }
-    }
+    outI.push(id);
   }
   return { P: outP, N: outN, UV: outUV, I: outI };
 }
 
-function subdivideGlb(inFile, outFile) {
+function smoothGlb(inFile, outFile) {
   const g = readGlb(inFile);
   const j = g.json;
   const chunks = [];
@@ -204,7 +136,7 @@ function subdivideGlb(inFile, outFile) {
       const P = accessor(g, prim.attributes.POSITION), N = accessor(g, prim.attributes.NORMAL);
       const UV = prim.attributes.TEXCOORD_0 !== undefined ? accessor(g, prim.attributes.TEXCOORD_0) : null;
       const I = prim.indices !== undefined ? accessor(g, prim.indices) : P.map((_, k) => k);
-      const r = tessellate(P, N, UV, I);
+      const r = weld(smoothCorners(P, UV, I));
       before += I.length / 3;
       after += r.I.length / 3;
       const f32 = (arr) => Buffer.from(new Float32Array(arr.flat()).buffer);
@@ -241,22 +173,17 @@ function subdivideGlb(inFile, outFile) {
   console.log(`${path.relative(process.cwd(), outFile)}: ${before} -> ${after} triangles, ${fs.statSync(outFile).size} bytes`);
 }
 
-if (args[0] === '--heads') {
+if (args.length === 0) {
   const root = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'assets', 'minifig');
   for (const style of fs.readdirSync(root)) {
     const flat = path.join(root, style, 'head_flat.glb'), f = path.join(root, style, 'head.glb');
     if (!fs.existsSync(f)) continue;
     if (!fs.existsSync(flat)) fs.copyFileSync(f, flat);
-    // the head: the same triangles, smooth shaded (level 1: corners only). (The 16x subdivided close-up head,
-    // head_hi.glb, was dropped: the smooth normals made the difference.)
-    const keep = LEVEL;
-    LEVEL = 1;
-    subdivideGlb(flat, f);
-    LEVEL = keep;
+    smoothGlb(flat, f);
   }
-} else if (args.length >= 2) {
-  subdivideGlb(args[0], args[1]);
+} else if (args.length === 2) {
+  smoothGlb(args[0], args[1]);
 } else {
-  console.error('usage: node tools/subdivide.mjs <in.glb> <out.glb> [--level 4] | --heads');
+  console.error('usage: node tools/smooth_heads.mjs [<in.glb> <out.glb>] [--smooth 46]');
   process.exit(1);
 }

@@ -27,19 +27,16 @@
   let frames = 0;
   const tick = () => { frames++; requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
-  let lastSkipped = null;
   setInterval(() => {
     let r = null;
     try {
       const s = window.engine?.call?.('stats');
       const v = s?.result ?? s;
-      r = v?.render ? { draws: v.render.draw_calls, tris: v.render.triangles, scale: v.render.render_scale, size: v.render.size ?? v.render.resolution, gpu_ms: v.render.gpu_ms?.frame, lat_ms: v.render.gpu_latency_ms, in_flight: v.render.frames_in_flight, skipped: v.render.frames_skipped } : null;
+      r = v?.render ? { draws: v.render.draw_calls, tris: v.render.triangles, scale: v.render.render_scale, size: v.render.size ?? v.render.resolution, gpu_ms: v.render.gpu_ms?.frame,
+        pacing: v.render.pacing ? { interval: v.render.pacing.interval, cap: v.render.pacing.cap_interval, latency_ms: v.render.pacing.latency_ms, queued: v.render.pacing.queued, late: v.render.pacing.late, skipped: v.render.pacing.skipped } : null } : null;
     } catch {}
-    // frames the engine actually rendered: animation frames minus the ones its frame limiter skipped
-    const sk = r?.skipped;
-    const drawn = sk != null && lastSkipped != null ? +((frames - (sk - lastSkipped)) / 5).toFixed(1) : null;
-    lastSkipped = sk ?? lastSkipped;
-    send('fps', { fps: +(frames / 5).toFixed(1), drawn, screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
+    // fps = animation frames; the engine draws every `pacing.interval`-th of them (pacing.skipped: held back by back-pressure)
+    send('fps', { fps: +(frames / 5).toFixed(1), screen: (() => { try { const g = window.engine?.call?.('game_state'); return (g?.result ?? g)?.screen; } catch { return null; } })(), render: r });
     frames = 0;
   }, 5000);
   // smoothness: once in play, record the hero's drawn position for 120 frames, then send the samples
@@ -66,7 +63,7 @@
       const r = window.engine?.call?.('logs', { since, level: 'info', limit: 200 });
       const v = r?.result ?? r;
       const all = Array.isArray(v) ? v : v?.entries || [];
-      const list = all.filter((x) => x.level !== 'info' || /first use|prewarm|adaptive|frame cap|graphics/.test(x.msg || ''));
+      const list = all.filter((x) => x.level !== 'info' || /first use|prewarm|adaptive|frame pacing|graphics/.test(x.msg || ''));
       if (list.length) send('engine', list);
       if (all.length) since = Math.max(since, ...all.map((x) => (x.seq ?? 0) + 1));
       if (window.engine?.fatal) send('fatal', window.engine.fatal);
@@ -76,7 +73,7 @@
 
 // ---- Measuring mode (https://<pc>:8444/?measure): the player walks, the PC gets the timing ----
 // A badge at the top counts the seconds walked. While the hero walks: every animation frame's interval (3 s windows:
-// p50 / p95 / max, frames over 1.5x / 2.5x the median), the engine's render size, GPU time, frame cap and CPU phases
+// p50 / p95 / max, frames over 1.5x / 2.5x the median), the engine's render size, GPU time, frame pacing and CPU phases
 // twice a second, and the drawn hero position over 240 frames at a time (engine `trace`: speed jitter, frames with
 // 0 / 2+ fixed steps) - all as "measure" lines in logs/phone.log. Done after 60 s of walking.
 (() => {
@@ -125,8 +122,8 @@
     const r = st?.render, tm = st?.time;
     send('measure', { what: 'stats', speed: +h.speed.toFixed(2), screen: g?.screen, area: g?.state?.area, zone: g?.state?.zone,
       scale: r?.render_scale, size: r?.width ? [r.width, r.height] : r?.size, gpu: r?.gpu_ms, draws: r?.draw_calls, tris: r?.triangles,
-      in_flight: r?.frames_in_flight, lat: r?.gpu_latency_ms, skipped: r?.frames_skipped, hz: tm?.refresh_hz, interval: tm?.frame_interval,
-      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps, pacing: r?.pacing ? { mode: r.pacing.mode, interval: r.pacing.interval, auto: r.pacing.auto_interval, gpu: r.pacing.gpu_frame_ms,
+      hz: tm?.refresh_hz, interval: tm?.frame_interval,
+      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps, pacing: r?.pacing ? { mode: r.pacing.mode, interval: r.pacing.interval, auto: r.pacing.auto_interval, cap: r.pacing.cap_interval, latency: r.pacing.latency_ms, gpu: r.pacing.gpu_frame_ms,
         base: r.pacing.baseline_ms, jitter: r.pacing.jitter_ms, queue: r.pacing.queue_ms, queued: r.pacing.queued, late: r.pacing.late,
         skipped: r.pacing.skipped, miss: r.pacing.window_miss_pct } : null, steps: tm?.steps_per_frame });
     // the drawn position: 240 frames at a time while walking
