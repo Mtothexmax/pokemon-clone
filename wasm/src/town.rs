@@ -1217,7 +1217,7 @@ pub fn load_deferred(ctx: &mut Ctx, assets: &mut TownAssets) -> usize {
     }
     let list = std::mem::take(&mut assets.deferred);
     for (root, path, lod) in &list {
-        let opts = engine::gltf_loader::GltfOpts { auto_lod: *lod > 0.0, lod_distance: if *lod > 0.0 { *lod } else { 1.0 } };
+        let opts = engine::gltf_loader::GltfOpts { auto_lod: *lod > 0.0, lod_distance: if *lod > 0.0 { *lod } else { 1.0 }, ..Default::default() };
         let opts = if *lod > 0.0 { opts } else { ctx.gltf_defaults };
         let e = ctx.load_gltf_with(path, Transform::default(), opts);
         let _ = ctx.world.insert_one(e, Parent(*root));
@@ -1443,7 +1443,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             assets.deferred.push((root, p.path.clone(), p.lod));
             root
         } else if p.lod > 0.0 {
-            ctx.load_gltf_with(&p.path, t, engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: p.lod })
+            ctx.load_gltf_with(&p.path, t, engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: p.lod, ..Default::default() })
         } else {
             ctx.load_gltf(&p.path, t)
         };

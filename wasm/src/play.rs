@@ -163,6 +163,9 @@ pub struct PlayScreen {
     help_t: f32,
     /// `ctx.renderer.prewarm()` asked for (once the village is loaded)
     prewarmed: bool,
+    /// the save's place applied (first frames), seconds since your place was last looked at (`keep_place`)
+    place_restored: bool,
+    place_t: f32,
     /// the camera can turn (a PC; `cam_free`), as last applied to the island's chunk ranges and the bands
     cam_turns: bool,
     /// a PC camera tilted low (it sees far over the ground): every band and the island's far chunks are drawn
@@ -252,6 +255,8 @@ const SWIPE_HELP: &str = "<div class='panel bh-thelp bh-help'>swipe: walk that w
 const KEYS_HELP: &str = "<div class='panel bh-help'><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Seconds the help line stays (it fades out over its last 1.2 s, CSS `bh-help`).
 const HELP_S: f32 = 9.0;
+/// How often where you stand goes into the save (seconds).
+const PLACE_EVERY: f32 = 2.0;
 /// How fast a mouse drag turns the PC camera (radians per CSS px), and how far it tilts (pitch, radians: 0.3 low
 /// over the ground .. 1.45 nearly straight down; the fixed view is atan(32 / 17) = 1.08).
 const CAM_TURN: f32 = 0.005;
@@ -1176,6 +1181,40 @@ impl PlayScreen {
         ctx.ui.set("toast", &toast);
     }
 
+    /// Where you stand goes into the save every `PLACE_EVERY` s once you have moved (not while busy, diving, fighting
+    /// or in the air: a reload must start you somewhere safe); a hidden page (tab switched, phone locked) writes it at
+    /// once. The first frames of the screen put you back where the save says (a new game: the intro's room).
+    fn keep_place(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) {
+        if !self.place_restored {
+            if !data.save.loaded {
+                return;
+            }
+            self.place_restored = true;
+            if let (true, Some([x, z, yaw])) = (data.save.data.intro_seen, data.save.data.pos) {
+                self.move_to(ctx, x, z, yaw);
+            }
+            return;
+        }
+        self.place_t += dt;
+        let safe = !self.busy && !self.fight && !self.dive.on && self.sink_t <= 0.0 && self.door.is_none() && !self.zoom.active;
+        let grounded = self.hero.and_then(|h| ctx.world.get::<&CharacterController>(h).ok().map(|c| c.grounded)).unwrap_or(false);
+        if self.place_t >= PLACE_EVERY && safe && grounded {
+            self.place_t = 0.0;
+            if let Some((p, yaw)) = self.hero_pos(ctx) {
+                let at = [p.x / STUD, p.z / STUD, yaw];
+                let moved = data.save.data.pos.is_none_or(|q| (q[0] - at[0]).abs() + (q[1] - at[1]).abs() > 0.5 || (q[2] - at[2]).abs() > 0.3);
+                if moved {
+                    data.save.data.pos = Some([(at[0] * 10.0).round() / 10.0, (at[1] * 10.0).round() / 10.0, (at[2] * 100.0).round() / 100.0]);
+                    data.save.mark();
+                }
+            }
+        }
+        // (a hidden page may never come back: the last change is written now, not half a second later)
+        if !ctx.audio.focused() {
+            data.save.flush_dirty(ctx);
+        }
+    }
+
     /// The camera turns on a PC (left or right mouse button held and dragged), also one with a touchscreen; phones
     /// keep the fixed view (`Settings::phone`, known at the start).
     pub(crate) fn cam_free(&self, data: &Data) -> bool {
@@ -1311,7 +1350,7 @@ impl PlayScreen {
             s.fog_start = 90.0 * STUD * (1.0 - 0.15 * k) * (1.0 + 2.2 * fv);
             // (the graphics step's LOD bias, which multiplies the switch distances, divided by up to 3: the far trees
             // switch to their simpler levels sooner)
-            s.lod_bias = [1.0, 0.75, 0.6][data.settings.applied.unwrap_or(0).min(2)] / (1.0 + 2.0 * fv);
+            s.lod_distance_scale = [1.0, 0.75, 0.6][data.settings.applied.unwrap_or(0).min(2)] / (1.0 + 2.0 * fv);
         }
         self.life_view.frame(ctx, &self.life);
         self.golden_seen = data.save.data.golden_mask;
@@ -1960,7 +1999,8 @@ impl Screen<Data> for PlayScreen {
         self.fountain.set_visible(layers, self.area.is_none());
         self.fountain.update(ctx, dt);
 
-        // ---- the save: the clock every 20 s (the day goes on where you left it) ----
+        // ---- the save: where you are (a reload starts there), the clock every 20 s ----
+        self.keep_place(ctx, data, dt);
         self.clock_t += dt;
         if self.clock_t > 20.0 {
             self.clock_t = 0.0;
@@ -2144,6 +2184,8 @@ impl Screen<Data> for PlayScreen {
             }
             "save_reset" => {
                 data.save.reset(ctx);
+                // (where the old save had put you: back at the start, as a new game after its intro)
+                self.move_to(ctx, START[0], START[1], std::f32::consts::PI);
                 self.gate_to = None; // (Prof. Quill back where the new save says, at once)
                 // (a test's new game: no intro on the next load either; `intro` starts it)
                 data.save.data.intro_seen = true;
@@ -2474,7 +2516,7 @@ impl Screen<Data> for PlayScreen {
                 "last_sfx": data.sound.last_sfx, "sfx_played": data.sound.sfx_played,
             },
             "cards": data.cards.describe(&data.save, &data.faces),
-            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "vox_wins": g.vox_wins, "voxelmon": g.voxelmon, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "has_suit": g.has_suit, "has_part": g.has_part, "dive_found": g.dive_found, "intro_seen": g.intro_seen},
+            "save": {"plays": g.plays, "studs": g.studs, "exp": g.exp, "wins": g.wins, "losses": g.losses, "rival_wins": g.rival_wins, "pip_wins": g.pip_wins, "vox_wins": g.vox_wins, "voxelmon": g.voxelmon, "writes": data.save.writes, "time_of_day": (g.time_of_day * 100.0).round() / 100.0, "has_deck": g.has_deck, "gate_open": g.gate_open, "quest_part": g.quest_part, "has_suit": g.has_suit, "has_part": g.has_part, "dive_found": g.dive_found, "intro_seen": g.intro_seen, "pos": g.pos},
         })
     }
 }

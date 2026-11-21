@@ -93,7 +93,10 @@ comes from.
 - **Save:** the ☰ menu's SAVE GAME row exports the whole `GameSave` as a JSON download and imports one through the
   file picker (`savefile.rs`: refused unless it is a save; applied, written, page reloaded).
   Add fields to `save::GameSave` (serde default), change them, `data.save.mark()`. `save_reset` keeps
-  `intro_seen` true (tests start in the village).
+  `intro_seen` true (tests start in the village) and puts you at the start.
+- **Where you are:** `GameSave.pos` [x, z studs, yaw], kept by `PlayScreen::keep_place` every 2 s while you stand
+  safely (grounded; no dialogue, fight, dive, door, zoom), written at once when the page is hidden; a reload starts
+  there (village or island). A new game has none (the intro in your room). Tests that need the start call `save_reset`.
 - **Dialogues:** `self.dlg.open(ctx, &mut data.sound, dialog_for(id, &save))`; a closing choice arrives in
   `PlayScreen::dialog_action` (the last one is `pending_action` in game_state).
 - **Something to use:** add a `talk::TARGETS` entry (and a `Use` variant + a case in `PlayScreen::use_target`);
@@ -154,6 +157,7 @@ Drive cards with touch input (`input {touch}`), not the mouse.
 | test | covers |
 |---|---|
 | camera_turn | the PC camera: the mouse alone doesn't turn it, left / right button drags turn and tilt it, W walks the way it looks |
+| savepos | the place survives a reload (village and island), a new game has none |
 | savefile | the menu's Export / Import row, export JSON, an import persists over a reload, non-saves refused |
 | smoke, town | the village loads, walking, jumping, collision, studs, LODs (props have them: `lods_village > 0`; minifigs never) |
 | touch, phone_start, swipe | the stick, Jump, the phone profile from the first frame, swipe walking |

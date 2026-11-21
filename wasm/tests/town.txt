@@ -3,6 +3,8 @@
 reload
 screen play
 wait_for game_state.state.assets_pending == 0 15000
+# (a fresh game: the hero at the start, not where an earlier test left the saved place)
+call save_reset
 pause
 step 30
 # the village is built: chunks of bricks, instanced studs, the LEGO plant models, colliders

@@ -1,0 +1,36 @@
+# Where you are is saved: a reload starts you there (not at the start); a new game starts in your room (the intro).
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/savepos.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call clock {"hours": 12}
+resume
+expect game_state.state.save.pos == null
+call teleport {"x": 20, "z": 8}
+frames 30
+wait_for game_state.state.save.pos.0 ~= 20 4000
+expect game_state.state.save.pos.1 ~= 8
+frames 40
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+frames 10
+expect game_state.state.hero.x ~= 20
+expect game_state.state.hero.z ~= 8
+# on the island too (after the gate): the ground there is built at once
+call island {"gate": "open"}
+call teleport {"x": -20, "z": -440}
+frames 30
+wait_for game_state.state.save.pos.1 ~= -440 4000
+frames 40
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+frames 30
+expect game_state.state.hero.z ~= -440
+expect game_state.state.hero.grounded == true
+# a new game: no place saved, back at the start
+call save_reset
+expect game_state.state.save.pos == null
+expect game_state.state.hero.x ~= -15

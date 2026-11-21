@@ -58,7 +58,7 @@ pub fn apply_step(ctx: &mut Ctx, step: usize) {
         0 => {
             s.shadow_cascades = 4;
             s.shadow_distance = 60.0;
-            s.lod_bias = 1.0;
+            s.lod_distance_scale = 1.0;
             s.depth_darkening = 1.0;
             s.bloom = true;
             s.water_ssr = true;
@@ -70,7 +70,7 @@ pub fn apply_step(ctx: &mut Ctx, step: usize) {
         1 => {
             s.shadow_cascades = 3;
             s.shadow_distance = 45.0;
-            s.lod_bias = 0.75;
+            s.lod_distance_scale = 0.75;
             s.depth_darkening = 0.6;
             s.bloom = true;
             s.water_ssr = false;

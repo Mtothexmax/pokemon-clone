@@ -75,6 +75,9 @@ pub struct GameSave {
     pub north_gate: bool,
     /// The island's places you have found (bits: `island::PADS`).
     pub isle_found: u32,
+    /// Where you were (studs x, z and the way you faced): a reload starts there (`PlayScreen::keep_place`).
+    /// None in a new game (it starts in your room).
+    pub pos: Option<[f32; 3]>,
 }
 
 impl Default for GameSave {
@@ -119,6 +122,7 @@ impl Default for GameSave {
             intro_seen: false,
             north_gate: false,
             isle_found: 0,
+            pos: None,
         }
     }
 }
@@ -185,6 +189,13 @@ impl Save {
         match ctx.save.write(SLOT, &self.data) {
             Ok(_) => self.writes += 1,
             Err(e) => log_warn!("save: write failed: {e:?}"),
+        }
+    }
+
+    /// Writes now if something changed (a hidden page).
+    pub fn flush_dirty(&mut self, ctx: &mut Ctx) {
+        if self.dirty {
+            self.flush(ctx);
         }
     }
 

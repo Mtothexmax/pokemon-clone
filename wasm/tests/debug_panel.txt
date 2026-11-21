@@ -26,6 +26,7 @@ expect game_state.state.debug_panel.fps > 5
 expect game_state.state.debug_panel.picks >= 1
 call debug_pick {"copy": "me"}
 expect game_state.state.debug_panel.clip contains -8.0
+frames 2
 expect ui.slots.debug contains Copied!
 screenshot shots/debug-panel.png
 call debug_pick {"menu": false}
