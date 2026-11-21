@@ -179,11 +179,6 @@ pub(crate) const PLASTIC_ROUGH: f32 = 0.3;
 const PLASTIC_COAT_ROUGH: f32 = 0.06;
 const PLASTIC_SSS: f32 = 0.3;
 pub(crate) const AMBIENT_SPECULAR: f32 = 0.8;
-/// The phones' frame cap (`phone_quality`): every 3rd refresh at 90 Hz (30.6 fps), every 4th at 120 Hz. A PowerVR
-/// phone made every 2nd at 90 Hz (45.9 fps) in light parts, but in the tree-lined west (~80k triangles) its GPU fell
-/// 100-200 ms behind with nothing faded: frames got dropped and the hero jumped ahead until the engine's latency
-/// fallback stepped down - and it stepped back up after 20 s, so it came back. 30.6 fps held everywhere (~38 ms).
-pub(crate) const PHONE_MAX_FPS: f32 = 31.0;
 /// (`sign_`: the printed boards, a clear coat's sky reflection washed their text out at some angles)
 const NOT_PLASTIC: [&str; 8] = ["wood", "felt", "card", "cave", "paper", "rock", "sand", "sign_"];
 
@@ -297,9 +292,9 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     s.frame_budget_ms = 20.0;
     s.min_render_scale = 0.5;
     s.render_scale = 0.5;
-    // an even frame rate (`PHONE_MAX_FPS`: every 3rd refresh at 90 Hz; engine a928c1f; Settings::update lifts it on a
-    // 60 Hz display)
-    s.max_fps = PHONE_MAX_FPS;
+    // no frame cap: the engine's frame pacing picks the fastest even cadence the GPU holds (1eb2b91; a fixed 45 / 30 from
+    // the game either dropped frames in the tree-lined west or wasted the light parts)
+    s.max_fps = 0.0;
     s.auto_resolution = true;
 }
 

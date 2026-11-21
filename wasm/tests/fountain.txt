@@ -51,5 +51,6 @@ expect particles.emitters.length == 13
 expect stats.render.particles == 0
 call battle_auto {"end": true}
 wait_for particles.emitters.length > 13 8000
-expect stats.render.particles > 0
+# (drawn on the next rendered frame: the engine's pacing may hold one back)
+wait_for stats.render.particles > 0 2000
 expect stats.render.particles < 150

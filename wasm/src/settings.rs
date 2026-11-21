@@ -40,11 +40,10 @@ pub struct Settings {
 }
 
 /// Desktop: render at the browser window's content resolution (canvas CSS px x devicePixelRatio),
-/// no adaptive scaling, no frame cap. Phones keep the adaptive resolution and the 45 fps cap (`phone_quality`).
+/// no adaptive scaling. Phones keep the adaptive resolution (`phone_quality`); the frame rate is the engine's pacing.
 fn native_resolution(s: &mut engine::renderer::RenderSettings) {
     s.auto_resolution = false;
     s.render_scale = 1.0;
-    s.max_fps = 0.0;
 }
 
 /// One graphics step on the renderer. 0: the desktop look of `setup_look`; 2: the phone profile.
@@ -173,16 +172,10 @@ impl Settings {
             self.applied = Some(step);
             apply_step(ctx, step);
         }
-        // the phone profile's frame cap only where it helps: on a 90 / 120 Hz display (45 fps = every 2nd / 3rd
-        // refresh), not on 60 Hz (it would halve to 30); the refresh rate is known after a few frames
-        if step == 2 {
-            let hz = ctx.time.refresh_hz;
-            // (a GPU that falls behind the cap: the engine adds a refresh per frame itself, 9c3f2ce auto_frame_step)
-            ctx.renderer.settings.max_fps = if hz > 0.0 && hz < 80.0 { 0.0 } else { crate::PHONE_MAX_FPS };
-        }
-        // the simulation steps a whole number of times per drawn frame on phones (engine aa91b8f): at the capped 45.9 fps
-        // the 60 Hz step ran 1, 1, 2 times per frame and everything the engine does not interpolate (the walk cycle,
-        // villagers, Pip) moved in that beat - a regular judder; locked, it is 2 steps of 10.9 ms each frame
+        // the frame rate is the engine's (frame pacing 1eb2b91: back-pressure and an automatic cadence, no game cap); the
+        // simulation steps a whole number of times per drawn frame on phones (engine aa91b8f): at 45.9 fps the 60 Hz step
+        // ran 1, 1, 2 times per frame and everything the engine does not interpolate (the walk cycle, villagers, Pip)
+        // moved in that beat - a regular judder; locked, the steps follow the cadence the engine picks
         ctx.time.lock_fixed_to_frames = step == 2;
         out
     }

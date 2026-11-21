@@ -126,7 +126,9 @@
     send('measure', { what: 'stats', speed: +h.speed.toFixed(2), screen: g?.screen, area: g?.state?.area, zone: g?.state?.zone,
       scale: r?.render_scale, size: r?.width ? [r.width, r.height] : r?.size, gpu: r?.gpu_ms, draws: r?.draw_calls, tris: r?.triangles,
       in_flight: r?.frames_in_flight, lat: r?.gpu_latency_ms, skipped: r?.frames_skipped, hz: tm?.refresh_hz, interval: tm?.frame_interval,
-      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps, cap: r?.max_fps, auto_step: r?.auto_frame_step, late: r?.late_presents, limit: r?.latency_limit_ms, steps: tm?.steps_per_frame });
+      frame_ms: tm?.frame_ms, phases: tm?.phases, fps: tm?.fps, pacing: r?.pacing ? { mode: r.pacing.mode, interval: r.pacing.interval, auto: r.pacing.auto_interval, gpu: r.pacing.gpu_frame_ms,
+        base: r.pacing.baseline_ms, jitter: r.pacing.jitter_ms, queue: r.pacing.queue_ms, queued: r.pacing.queued, late: r.pacing.late,
+        skipped: r.pacing.skipped, miss: r.pacing.window_miss_pct } : null, steps: tm?.steps_per_frame });
     // the drawn position: 240 frames at a time while walking
     if (!traceOn && h.id != null) {
       traceOn = true;
