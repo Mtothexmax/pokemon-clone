@@ -1258,35 +1258,59 @@ fn lego(hex: u32) -> Material {
     Material { name: format!("lego {hex:06x}"), ..Material::color(hex).rough(crate::PLASTIC_ROUGH) }
 }
 
-/// The baseplate's stud pattern: one stud per texture tile (base colour shading + normal map).
+/// The baseplate's stud pattern: one stud per texture tile (base colour shading + normal map), seen from above as a
+/// LEGO stud's profile: a flat top (radius 0.272 studs), a narrow bevel down to the wall (0.30), the wall itself a
+/// thin ring of sideways normals, and round the foot a soft contact shadow (no hard ring). 4x4 samples per texel, so
+/// the rim stays smooth in the mip levels.
 fn stud_maps(ctx: &mut Ctx) -> (Option<engine::renderer::TextureId>, Option<engine::renderer::TextureId>) {
-    const N: u32 = 64;
+    const N: u32 = 128;
+    const SS: u32 = 4;
+    const R_TOP: f32 = 0.272;
+    const R_BASE: f32 = STUD_R;
+    const WALL: f32 = 0.012;
     let mut col = vec![0u8; (N * N * 4) as usize];
     let mut nrm = vec![0u8; (N * N * 4) as usize];
-    let c = N as f32 * 0.5;
-    let r = STUD_R * N as f32; // stud radius in texels (0.3 studs)
+    let smooth = |e0: f32, e1: f32, x: f32| {
+        let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
     for y in 0..N {
         for x in 0..N {
-            let (dx, dy) = (x as f32 + 0.5 - c, y as f32 + 0.5 - c);
-            let d = (dx * dx + dy * dy).sqrt();
-            let i = ((y * N + x) * 4) as usize;
-            // the stud's top is flat; its rim slopes over ~1.5 texels; a soft contact shadow around it
-            let (mut nx, mut ny) = (0.0f32, 0.0f32);
-            let mut shade = 1.0f32;
-            if (d - r).abs() < 1.5 {
-                let k = 0.9;
-                nx = dx / d * k;
-                ny = dy / d * k;
-            } else if d > r && d < r + 5.0 {
-                shade = 0.9 + 0.1 * ((d - r) / 5.0);
-            } else if d < r {
-                shade = 1.06;
+            let (mut n_sum, mut shade_sum) = (Vec3::ZERO, 0.0f32);
+            for sy in 0..SS {
+                for sx in 0..SS {
+                    // (studs: the tile's middle is the stud's middle)
+                    let u = (x as f32 + (sx as f32 + 0.5) / SS as f32) / N as f32 - 0.5;
+                    let v = (y as f32 + (sy as f32 + 0.5) / SS as f32) / N as f32 - 0.5;
+                    let d = (u * u + v * v).sqrt().max(1e-5);
+                    let radial = Vec2::new(u / d, v / d);
+                    let (n, shade) = if d <= R_TOP {
+                        // the top: flat, a touch brighter toward the middle
+                        (Vec3::Z, 1.0 + 0.04 * (1.0 - d / R_TOP))
+                    } else if d <= R_BASE - WALL {
+                        // the bevel: a cone falling outward
+                        let t = (d - R_TOP) / (R_BASE - WALL - R_TOP);
+                        let tilt = 0.55 + 0.35 * t;
+                        (Vec3::new(radial.x * tilt, radial.y * tilt, 1.0).normalize(), 0.98)
+                    } else if d <= R_BASE {
+                        // the wall, seen from above as a thin ring facing outward
+                        (Vec3::new(radial.x, radial.y, 0.25).normalize(), 0.9)
+                    } else {
+                        // the plate round the foot: a soft contact shadow
+                        (Vec3::Z, 0.9 + 0.1 * smooth(0.0, 0.16, d - R_BASE))
+                    };
+                    n_sum += n;
+                    shade_sum += shade;
+                }
             }
+            let n = n_sum.normalize();
+            let shade = shade_sum / (SS * SS) as f32;
+            let i = ((y * N + x) * 4) as usize;
             let v = (255.0 * shade.min(1.0)) as u8;
-            let hi = if d < r { (255.0 * (shade - 1.0).max(0.0) * 4.0) as u8 } else { 0 };
+            let hi = (255.0 * (shade - 1.0).max(0.0) * 4.0) as u8;
             col[i..i + 4].copy_from_slice(&[v.saturating_add(hi), v.saturating_add(hi), v.saturating_add(hi), 255]);
-            let n = Vec3::new(nx, -ny, 1.0).normalize();
-            nrm[i..i + 4].copy_from_slice(&[((n.x * 0.5 + 0.5) * 255.0) as u8, ((n.y * 0.5 + 0.5) * 255.0) as u8, ((n.z * 0.5 + 0.5) * 255.0) as u8, 255]);
+            // (texture v runs down the image: its y flips)
+            nrm[i..i + 4].copy_from_slice(&[((n.x * 0.5 + 0.5) * 255.0) as u8, ((-n.y * 0.5 + 0.5) * 255.0) as u8, ((n.z * 0.5 + 0.5) * 255.0) as u8, 255]);
         }
     }
     (ctx.renderer.add_texture_rgba(N, N, &col, "baseplate studs").ok(), ctx.renderer.add_texture_rgba_linear(N, N, &nrm, "baseplate studs normal").ok())
