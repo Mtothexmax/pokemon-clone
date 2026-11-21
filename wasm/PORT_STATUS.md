@@ -135,7 +135,6 @@ Drive cards with touch input (`input {touch}`), not the mouse.
 | test | covers |
 |---|---|
 | smoke, town | the village loads, walking, jumping, collision, studs, LODs (`lods_village == 0`) |
-| flake | a walk south with `characters` output (a diagnostic, no assertions) |
 | touch, phone_start, swipe | the stick, Jump, the phone profile from the first frame, swipe walking |
 | menu | sound, the ☰ menu, graphics steps |
 | dialog, life, village, seek, npc_block, goal | dialogues + voices, Pip and village life, hide and seek / tag, solid villagers, the quest chain |
