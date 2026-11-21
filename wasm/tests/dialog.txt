@@ -23,7 +23,7 @@ expect game_state.state.busy == true
 expect game_state.state.sound.last_sfx == "blip"
 wait_for game_state.state.sound.last_voice == "assets/voices/14add442.ogg" 5000
 # the camera is at your eyes (about 4 studs up, by you), not 38 studs above
-expect game_state.state.talk_cam == 1
+wait_for game_state.state.talk_cam == 1 3000
 expect game_state.state.camera.1 < 6
 expect game_state.state.npcs.0.marker == ""
 # you turned north to him, he turned south to you
@@ -48,7 +48,7 @@ expect game_state.state.last_dialog.id == "Dex"
 expect game_state.state.hero.jumps == 0
 # the camera flies back up
 frames 60
-expect game_state.state.talk_cam == 0
+wait_for game_state.state.talk_cam == 0 3000
 expect game_state.state.camera.1 > 30
 expect game_state.state.busy == false
 

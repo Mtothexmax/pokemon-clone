@@ -197,17 +197,27 @@ pub struct Board {
     pub tilt: f32,
 }
 
-/// Eases the camera from where the orbit camera has it to a [`Board`] and back (0.6 s, smoothstep).
-/// While active the `ThirdPersonCamera` has no target (the engine leaves the camera alone) and gets it
-/// back when the camera has returned.
+/// Eases the camera from where the orbit camera has it to a [`Board`] and back (`ZOOM_S`, smootherstep).
+/// The eye moves on a straight line and the point it looks at slides from what the orbit camera looked at (your
+/// head) to the board's centre, the rotation always `looking_at` that point: the face stays in the picture all the
+/// way (a slerped rotation against a lerped position let it swing out mid-way). The lens closes to `ZOOM_FOV` (a
+/// longer focal length: a flatter, calmer portrait). While active the `ThirdPersonCamera` has no target (the engine
+/// leaves the camera alone) and gets it back when the camera has returned.
 #[derive(Default)]
 pub struct CamZoom {
     pub t: f32,
     pub active: bool,
     from: Option<Transform>,
+    /// what the orbit camera looked at, and its lens
+    from_look: Vec3,
+    from_fov: f32,
     target: Option<Entity>,
     board: Option<Board>,
 }
+
+/// Seconds of the way in (and out), and the close-up's vertical field of view (degrees; the play camera has 38).
+const ZOOM_S: f32 = 0.85;
+pub const ZOOM_FOV: f32 = 30.0;
 
 impl CamZoom {
     /// Every frame (after moving things, before the engine's camera update). Returns true while it owns the camera.
@@ -217,9 +227,13 @@ impl CamZoom {
             self.active = true;
             self.t = 0.0;
             self.from = Some(t);
+            self.from_fov = ctx.world.get::<&Camera>(cam).map(|c| c.fov_y_deg).unwrap_or(38.0);
+            let mut look_d = 10.0;
             if let Ok(mut c) = ctx.world.get::<&mut ThirdPersonCamera>(cam) {
                 self.target = c.target.take();
+                look_d = c.current_distance.max(0.5);
             }
+            self.from_look = t.translation + t.rotation * Vec3::NEG_Z * look_d;
         }
         if !self.active {
             return false;
@@ -228,12 +242,15 @@ impl CamZoom {
             self.board = want;
         }
         let dir = if want.is_some() { 1.0 } else { -1.0 };
-        self.t = (self.t + dir * dt / 0.6).clamp(0.0, 1.0);
+        self.t = (self.t + dir * dt / ZOOM_S).clamp(0.0, 1.0);
         let from = self.from.unwrap_or_default();
         if self.t <= 0.0 {
             self.active = false;
             if let Ok(mut t) = ctx.world.get::<&mut Transform>(cam) {
                 *t = from;
+            }
+            if let Ok(mut c) = ctx.world.get::<&mut Camera>(cam) {
+                c.fov_y_deg = self.from_fov;
             }
             if let Ok(mut c) = ctx.world.get::<&mut ThirdPersonCamera>(cam) {
                 c.target = self.target.take();
@@ -241,30 +258,40 @@ impl CamZoom {
             return false;
         }
         let Some(bd) = self.board else { return true };
-        let fov = ctx.world.get::<&Camera>(cam).map(|c| c.fov_y_deg).unwrap_or(38.0);
         let (w, h) = ctx.renderer.size();
         let aspect = (w as f32 / h.max(1) as f32).max(0.5);
-        let tan_half = (fov.to_radians() * 0.5).tan();
+        let tan_half = (ZOOM_FOV.to_radians() * 0.5).tan();
         let mut dist = (bd.h * 1.3 * 0.5 / tan_half).max(bd.w * 1.15 * 0.5 / (tan_half * aspect)) * STUD;
         if bd.max_dist > 0.0 {
             dist = dist.min(bd.max_dist);
         }
         let normal = Vec3::new(bd.yaw.sin() * bd.tilt.cos(), bd.tilt.sin(), bd.yaw.cos() * bd.tilt.cos());
-        let to = Transform::from_translation(bd.c + normal * dist).looking_at(bd.c, Vec3::Y);
-        let k = self.t * self.t * (3.0 - 2.0 * self.t);
+        let to_eye = bd.c + normal * dist;
+        // smootherstep: no jolt at either end
+        let x = self.t;
+        let k = x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
+        let eye = from.translation.lerp(to_eye, k);
+        let look = self.from_look.lerp(bd.c, k);
         if let Ok(mut t) = ctx.world.get::<&mut Transform>(cam) {
-            t.translation = from.translation.lerp(to.translation, k);
-            t.rotation = from.rotation.slerp(to.rotation, k);
+            t.translation = eye;
+            if (look - eye).length_squared() > 1e-6 {
+                t.rotation = Transform::from_translation(eye).looking_at(look, Vec3::Y).rotation;
+            }
+        }
+        if let Ok(mut c) = ctx.world.get::<&mut Camera>(cam) {
+            c.fov_y_deg = self.from_fov + (ZOOM_FOV - self.from_fov) * k;
         }
         true
     }
 }
 
 /// The board for talking to someone standing at `npc` (feet, metres) while you stand at `me`: their
-/// head and shoulders from your eyes (never farther than you stand). Kaigen aimed at the chin (3.3 studs
-/// up) with a wider lens; with this camera's 38 degrees that cut the face off, so it aims at the face (4 studs).
+/// head and shoulders from about your eyes (a little behind them for the longer lens). Kaigen aimed at the chin (3.3 studs
+/// up) with a wider lens; with this camera's narrower lens (`ZOOM_FOV`) that cut the face off, so it aims at the face
+/// (4 studs).
 pub fn face_board(npc: Vec3, me: Vec3) -> Board {
     let to_me = Vec2::new(me.x - npc.x, me.z - npc.z);
     let yaw = if to_me.length() > 0.01 { to_me.x.atan2(to_me.y) } else { 0.0 };
-    Board { c: npc + Vec3::Y * 4.0 * STUD, yaw, w: 4.6, h: 5.6, max_dist: (to_me.length() - 0.15).max(1.3), tilt: 0.0 }
+    // the longer lens (`ZOOM_FOV`) needs a step more room than where you stand (your figure is hidden by then)
+    Board { c: npc + Vec3::Y * 4.0 * STUD, yaw, w: 4.6, h: 5.6, max_dist: (to_me.length() + 0.6).max(1.9), tilt: 0.0 }
 }

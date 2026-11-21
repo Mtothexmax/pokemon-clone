@@ -61,7 +61,8 @@ call cards {"give": ["titanoak"], "level": {"titanoak": 4}}
 call flags {"voxelmon": 32}
 call teleport {"x": 2.6, "z": -22}
 frames 5
-expect game_state.state.npcs.2.marker == "!"
+# (the camera comes back from the close-up first: no markers during it)
+wait_for game_state.state.npcs.2.marker == "!" 3000
 down KeyW
 frames 60
 up KeyW

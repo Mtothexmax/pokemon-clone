@@ -186,8 +186,8 @@ const DIVE_HIDES: [&str; 15] = ["help", "touch", "goal", "prompt", "menubtn", "s
 /// Help line for phones: the engine's joystick (left 40 % of the screen) walks, pushing it all the way
 /// out runs, two fingers zoom.
 /// (the heading is the zone you are in: Kaigen `g_hud_place`)
-const TOUCH_HELP: &str = "<div class='panel'><b>{place}</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
-const SWIPE_HELP: &str = "<div class='panel'><b>{place}</b><br>swipe: walk that way &middot; tap: stop &middot; two fingers: zoom</div>";
+const TOUCH_HELP: &str = "<div class='panel bh-thelp'><b>{place}</b><br>left thumb: walk (push far = run) &middot; two fingers: zoom</div>";
+const SWIPE_HELP: &str = "<div class='panel bh-thelp'><b>{place}</b><br>swipe: walk that way &middot; tap: stop &middot; two fingers: zoom</div>";
 const KEYS_HELP: &str = "<div class='panel'><b>{place}</b><br><kbd>WASD</kbd> move &middot; <kbd>Shift</kbd> run &middot; <kbd>Space</kbd> jump &middot; <kbd>E</kbd> use / talk &middot; <kbd>Q</kbd> dance &middot; <kbd>R</kbd> respawn &middot; <kbd>C</kbd> cards &middot; <kbd>Wheel</kbd> zoom &middot; <kbd>Esc</kbd> menu</div>";
 /// Stick deflection from which the hero runs.
 const TOUCH_RUN: f32 = 0.92;
@@ -195,6 +195,8 @@ const TOUCH_RUN: f32 = 0.92;
 /// The game's HUD styles (dialog box, goal pill, markers, prompt, toast, the menu), in a style slot.
 pub const STYLE: &str = "<style>
 #ui [data-slot=help]{position:fixed;left:16px;bottom:16px}
+/* touch: the place and hints stay left of the Use and Jump buttons (2 x 84 px from 20 px on the right) */
+#ui .bh-thelp{max-width:calc(100vw - 236px);box-sizing:border-box;font-size:12px;line-height:1.35}
 #ui [data-slot=goal]{position:fixed;left:14px;top:14px;max-width:calc(100vw - 90px)}
 .bh-goal{display:flex;gap:8px;align-items:center;background:rgba(250,250,246,.88);color:#1b2a34;border-radius:10px;padding:7px 14px 7px 12px;font-size:15px;font-weight:600;max-width:560px}
 .bh-goal.night{background:rgba(24,32,42,.88);color:#e8eef4}
@@ -1319,6 +1321,7 @@ impl Screen<Data> for PlayScreen {
     }
 
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) -> Trans<Data> {
+        data.loadbar(ctx);
         // phones: once a finger touched the screen, swap the keyboard hints for touch hints and buttons
         if ctx.input.touch.touch_device && !self.touch_ui {
             self.touch_ui = true;

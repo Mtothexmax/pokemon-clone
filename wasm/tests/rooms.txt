@@ -166,7 +166,7 @@ frames 50
 expect game_state.state.dialog.id == "Machine"
 expect game_state.state.dialog.text == "*beep* ERROR: MISSING PART. Stud Core not found."
 expect game_state.state.talk_npc == null
-expect game_state.state.talk_cam == 1
+wait_for game_state.state.talk_cam == 1 3000
 screenshot shots/rooms-machine.png
 key Escape
 frames 60

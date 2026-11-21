@@ -16,7 +16,7 @@ expect game_state.state.nearby == "the village sign"
 key KeyE
 frames 60
 expect game_state.state.reading == 0
-expect game_state.state.talk_cam == 1
+wait_for game_state.state.talk_cam == 1 3000
 expect game_state.state.hero_hidden == true
 expect game_state.state.busy == true
 screenshot shots/screens-sign.png
@@ -25,7 +25,7 @@ frames 3
 up KeyS
 frames 60
 expect game_state.state.reading == null
-expect game_state.state.talk_cam == 0
+wait_for game_state.state.talk_cam == 0 3000
 expect game_state.state.hero_hidden == false
 # E opens and E closes too
 key KeyE
@@ -67,7 +67,7 @@ frames 80
 expect game_state.state.screen.kind == "Tv"
 expect game_state.state.screen.shown == true
 expect game_state.state.screen.channel == "BBN News"
-expect game_state.state.talk_cam == 1
+wait_for game_state.state.talk_cam == 1 3000
 expect ui.slots.scr contains "tv-ticker"
 wait_for game_state.state.sound.last_voice == "assets/voices/0c57cbfe.ogg" 5000
 wait_for ui.slots.scr_live contains "Rex Studwell" 3000
@@ -88,7 +88,7 @@ expect game_state.state.screen.channel == "Weather"
 key KeyE
 frames 60
 expect game_state.state.screen.kind == null
-expect game_state.state.talk_cam == 0
+wait_for game_state.state.talk_cam == 0 3000
 expect ui.slots.scr == ""
 expect game_state.state.busy == false
 
