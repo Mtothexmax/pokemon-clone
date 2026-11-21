@@ -1,5 +1,5 @@
 # The tall grass moves (grass.rs): the engine bends the tufts (Material::bend) away from the pushers the game sets every
-# frame (you, villagers, Voxelmon + two far wind pushers); no tuft transform is written (no instance upload for them).
+# frame (you, villagers, Voxelmon) plus the engine's wind; no tuft transform is written (no instance upload for them).
 # `near` / `bent` / `max_bend` are the engine's lean (common.wgsl push_offset) recomputed from the walkers.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/grass.txt --port 9223 --url http://localhost:8091/
 reload
@@ -17,11 +17,11 @@ expect game_state.state.grass.tufts > 600
 expect game_state.state.grass.patches.0 > 150
 expect game_state.state.grass.bent == 0
 expect game_state.state.grass.writes == 0
-# the bending materials (one per green) and the pushers the renderer has: you + the two wind pushers at least
+# the bending materials (one per green), the pushers the renderer has (you at least) and the wind
 expect bend.materials.length >= 4
 expect bend.materials.0.bend ~= 1.1
-expect bend.pushers.length >= 3
-expect game_state.state.grass.wind_pushers == 2
+expect bend.pushers.length >= 1
+expect bend.wind.2 > 0.15
 # ---- walk north into the patch ----
 down KeyW
 frames 75
@@ -40,15 +40,15 @@ wait_for game_state.state.grass.wake <= 1 3000
 frames 40
 expect game_state.state.grass.bent == 0
 expect game_state.state.grass.max_bend < 0.01
-# ---- the wind can be stilled (debug): its two pushers go ----
+# ---- the wind can be stilled (debug) ----
 call tall_grass {"wind": 0}
 frames 2
-expect game_state.state.grass.wind_pushers == 0
+expect bend.wind.2 == 0
 expect bend.pushers.length >= 1
 call tall_grass {"wind": 1}
 frames 2
 expect game_state.state.grass.wind == 1
-expect game_state.state.grass.wind_pushers == 2
+expect bend.wind.2 > 0.15
 # ---- indoors: no pushers ----
 call enter {"room": "Home"}
 wait_for game_state.state.area != null 4000

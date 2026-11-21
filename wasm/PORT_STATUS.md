@@ -222,13 +222,13 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   its foot; the round plate stays in the static bricks) with a bending material per green (`TownAssets::tuft_material`,
   `Material::bend` = `grass::TUFT_BEND`); the transforms never change (no per-frame upload, the tufts are static shadow
   casters, their shadows stay upright). Walkers are set every fixed step (`Grass::set_pushers(feet + radius m, dt)`: the
-  hero first, outdoor NPCs, `Vox::pushers`; add Pip's spots or the ducks there); `Grass::update` hands the nearest 14 plus
-  your wake (3 fading points) and two far *wind pushers* to `ctx.renderer.set_pushers` every frame (none indoors; cleared on
-  exit). The engine's bend has no wind of its own (only its GPU grass sways): the wind pushers stand ~250 m upwind with a
-  300 m radius and move with a gust / flutter, which leans the field 0.02..0.1 rad. Don't `batch_static` the tufts.
+  hero first, outdoor NPCs, `Vox::pushers`; add Pip's spots or the ducks there); `Grass::update` hands the nearest 16 plus
+  your wake (3 fading points) to `ctx.renderer.set_pushers` every frame (none indoors; cleared on exit) and sets the
+  engine's wind (`renderer.grass_settings().wind = [dir x, dir z, strength]`, `grass::WIND_STRENGTH` 0.3 with a slow
+  gust; engine 6401217 sways bend geometry with it). Don't `batch_static` the tufts.
   Debug: `tall_grass {wind}`, engine `bend` (pushers, bend materials); `game_state.state.grass` (tufts, patches, bent,
-  max_bend, near [[dist m, lean rad]..] = the shader's lean recomputed from the walkers, pushers, wake, sent, wind_pushers,
-  bend, writes = 0).
+  max_bend, near [[dist m, lean rad]..] = the shader's lean recomputed from the walkers, pushers, wake, sent, wind,
+  wind_strength, bend, writes = 0).
 - Fountain (`fountain.rs`, `PlayScreen::fountain`): consts `town::FOUNTAIN`, `FOUNTAIN_IN`, `FOUNTAIN_WATER`, `BOWL_R`,
   `BOWL_WATER`, `NOZZLE_TOP` (studs); the stone in `north.rs` `fountain`. Particles are spawned with fixed seeds (`emitter`,
   `ctx.spawn_particles_seeded`) on the square's band layer (`ParticleEmitter::layer`): cameras without that band (village,

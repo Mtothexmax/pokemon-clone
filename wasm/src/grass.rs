@@ -1,12 +1,11 @@
 //! The tall grass moves: every tuft's blades are an instance of one mesh (`town::tuft_mesh`, origin at its foot)
 //! with a `Material::bend` material (`TownAssets::tuft_material`). The engine's vertex shader leans them away from
 //! the *pushers* set every frame (`ctx.renderer.set_pushers`): you, the villagers outside, your Voxelmon and a wild
-//! one, the nearest `MAX_PUSHERS - WIND_PUSHERS` of them. No tuft transform is ever written again: no per-frame
+//! one, the nearest `MAX_PUSHERS` of them. No tuft transform is ever written again: no per-frame
 //! instance upload, the tufts stay static shadow casters (their shadows stay upright, as the engine documents).
 //!
-//! Wind: the engine's bend path has no wind of its own (only its GPU grass sways), so two far *wind pushers*
-//! stand upwind of you with radii that reach the field; moving them a little lets the whole field lean and breathe
-//! with the gusts (a gradient across the view, stronger upwind) at no GPU or upload cost.
+//! Wind: the engine sways bend geometry with its grass wind (`grass_settings().wind`, a uniform, no upload); a slow
+//! gust varies its strength.
 
 use crate::town::{TuftSpec, GRASSES, STUD};
 use engine::prelude::*;
@@ -16,10 +15,9 @@ use serde_json::{json, Value};
 pub const TUFT_BEND: f32 = 1.1;
 /// Reach of a push beyond the pusher's radius (metres).
 const REACH: f32 = 0.55;
-/// Wind: direction (XZ, towards which the tufts lean), the wind pushers' reach (metres).
+/// Wind: direction (XZ, towards which the tufts lean) and strength at `wind` 1 (the engine's default is 0.25).
 const WIND_DIR: Vec2 = Vec2::new(0.83, 0.55);
-const WIND_R: f32 = 300.0;
-const WIND_PUSHERS: usize = 2;
+const WIND_STRENGTH: f32 = 0.3;
 const MAX_PUSHERS: usize = 16;
 /// Your wake: where you were (a point every `WAKE_EVERY` s, `WAKE_N` of them) keeps pushing with a radius that shrinks
 /// to nothing over `WAKE_LIFE` s, so the tufts behind you rise again instead of snapping up (the old spring's look).
@@ -39,7 +37,7 @@ pub struct Grass {
     patches: Vec<usize>,
     /// whoever pushes (fixed step): feet (metres) and radius (metres, the reach included)
     pushers: Vec<(Vec3, f32)>,
-    /// what went to the renderer last frame (walkers + wind)
+    /// what went to the renderer last frame
     sent: Vec<(Vec3, f32)>,
     /// your wake: feet, radius, age (s)
     wake: Vec<(Vec3, f32, f32)>,
@@ -90,28 +88,17 @@ impl Grass {
         if let Some(me) = me {
             let mut walkers = self.walkers();
             walkers.sort_by(|a, b| (a.0 - me).length_squared().total_cmp(&(b.0 - me).length_squared()));
-            self.sent.extend(walkers.into_iter().take(MAX_PUSHERS - WIND_PUSHERS));
-            if self.wind > 0.0 {
-                self.sent.extend(self.wind_pushers(me));
-            }
+            self.sent.extend(walkers.into_iter().take(MAX_PUSHERS));
         }
         ctx.renderer.set_pushers(&self.sent);
+        let dir = WIND_DIR.normalize();
+        ctx.renderer.grass_settings().wind = [dir.x, dir.y, self.wind_strength()];
     }
 
-    /// Two far pushers upwind of `me`: the field lies at a fraction `x` of their reach from its rim, which gives a
-    /// lean of about `TUFT_BEND * smoothstep(x)`; a slow gust and a quicker flutter (from a turned direction) move them.
-    fn wind_pushers(&self, me: Vec3) -> [(Vec3, f32); 2] {
-        let w = self.wind.min(2.0);
-        let dir = WIND_DIR.normalize();
-        let side = Vec2::new(dir.x * 0.77 - dir.y * 0.64, dir.x * 0.64 + dir.y * 0.77);
-        let gust = 0.13 + 0.05 * (self.t * 1.3).sin() * w;
-        let flutter = 0.06 + 0.03 * (self.t * 3.1).sin();
-        let at = |d: Vec2, x: f32| {
-            let x = (x * w.sqrt()).clamp(0.0, 0.5);
-            let q = Vec2::new(me.x, me.z) - d * WIND_R * (1.0 - x);
-            (Vec3::new(q.x, me.y, q.y), WIND_R)
-        };
-        [at(dir, gust), at(side, flutter)]
+    /// The wind's strength this frame: a slow gust around `WIND_STRENGTH * wind`.
+    fn wind_strength(&self) -> f32 {
+        let w = self.wind.clamp(0.0, 2.0);
+        WIND_STRENGTH * w * (1.0 + 0.3 * (self.t * 1.3).sin() + 0.1 * (self.t * 3.1).sin())
     }
 
     /// The engine's lean (`push_offset` in common.wgsl) of a tuft's point 1 m up, as an angle (radians), from `list`.
@@ -146,6 +133,6 @@ impl Grass {
             v.into_iter().take(6).map(|(d, b)| json!([r(d), r(b)])).collect::<Vec<_>>()
         });
         json!({"tufts": self.tufts.len(), "patches": self.patches, "bent": bent, "max_bend": r(max), "near": near, "pushers": self.pushers.len(), "wake": self.wake.len(),
-               "sent": self.sent.len(), "wind_pushers": self.sent.len() - self.sent.len().min(walkers.len()).min(MAX_PUSHERS - WIND_PUSHERS), "wind": self.wind, "bend": TUFT_BEND, "writes": 0})
+               "sent": self.sent.len(), "wind": self.wind, "wind_strength": r(self.wind_strength()), "bend": TUFT_BEND, "writes": 0})
     }
 }
