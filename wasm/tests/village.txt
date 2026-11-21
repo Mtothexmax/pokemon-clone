@@ -5,7 +5,7 @@ reload
 screen play
 wait_for game_state.state.assets_pending == 0 15000
 call save_reset
-call time {"hours": 12}
+call clock {"hours": 12}
 call life {"freeze": true, "pip_home": true, "rain": false}
 resume
 frames 5
@@ -60,7 +60,7 @@ frames 5
 expect game_state.state.life.butterflies == 1
 expect game_state.state.toast contains A butterfly! (1 caught)
 # ---- fireflies at night: catch one walking ----
-call time {"hours": 23}
+call clock {"hours": 23}
 frames 30
 expect game_state.state.life.fireflies_shown > 10
 call life {"to_firefly": 3}
@@ -69,7 +69,7 @@ frames 10
 up KeyD
 expect game_state.state.life.fireflies == 1
 screenshot shots/village-fireflies.png
-call time {"hours": 12}
+call clock {"hours": 12}
 # ---- the ball: run into it, it rolls into the goal ----
 call life {"ball": [15, -5.6]}
 call teleport {"x": 11.5, "z": -5.6}

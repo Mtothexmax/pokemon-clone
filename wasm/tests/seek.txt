@@ -7,7 +7,7 @@ screen play
 wait_for game_state.state.assets_pending == 0 15000
 call save_reset
 call flags {"has_deck": true}
-call time {"hours": 12}
+call clock {"hours": 12}
 call life {"freeze": false, "pip_home": true}
 resume
 # ---- before a round: a card battle? hide and seek first ----
@@ -86,7 +86,7 @@ wait_for game_state.screen == "battle" 8000
 reload
 screen play
 wait_for game_state.state.assets_pending == 0 15000
-call time {"hours": 12}
+call clock {"hours": 12}
 call life {"freeze": false, "pip_home": true}
 # ---- time is up ----
 call teleport {"x": 30, "z": 0}

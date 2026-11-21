@@ -10,7 +10,7 @@ wait_for game_state.state.assets_pending == 0 15000
 call save_reset
 # (the stick: the menu's CONTROLS = Stick; phones start with swipe walking, see swipe.txt)
 call flags {"touch_mode": 1}
-call time {"hours": 12}
+call clock {"hours": 12}
 call life {"freeze": true, "pip_home": true}
 resume
 call flags {"quest_part": true, "has_suit": true}

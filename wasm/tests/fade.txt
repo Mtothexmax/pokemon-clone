@@ -3,7 +3,7 @@
 reload
 screen play
 wait_for game_state.state.assets_pending == 0 15000
-call time {"hours": 12}
+call clock {"hours": 12}
 resume
 # out in the open: nothing hides you, nothing is faded
 call teleport {"x": -10, "z": 0.5}

@@ -307,6 +307,11 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   (`cave::DEEP_CORE`) stands on a column at its far end. `Dive::collide` keeps you in the basin, the tunnel's
   cross-section or the grotto (`cave::Zone`, `game_state.state.dive.zone`); lights 9 (tunnel + two in the grotto).
   Screens: on an upright phone the TV / PC picture stays in the 3D screen. Lab: one more lamp by the east wall.
+- Phones: the profile from the first frame (`Data::ensure_loaded`: coarse pointer, or touch points + a mobile UA),
+  `PHONE_MAX_FPS` 50 (every 2nd refresh at 91.7 Hz), half resolution at the start, 20 ms budget,
+  `ctx.time.lock_fixed_to_frames` (engine aa91b8f: whole steps per drawn frame; read `ctx.time.fixed_dt`, it is not
+  always 1/60). The game's time-of-day command is `clock {hours}` (the engine's `time` is its frame clock).
+  Measuring on the phone: https://<pc>:8444/?measure (tools/phone_log.js) -> "measure" lines in logs/phone.log.
 - Loading: Stonecrest's models are `TownAssets::deferred` (empty roots now, `town::load_deferred` once nothing else
   loads); tools/serve_lan.py gzips .wasm / .glb / .js / .html (in-memory cache, `X-Raw-Length` for the page's bar),
   .ogg stays streamed (the engine's `<audio>` music). wasm-opt (binaryen) is not installed: release builds skip it.

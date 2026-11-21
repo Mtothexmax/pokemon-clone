@@ -10,3 +10,5 @@ expect render.shadow_cascades == 2
 expect render.frame_budget_ms == 20
 expect render.min_render_scale == 0.5
 expect render.render_scale <= 0.65
+expect time.lock_fixed_to_frames == true
+expect time.steps_per_frame >= 1

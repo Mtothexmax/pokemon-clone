@@ -6,7 +6,7 @@ reload
 screen play
 wait_for game_state.state.assets_pending == 0 20000
 call save_reset
-call time {"hours": 15}
+call clock {"hours": 15}
 call life {"freeze": true, "pip_home": true}
 call flags {"gate_open": true, "has_deck": true}
 call cards {"starter": true}

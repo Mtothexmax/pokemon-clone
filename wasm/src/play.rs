@@ -1685,7 +1685,7 @@ impl Screen<Data> for PlayScreen {
     fn debug_commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![
             ("teleport", "Move the hero (studs, like the three.js town). args: {x, z}"),
-            ("time", "Set the time of day. args: {hours}"),
+            ("clock", "Set the time of day (the engine has `time`: its frame clock). args: {hours}"),
             ("talk", "Talk to whoever is in reach (as E). args: {} | {dialog: 'Pip'|'Dex'|'Mom'|'Prof'|'Lumi'|'Gate'|'Machine'|'Knight'|'Baker'} opens that dialog directly"),
             ("life", "Village life (life.rs). args: {freeze?: bool, pip_home?: true, rain?: bool (a shower now / dry), chest?: true (one appears now, 12..50 studs away), chest_at?: [x, z], seek?: true (as the dialog's hide and seek), tag?: true (Pip flees now), ball?: [x, z, vx?, vz?], dance?: bool, sit?: bool, fish?: true (jumps when you are near), golden?: n (that many collected)}; state in game_state.state.life"),
             ("debug_pick", "The debug panel's picker at a canvas point (CSS px), as a click with the panel on. args: {x, y} | {copy: 'pick'|'me'} (the Copy buttons) | {menu: bool} (the menu's switch)"),
@@ -1713,7 +1713,7 @@ impl Screen<Data> for PlayScreen {
                 self.teleport(ctx, x, z);
                 Some(Ok(json!({"x": x, "z": z})))
             }
-            "time" => {
+            "clock" => {
                 let h = a["hours"].as_f64()? as f32;
                 ctx.renderer.settings.time_of_day = h.rem_euclid(24.0);
                 Some(Ok(json!({"hours": h})))

@@ -179,6 +179,10 @@ impl Settings {
             let hz = ctx.time.refresh_hz;
             ctx.renderer.settings.max_fps = if hz > 0.0 && hz < 80.0 { 0.0 } else { crate::PHONE_MAX_FPS };
         }
+        // the simulation steps a whole number of times per drawn frame on phones (engine aa91b8f): at the capped 45.9 fps
+        // the 60 Hz step ran 1, 1, 2 times per frame and everything the engine does not interpolate (the walk cycle,
+        // villagers, Pip) moved in that beat - a regular judder; locked, it is 2 steps of 10.9 ms each frame
+        ctx.time.lock_fixed_to_frames = step == 2;
         out
     }
 

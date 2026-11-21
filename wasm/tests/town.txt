@@ -82,13 +82,13 @@ step 10
 expect game_state.state.hero.z > -24.5
 
 # day and night (6 minutes a day like the original): at night the street lamps glow
-call time {"hours": 23}
+call clock {"hours": 23}
 resume
 frames 20
 expect game_state.state.night > 0.8
 expect game_state.state.lamps.0 > 4
 screenshot shots/town-night.png
-call time {"hours": 12}
+call clock {"hours": 12}
 frames 20
 expect game_state.state.night < 0.1
 expect game_state.state.lamps.0 < 0.5
