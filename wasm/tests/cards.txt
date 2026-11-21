@@ -100,6 +100,51 @@ expect game_state.state.cards.deck.11 == "pebbit"
 expect game_state.state.cards.adds == 1
 expect ui.slots.deck_marks contains bc0::before
 screenshot shots/cards-deck.png
+# ---- a full deck: "Add to deck" asks which card it replaces (Cancel / Esc drop it, a tap on one swaps) ----
+expect game_state.state.cards.deck.length == 12
+action coll:1
+frames 3
+expect game_state.state.cards.pick == "flicker"
+expect ui.slots.deck_side contains pick one to replace
+action deck_add
+frames 3
+expect game_state.state.cards.replacing == "flicker"
+expect ui.slots.deck_side contains Which card should
+expect ui.slots.deck_side contains replace:11
+screenshot shots/cards-replace.png
+action deck_cancel
+frames 3
+expect game_state.state.cards.replacing == null
+expect game_state.state.cards.deck_open == true
+action deck_add
+frames 3
+key Escape
+frames 3
+expect game_state.state.cards.replacing == null
+expect game_state.state.cards.deck_open == true
+action deck_add
+frames 3
+action replace:0
+frames 3
+expect game_state.state.cards.replacing == null
+expect game_state.state.cards.deck.0 == "flicker"
+expect game_state.state.cards.deck.length == 12
+expect game_state.state.cards.adds == 2
+# a double click on a card outside the full deck, then a tap on the strip's slot swaps too
+expect game_state.state.cards.deck.1 == "drizzlet"
+action coll:5
+frames 3
+action coll:5
+frames 3
+expect game_state.state.cards.replacing != null
+action slot:1
+frames 3
+expect game_state.state.cards.deck.1 != "drizzlet"
+expect game_state.state.cards.replacing == null
+expect game_state.state.cards.deck.11 == "pebbit"
+action coll:0
+frames 3
+expect game_state.state.cards.pick == "pebbit"
 # ---- an upgrade: 15 EXP for Bronze, the moment plays, a key goes back ----
 expect ui.slots.deck_side contains you have 0
 call cards {"exp": 20}

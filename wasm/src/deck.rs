@@ -52,6 +52,9 @@ pub struct CardUi {
     pub deck_open: bool,
     /// the card shown big
     pub pick: Option<usize>,
+    /// "Add to deck" with a full deck: the picked card waits for the deck card it replaces (a tap on one in the
+    /// chooser or the strip swaps them; Cancel, Esc / C or picking another card drops it)
+    pub replacing: Option<usize>,
     last_coll: Option<(usize, f32)>,
     time: f32,
     // ---- rewards ----
@@ -143,6 +146,7 @@ impl CardUi {
             if self.deck_input(ctx, save, sound, actions, k_enter || k_space || k_e || k_esc || k_c, k_c || k_esc) {
                 self.deck_open = false;
                 self.pick = None;
+                self.replacing = None;
                 sound.sfx(ctx, Sfx::Blip, 1.2, 0.3);
             }
             return out;
@@ -218,6 +222,9 @@ impl CardUi {
                 if !cards::owns(s, c) {
                     continue;
                 }
+                if self.pick != Some(c) {
+                    self.replacing = None;
+                }
                 self.pick = Some(c);
                 sound.sfx(ctx, Sfx::Blip, 1.5, 0.25);
                 match self.last_coll {
@@ -228,7 +235,20 @@ impl CardUi {
                     }
                     _ => self.last_coll = Some((c, self.time)),
                 }
-            } else if let Some(i) = a.strip_prefix("slot:").and_then(|n| n.parse::<usize>().ok()) {
+            } else if let Some(i) = a.strip_prefix("slot:").or_else(|| a.strip_prefix("replace:")).and_then(|n| n.parse::<usize>().ok()) {
+                if let (Some(new), Some(old)) = (self.replacing, s.deck.get(i).copied()) {
+                    // the swap: the new card takes the old one's place in the deck (the order stays)
+                    if !cards::in_deck(s, new) {
+                        s.deck[i] = new as u8;
+                        self.adds += 1;
+                        save.mark();
+                        sound.sfx(ctx, Sfx::Pop, 1.3, 0.5);
+                        log_info!("deck: {} replaces {}", cards::card(new).id, cards::card(old as usize).id);
+                    }
+                    self.replacing = None;
+                    self.last_coll = None;
+                    return false;
+                }
                 if let Some(&c) = s.deck.get(i) {
                     self.pick = Some(c as usize);
                     sound.sfx(ctx, Sfx::Blip, 1.5, 0.25);
@@ -236,12 +256,24 @@ impl CardUi {
             }
         }
         let has = |a: &str| actions.iter().any(|x| x == a);
+        if self.replacing.is_some() && (has("deck_cancel") || close_keys) {
+            // Esc / C first drop the swap, a second press closes the screen
+            self.replacing = None;
+            sound.sfx(ctx, Sfx::Blip, 1.2, 0.3);
+            return has("deck_close");
+        }
         if let Some(c) = self.pick {
-            if (add || has("deck_add")) && s.deck.len() < DECK_SIZE && !cards::in_deck(s, c) {
-                s.deck.push(c as u8);
-                self.adds += 1;
-                save.mark();
-                sound.sfx(ctx, Sfx::Pop, 1.3, 0.5);
+            if (add || has("deck_add")) && !cards::in_deck(s, c) {
+                if s.deck.len() < DECK_SIZE {
+                    s.deck.push(c as u8);
+                    self.adds += 1;
+                    save.mark();
+                    sound.sfx(ctx, Sfx::Pop, 1.3, 0.5);
+                } else {
+                    // full: ask which deck card it replaces
+                    self.replacing = Some(c);
+                    sound.sfx(ctx, Sfx::Blip, 1.3, 0.3);
+                }
             }
             let s = &mut save.data;
             if has("deck_remove") && cards::in_deck(s, c) {
@@ -265,6 +297,7 @@ impl CardUi {
         }
         if has("deck_unpick") {
             self.pick = None; // the sheet's x (phones)
+            self.replacing = None;
         }
         has("deck_close") || close_keys
     }
@@ -390,6 +423,10 @@ impl CardUi {
                 d - 4.0
             );
         }
+        if self.replacing.is_some() {
+            // choosing the card to replace: the strip's cards can be tapped too
+            marks += "#ui .dk-strip .bc{outline:3px dashed #ffd23d;outline-offset:1px;cursor:pointer}";
+        }
         marks += "</style>";
         ctx.ui.set("deck_marks", &marks);
         // ---- the deck strip: 12 slots (two rows of six on phones) ----
@@ -411,6 +448,24 @@ impl CardUi {
         ctx.ui.set("deck_strip", &format!("<div class='dk-strip' style='height:{strip_h}px'>{strip}</div>"));
         // ---- the picked card: big with what you can do (side panel; phones: a sheet from the bottom) ----
         let side = match self.pick {
+            Some(c) if self.replacing == Some(c) => {
+                // the chooser: the deck's cards to tap, Cancel
+                let cw = if narrow { ((sw - 28.0 - 5.0 * 6.0) / 6.0).min(56.0) } else { ((side_w - 24.0 - 3.0 * 6.0) / 4.0).min(64.0) };
+                let mut grid = String::new();
+                for (i, &d) in s.deck.iter().enumerate() {
+                    let d = d as usize;
+                    grid += &Self::card_html(faces, Face::new(d, cards::level(s, d)), cw, &format!("replace:{i}"), "");
+                }
+                let (cls, style) = if narrow {
+                    ("dk-sheet dk-repl", String::new())
+                } else {
+                    ("dk-side dk-repl", format!(" style='top:{}px;bottom:{}px;width:{side_w}px'", head_h + 8.0, strip_h + 8.0))
+                };
+                format!(
+                    "<div class='{cls}'{style}><div class='dk-sheethead'><b>The deck is full</b></div><p>Which card should <b>{}</b> replace?</p><div class='dk-rgrid'>{grid}</div>                     <button class='dk-btn' data-action='deck_cancel' style='background:#5a5e64'>Cancel</button></div>",
+                    esc(cards::card(c).name)
+                )
+            }
             Some(c) if narrow => format!(
                 "<div class='dk-sheet'>{}<div class='dk-acts'><div class='dk-sheethead'><b>{}</b><button class='dk-x' data-action='deck_unpick'>&times;</button></div>{}</div></div>",
                 Self::card_html(faces, Face::new(c, cards::level(s, c)).big(), (sw * 0.3).min(120.0), "", "dk-big"),
@@ -458,7 +513,8 @@ impl CardUi {
         if cards::in_deck(s, c) {
             h += &btn("deck_remove", "Remove from deck", "", "#b44632", true);
         } else {
-            h += &btn("deck_add", "Add to deck", if s.deck.len() < DECK_SIZE { "" } else { "The deck is full" }, "#0055bf", s.deck.len() < DECK_SIZE);
+            // a full deck still takes it: the button then asks which card it replaces
+            h += &btn("deck_add", "Add to deck", if s.deck.len() < DECK_SIZE { "" } else { "The deck is full: pick one to replace" }, "#0055bf", true);
         }
         h
     }
@@ -600,6 +656,7 @@ impl CardUi {
             "deck_open": self.deck_open,
             "narrow": self.narrow,
             "pick": self.pick.map(|c| cards::card(c).id),
+            "replacing": self.replacing.map(|c| cards::card(c).id),
             "adds": self.adds,
             "upgrades": self.upgrades,
             "upgrade": self.up.as_ref().map(|u| json!({"card": cards::card(u.card).id, "from": u.from, "to": u.to, "t": (u.t * 100.0).round() / 100.0})),
@@ -649,6 +706,8 @@ pub const STYLE: &str = "<style>
 .dk-grid{display:flex;flex-wrap:wrap;gap:8px;padding:16px 0 0}
 .dk-pad{height:12px}
 .dk-strip{position:fixed;left:0;right:0;bottom:0;z-index:12;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 20px 12px;background:#282c34;box-shadow:0 -2px 10px rgba(0,0,0,.3);pointer-events:auto}
+.dk-repl{flex-direction:column;align-items:stretch}.dk-repl p{margin:0;font-size:14px}
+.dk-rgrid{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}.dk-rgrid .bc{cursor:pointer}
 .dk-row{display:flex;gap:6px}.dk-empty{border-radius:6px;background:#464a52}
 .dk-slot.lit .bc{transform:translateY(-6px);box-shadow:0 0 12px 4px #ffd23d}
 .dk-side{position:fixed;right:12px;z-index:11;box-sizing:border-box;overflow-y:auto;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;background:#fff;border-radius:12px;color:#1b2a34;pointer-events:auto}
