@@ -1,0 +1,12 @@
+# A phone gets the phone profile from the first frame (not after the first touch): half resolution, two shadow
+# cascades, the 20 ms budget. (The viewport comes before the reload: the profile is picked when the page starts.)
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/phone_start.txt --port 9223 --url http://localhost:8091/
+viewport 390 844 3 touch
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+frames 30
+expect render.shadow_cascades == 2
+expect render.frame_budget_ms == 20
+expect render.min_render_scale == 0.5
+expect render.render_scale <= 0.65

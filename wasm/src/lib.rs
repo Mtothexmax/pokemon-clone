@@ -160,6 +160,15 @@ impl Data {
             ctx.ui.set("style_debug", debugpanel::STYLE);
             ctx.ui.set("style_loadbar", LOADBAR_STYLE);
             self.cards = deck::CardUi::new();
+            // a phone (a coarse primary pointer, or touch points and a mobile browser) gets the phone profile from the start, not after the first touch:
+            // until then it ran the desktop look at full resolution
+            self.settings.touch = web_sys::window().is_some_and(|w| {
+                let coarse = w.match_media("(pointer: coarse)").ok().flatten().is_some_and(|m| m.matches());
+                let nav = w.navigator();
+                let ua = nav.user_agent().unwrap_or_default();
+                let mobile = nav.max_touch_points() > 0 && ["Android", "iPhone", "iPad", "Mobile"].iter().any(|k| ua.contains(k));
+                coarse || mobile
+            });
         }
     }
 }
@@ -170,8 +179,9 @@ pub(crate) const PLASTIC_ROUGH: f32 = 0.3;
 const PLASTIC_COAT_ROUGH: f32 = 0.06;
 const PLASTIC_SSS: f32 = 0.3;
 pub(crate) const AMBIENT_SPECULAR: f32 = 0.8;
-/// The phones' frame cap (`phone_quality`): 45 fps = every 2nd refresh at 90 Hz.
-pub(crate) const PHONE_MAX_FPS: f32 = 45.0;
+/// The phones' frame cap (`phone_quality`): every 2nd refresh at 90 Hz. Not 45: a 91.7 Hz display's 2nd refresh is
+/// 45.9 fps, over the cap, so the engine took every 3rd (30 fps; measured on the phone).
+pub(crate) const PHONE_MAX_FPS: f32 = 50.0;
 /// (`sign_`: the printed boards, a clear coat's sky reflection washed their text out at some angles)
 const NOT_PLASTIC: [&str; 8] = ["wood", "felt", "card", "cave", "paper", "rock", "sand", "sign_"];
 
@@ -279,9 +289,12 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     s.bloom = false;
     s.water_ssr = false;
     s.lens_flare = 0.0;
-    // aim for ~30 fps instead of the desktop budget, resolution may drop to half
-    s.frame_budget_ms = 30.0;
+    // a budget that fits the frame cap (every 2nd refresh at 90 Hz = 21.8 ms), the resolution may drop to half; it starts
+    // at half (a phone measured 235-307 ms per frame at full resolution before the adaptation walked it down, every
+    // step a hitch) and the adaptation raises it when there is room
+    s.frame_budget_ms = 20.0;
     s.min_render_scale = 0.5;
+    s.render_scale = 0.5;
     // an even frame rate: a phone that nearly makes 90 Hz drew 11 / 22 ms frames in turn (walking juddered); every 2nd
     // refresh instead (engine a928c1f; Settings::update lifts it again on a 60 Hz display)
     s.max_fps = PHONE_MAX_FPS;
