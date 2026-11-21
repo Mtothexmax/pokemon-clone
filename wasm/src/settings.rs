@@ -39,6 +39,13 @@ pub struct Settings {
     audio_applied: Option<(bool, u8)>,
 }
 
+/// Desktop: render at the browser window's content resolution (canvas CSS px x devicePixelRatio),
+/// no adaptive scaling. Phones keep the adaptive resolution (`phone_quality`).
+fn native_resolution(s: &mut engine::renderer::RenderSettings) {
+    s.auto_resolution = false;
+    s.render_scale = 1.0;
+}
+
 /// One graphics step on the renderer. 0: the desktop look of `setup_look`; 2: the phone profile.
 pub fn apply_step(ctx: &mut Ctx, step: usize) {
     let s = &mut ctx.renderer.settings;
@@ -53,6 +60,7 @@ pub fn apply_step(ctx: &mut Ctx, step: usize) {
             s.lens_flare = 1.0;
             s.frame_budget_ms = 14.0;
             s.min_render_scale = 0.5;
+            native_resolution(s);
         }
         1 => {
             s.shadow_cascades = 3;
@@ -64,6 +72,7 @@ pub fn apply_step(ctx: &mut Ctx, step: usize) {
             s.lens_flare = 0.0;
             s.frame_budget_ms = 20.0;
             s.min_render_scale = 0.5;
+            native_resolution(s);
         }
         _ => crate::phone_quality(ctx),
     }

@@ -132,6 +132,9 @@ pub(crate) fn setup_look(ctx: &mut Ctx) {
     // desktop: the default 11 ms budget held the resolution at 0.5-0.65 (GPU ~9 ms); 14 ms still fits a
     // 60 Hz frame and renders sharper. Phones get their own budget (phone_quality)
     s.frame_budget_ms = 14.0;
+    // desktop renders at the window's content resolution (CSS px x devicePixelRatio), fixed
+    s.auto_resolution = false;
+    s.render_scale = 1.0;
     // the sun moves 1 degree before the shadows follow (default 0.5): every step re-renders all
     // cascades, at a 6-minute day that was once a second
     s.shadow_step_deg = 1.0;
@@ -205,5 +208,6 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     // aim for ~30 fps instead of the desktop budget, resolution may drop to half
     s.frame_budget_ms = 30.0;
     s.min_render_scale = 0.5;
+    s.auto_resolution = true;
 }
 
