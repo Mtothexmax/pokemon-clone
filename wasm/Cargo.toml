@@ -32,3 +32,5 @@ debug = false
 opt-level = 3
 lto = true
 codegen-units = 1
+# no symbol names in the shipped wasm (the "name" section was 746 KB of 6.4 MB; panics and logs keep their messages)
+strip = true
