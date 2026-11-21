@@ -1943,6 +1943,8 @@ impl Screen<Data> for PlayScreen {
             ("talk", "Talk to whoever is in reach (as E). args: {} | {dialog: 'Pip'|'Dex'|'Mom'|'Prof'|'Lumi'|'Gate'|'Machine'|'Knight'|'Baker'} opens that dialog directly"),
             ("life", "Village life (life.rs). args: {freeze?: bool, pip_home?: true, rain?: bool (a shower now / dry), chest?: true (one appears now, 12..50 studs away), chest_at?: [x, z], seek?: true (as the dialog's hide and seek), tag?: true (Pip flees now), ball?: [x, z, vx?, vz?], dance?: bool, sit?: bool, fish?: true (jumps when you are near), golden?: n (that many collected)}; state in game_state.state.life"),
             ("debug_pick", "The debug panel's picker at a canvas point (CSS px), as a click with the panel on. args: {x, y} | {copy: 'pick'|'me'} (the Copy buttons) | {menu: bool} (the menu's switch)"),
+            ("save_export", "The save game as JSON (what the menu's Export downloads). args: none -> {json}"),
+            ("save_import", "Makes a save JSON the save (as the menu's Import, without the page reload). args: {json: \"...\"} -> {ok, status}"),
             ("save_reset", "A new game: the save (progress and menu settings) back to the defaults, intro already seen (see `intro`)."),
             ("intro", "Start a new game's intro: wake up in your room with the thought about the day (as after the first load)."),
             ("enter", "Go into a room as through its door (fade, teleport). args: {room: 'Home'|'Dex'|'Lab'|'Bedroom'}"),
@@ -2070,6 +2072,12 @@ impl Screen<Data> for PlayScreen {
                     self.debug_pick(ctx, Vec2::new(x as f32, y as f32));
                 }
                 Some(Ok(self.dbg.describe()))
+            }
+            "save_export" => Some(Ok(json!({"json": crate::savefile::SaveFile::json(&data.save)}))),
+            "save_import" => {
+                let text = a["json"].as_str().map(str::to_string).unwrap_or_else(|| a["json"].to_string());
+                let ok = data.settings.file.apply(ctx, &mut data.save, &text, false);
+                Some(Ok(json!({"ok": ok, "status": data.settings.file.status})))
             }
             "save_reset" => {
                 data.save.reset(ctx);

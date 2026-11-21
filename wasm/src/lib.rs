@@ -23,6 +23,7 @@ mod islandview;
 mod life;
 mod play;
 mod save;
+mod savefile;
 mod screens;
 mod settings;
 mod sound;

@@ -37,6 +37,8 @@ pub struct Settings {
     pub fps: f32,
     /// Audio switches applied (voices, music level), None before the first.
     audio_applied: Option<(bool, u8)>,
+    /// The save as a file: the menu's Export / Import (`savefile.rs`)
+    pub file: crate::savefile::SaveFile,
 }
 
 /// Desktop: render at the browser window's content resolution (canvas CSS px x devicePixelRatio),
@@ -100,6 +102,11 @@ impl Settings {
     /// `menu_close`), the audio switches, Auto's frame-rate watch and the graphics level.
     pub fn update(&mut self, ctx: &mut Ctx, save: &mut Save, sound: &mut Sound, actions: &[String], dt: f32) -> MenuOut {
         let mut out = MenuOut::None;
+        // a picked save file: it becomes the save and the page reloads; the menu's Export downloads it
+        self.file.poll(ctx, save);
+        if actions.iter().any(|a| a == "save_export") {
+            self.file.export(save);
+        }
         let g = &mut save.data;
         let mut changed = false;
         for a in actions {
@@ -107,6 +114,8 @@ impl Settings {
                 "menu" => self.toggle(),
                 "menu_close" => self.open = false,
                 "menu_title" => out = MenuOut::Title,
+                "save_export" => {} // (above, before the save is borrowed for the settings)
+                "save_import" => self.file.pick(),
                 "set_voices" => {
                     g.voices_off = !g.voices_off;
                     changed = true;
@@ -221,7 +230,7 @@ impl Settings {
              <button class='bh-row' data-action='set_voices'><b>Voices</b><span>{}</span></button>\
              <div class='bh-cap'>MUSIC</div><div class='bh-seg'>{}</div>\
              <div class='bh-cap'>GRAPHICS</div><div class='bh-seg'>{}</div><div class='bh-hint'>{}</div>{}{}\
-             <button class='bh-row' data-action='map'><b>Map</b><span>M</span></button>             <button class='bh-row' data-action='dbg_toggle'><b>Debug panel</b><span>{}</span></button><button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
+             <button class='bh-row' data-action='map'><b>Map</b><span>M</span></button>             <div class='bh-cap'>SAVE GAME</div><div class='bh-seg'><button data-action='save_export'>Export</button><button data-action='save_import'>Import</button></div>{}             <button class='bh-row' data-action='dbg_toggle'><b>Debug panel</b><span>{}</span></button><button class='bh-row' data-action='menu_title'><b>Title screen</b><span>&rsaquo;</span></button></div>",
             g.golden_count(),
             g.studs,
             if g.voices_off { "off" } else { "on" },
@@ -230,6 +239,7 @@ impl Settings {
             hint,
             controls,
             fps,
+            self.file.status.as_deref().map(|m| format!("<div class='bh-hint'>{}</div>", crate::esc(m))).unwrap_or_default(),
             if debug_on { "on" } else { "off" },
         );
         ctx.ui.set("settings", &html);

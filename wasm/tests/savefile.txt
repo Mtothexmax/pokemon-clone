@@ -1,0 +1,29 @@
+# The save game as a file: the menu has Export / Import; export gives the whole save as JSON, an import makes a save
+# JSON the save (and it stays after a reload), something that is not a save is refused and changes nothing.
+# (The browser's download and file picker themselves are not scriptable: the debug commands take their place.)
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/savefile.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+action menu
+frames 3
+expect ui.slots.settings contains SAVE GAME
+expect ui.slots.settings contains save_export
+expect ui.slots.settings contains save_import
+action menu_close
+expect save_export.json contains "studs"
+expect save_export.json contains "golden_mask"
+# an import (fields the file lacks keep their defaults)
+call save_import {"json": {"plays": 3, "studs": 777, "golden_mask": 5}}
+expect game_state.state.save.studs == 777
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+expect game_state.state.save.studs == 777
+# not a save: refused, nothing changes
+call save_import {"json": {"hello": 1}}
+expect game_state.state.save.studs == 777
+call save_import {"json": "not json at all"}
+expect game_state.state.save.studs == 777
+call save_reset

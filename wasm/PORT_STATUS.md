@@ -87,7 +87,9 @@ comes from.
   it pops, `PlayScreen::resume` -> `battle_done` pays out (studs, EXP, reward packs, `rival_wins` / `pip_wins`) and
   opens the after-dialogue. `BattleScreen::pauses_below` is false. Call `data.loadbar(ctx)` every frame from any
   new screen.
-- **Save:** add fields to `save::GameSave` (serde default), change them, `data.save.mark()`. `save_reset` keeps
+- **Save:** the ☰ menu's SAVE GAME row exports the whole `GameSave` as a JSON download and imports one through the
+  file picker (`savefile.rs`: refused unless it is a save; applied, written, page reloaded).
+  Add fields to `save::GameSave` (serde default), change them, `data.save.mark()`. `save_reset` keeps
   `intro_seen` true (tests start in the village).
 - **Dialogues:** `self.dlg.open(ctx, &mut data.sound, dialog_for(id, &save))`; a closing choice arrives in
   `PlayScreen::dialog_action` (the last one is `pending_action` in game_state).
@@ -123,7 +125,7 @@ comes from.
 
 ## Debug commands (`bridge call help` lists them with their args)
 - Play screen: `teleport {x, z}` (studs), `clock {hours}`, `talk {dialog?}`, `life {freeze, pip_home, rain, chest,
-  chest_at, seek, tag, ball, dance, sit, fish, golden, ...}`, `debug_pick {x, y | copy | menu}`, `save_reset`, `intro`,
+  chest_at, seek, tag, ball, dance, sit, fish, golden, ...}`, `debug_pick {x, y | copy | menu}`, `save_reset`, `save_export` -> {json}, `save_import {json}`, `intro`,
   `enter {room}`, `flags {any GameSave field}`, `play_sfx {name, pitch}`, `cards {starter, give, exp, level, deck,
   rewards, open, pick}`, `card_face {id, level, big, unknown, back, power, texture}`, `battle {kind, seed, instant,
   start}`, `look {at, yaw, w, h, tilt}` / `look {}`, `tall_grass {wind}`, `vox {force, shiny, skill, run, hp, tired,
@@ -148,6 +150,7 @@ Drive cards with touch input (`input {touch}`), not the mouse.
 
 | test | covers |
 |---|---|
+| savefile | the menu's Export / Import row, export JSON, an import persists over a reload, non-saves refused |
 | smoke, town | the village loads, walking, jumping, collision, studs, LODs (`lods_village == 0`) |
 | touch, phone_start, swipe | the stick, Jump, the phone profile from the first frame, swipe walking |
 | menu | sound, the ☰ menu, graphics steps |
