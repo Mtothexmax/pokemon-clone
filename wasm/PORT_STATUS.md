@@ -307,6 +307,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
   (`cave::DEEP_CORE`) stands on a column at its far end. `Dive::collide` keeps you in the basin, the tunnel's
   cross-section or the grotto (`cave::Zone`, `game_state.state.dive.zone`); lights 9 (tunnel + two in the grotto).
   Screens: on an upright phone the TV / PC picture stays in the 3D screen. Lab: one more lamp by the east wall.
+- Loading: Stonecrest's models are `TownAssets::deferred` (empty roots now, `town::load_deferred` once nothing else
+  loads); tools/serve_lan.py gzips .wasm / .glb / .js / .html (in-memory cache, `X-Raw-Length` for the page's bar),
+  .ogg stays streamed (the engine's `<audio>` music). wasm-opt (binaryen) is not installed: release builds skip it.
 - Weather / night: rain haze `fog_density` x (1 + 0.6 rain), `fog_start` x (1 - 0.15 rain) (the old 1.5 / 0.5 put the
   village in milk under the 16 m camera); at night outside `ambient_scale` x (1 + `NIGHT_FILL` 1.4 x night); street
   lamps 8 x night, range 24 studs.
