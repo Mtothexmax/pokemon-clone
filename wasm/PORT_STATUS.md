@@ -90,7 +90,7 @@ comes from.
   new screen.
 - **LOD:** props load with the engine's auto-LOD (`gltf_defaults.auto_lod`), minifig parts never (figure.rs).
   `lod_distance_scale` multiplies the switch distances (bigger = more detail): desktop 1.0, medium 0.75, phones 0.6; a
-  low PC camera divides it by up to 3.
+  low PC camera divides it by up to 2.
 - **Round the strip:** the island's lattice reaches south past the village (`island::Z1`): meadows a plate below the
   plates (`strip_sd`, `STRIP_LAND`), a beach, the sea; the plates and the rooms far east are holes (`island::hole`,
   no tops, sides or colliders; a coarse cell only when all of it is). No table under the plates any more. The island
@@ -105,13 +105,17 @@ comes from.
   in the Brick Ages manner: running-bond brick walls with openings, framed windows with shutters and flower boxes,
   doors with frame / step / lamp, stepped gable or hip roofs, chimneys, Dewmere's with picket-fenced gardens. Each building its own entity
   (fades, `Fader::add`) and a box collider; the pads' middles stay free. ~21k triangles for all three. Test: towns.
+- **Map travel:** a click on the open map's picture (`hook_map_click`, a DOM click handler: the UI's actions carry no
+  position) travels there (`map_travel` / `map_target`): the island once the gate is open (a town's pad: its middle),
+  never the sea; on the strip the nearest safe spot (the village plate: the start). Debug `island {map_click: [x, z]}`.
+  Test: map_travel.
 - **Island music:** `island::music_at` picks the place's track (`sound::ISLE_MUSIC`: a town's on its pad + 20 studs, the
   north, cliffs, warm beaches, the night sea west / east, meadows; day / night); `PlayScreen::outdoor_music` switches
   once a place's track held 2 s (`MUSIC_HOLD`); `Track::Home` means the outdoor music where you are
   (`Sound::set_outdoor`), so a fight hands back to it. Test: isle_music.
 - **No auto-LOD** for the Voxelmon (vox.rs: a simplified voxel model has holes) and the lab machine signs.
 - **Far view:** trees (`town::is_tree`) are also engine impostors (`prop_opts`: one baked card beyond
-  `TREE_IMPOSTOR` 30 x their radius, 8 views, 128 px); the village's bricks are batched under "town bricks" with an
+  `TREE_IMPOSTOR` 30 x their radius, never nearer than `TREE_IMPOSTOR_MIN_M` 60 m, 8 views, 128 px); the village's bricks are batched under "town bricks" with an
   HLOD per 24 m cell (`HLOD_CELL`, beyond `HLOD_DISTANCE` 60 m, clustered at a stud; `town.hlods`). `view_distance`
   120 m at the fixed tilt .. 260 m at the lowest PC tilt (`VIEW_NEAR` / `VIEW_FAR`, faded into the haze). Village,
   PC camera lowest: 656k -> 197k triangles; the top-down views (PC and phone) show no cards.

@@ -235,6 +235,13 @@ pub struct PlayScreen {
     north_stops: u32,
     /// the world map: open, its painted picture (once), the arrow's last html, times opened (tests)
     map_open: bool,
+    /// a click on the open map's picture (0..1 across and down), set by the picture's click handler
+    map_click: std::rc::Rc<std::cell::Cell<Option<(f32, f32)>>>,
+    /// the open map's picture has its click handler
+    map_hooked: bool,
+    /// map travels (for tests) and why the last one was refused
+    map_travels: u32,
+    map_refused: Option<&'static str>,
     map_url: Option<String>,
     map_me: String,
     maps_opened: u32,
@@ -453,7 +460,7 @@ impl PlayScreen {
             "view": self.isle.describe(),
             "places": self.places.describe(),
             "gate": {"open": data.save.data.north_gate, "angle": self.gate_angle.map(|a| (a * 100.0).round() / 100.0), "blocked": self.gate_block.is_some(), "stops": self.north_stops},
-            "map": {"open": self.map_open, "painted": self.map_url.is_some(), "opened": self.maps_opened},
+            "map": {"open": self.map_open, "painted": self.map_url.is_some(), "opened": self.maps_opened, "travels": self.map_travels, "refused": self.map_refused},
             "found": data.save.data.isle_found,
             // your feet over the island's ground there (studs; 0 = standing on it)
             "ground_gap": self.hero_pos(_ctx).filter(|(p, _)| p.z / STUD < island::SOUTH_Z).and_then(|(p, _)| self.law.as_ref().map(|l| ((p.y / STUD - l.ground_y(p.x / STUD, p.z / STUD)) * 100.0).round() / 100.0)),
@@ -567,8 +574,79 @@ impl PlayScreen {
             }
         }
         self.maps_opened += 1;
+        self.map_hooked = false;
         ctx.ui.set("map", &worldmap::html(self.map_url.as_deref().unwrap_or(""), data.save.data.isle_found));
         self.map_arrow(ctx);
+    }
+
+    /// Gives the open map's picture its click handler once it is in the page (the UI's actions carry no position).
+    fn hook_map_click(&mut self) {
+        use wasm_bindgen::JsCast;
+        if self.map_hooked {
+            return;
+        }
+        let Some(img) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.query_selector(".bh-mapimg").ok().flatten()) else { return };
+        let Ok(img) = img.dyn_into::<web_sys::HtmlElement>() else { return };
+        let cell = self.map_click.clone();
+        let el = img.clone();
+        let f = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+            let r = el.get_bounding_client_rect();
+            if r.width() > 1.0 && r.height() > 1.0 {
+                cell.set(Some((((e.client_x() as f64 - r.left()) / r.width()) as f32, ((e.client_y() as f64 - r.top()) / r.height()) as f32)));
+            }
+        });
+        img.set_onclick(Some(f.as_ref().unchecked_ref()));
+        f.forget();
+        self.map_hooked = true;
+    }
+
+    /// Travels to the place clicked on the map: the island's land once the north gate is open (a town's pad: its free
+    /// middle), on the strip the nearest of its paths; never the sea.
+    fn map_travel(&mut self, ctx: &mut Ctx, data: &mut Data, fx: f32, fy: f32) {
+        let (x, z) = worldmap::at_fraction(fx.clamp(0.0, 1.0), fy.clamp(0.0, 1.0));
+        match self.map_target(data, x, z) {
+            Ok((tx, tz)) => {
+                self.move_to(ctx, tx, tz, std::f32::consts::PI);
+                self.map_travels += 1;
+                self.map_refused = None;
+                data.sound.sfx(ctx, Sfx::Pop, 1.0, 0.6);
+            }
+            Err(why) => {
+                self.map_refused = Some(why);
+                self.life.toast(why);
+                data.sound.sfx(ctx, Sfx::Blip, 0.7, 0.5);
+            }
+        }
+    }
+
+    /// Where a travel to (x, z) studs lands, or why it can't.
+    fn map_target(&self, data: &Data, x: f32, z: f32) -> Result<(f32, f32), &'static str> {
+        // the strip and the land round it: the nearest safe spot on its paths (houses stand everywhere else)
+        const STRIP: [[f32; 2]; 5] = [START, [0.0, -30.0], [0.0, -60.0], [0.0, -100.0], [0.0, -140.0]];
+        if z > island::SOUTH_Z - 4.0 {
+            let best = STRIP.iter().min_by(|a, b| ((a[0] - x).powi(2) + (a[1] - z).powi(2)).total_cmp(&((b[0] - x).powi(2) + (b[1] - z).powi(2)))).copied().unwrap_or(START);
+            if island::strip_sd(x, z) > 40.0 {
+                return Err("That's the sea.");
+            }
+            // (anywhere on the village's plate: the village's start)
+            if z > town::NORTH_EDGE {
+                return Ok((START[0], START[1]));
+            }
+            return Ok((best[0], best[1]));
+        }
+        if !data.save.data.north_gate {
+            return Err("The north gate is still closed.");
+        }
+        let Some(law) = &self.law else { return Err("The island isn't ready yet.") };
+        for p in island::PADS.iter() {
+            if (x - p.x).abs() < p.hx + 4.0 && (z - p.z).abs() < p.hz + 4.0 {
+                return Ok((p.x, p.z));
+            }
+        }
+        if law.ground_y(x, z) <= island::SEA_Y + 0.2 {
+            return Err("That's the sea.");
+        }
+        Ok((x, z))
     }
 
     /// Your arrow on the open map.
@@ -1380,9 +1458,9 @@ impl PlayScreen {
             let s = &mut ctx.renderer.settings;
             s.fog_density = 0.055 * (1.0 + 0.6 * k) * (1.0 - 0.6 * fv);
             s.fog_start = 90.0 * STUD * (1.0 - 0.15 * k) * (1.0 + 2.2 * fv);
-            // (the graphics step's LOD bias, which multiplies the switch distances, divided by up to 3: the far trees
-            // switch to their simpler levels sooner)
-            s.lod_distance_scale = [1.0, 0.75, 0.6][data.settings.applied.unwrap_or(0).min(2)] / (1.0 + 2.0 * fv);
+            // (the graphics step's LOD scale, which multiplies the switch distances, divided by up to 2: the far
+            // trees switch to their simpler levels and cards a little sooner; more pulled the cards up to you)
+            s.lod_distance_scale = [1.0, 0.75, 0.6][data.settings.applied.unwrap_or(0).min(2)] / (1.0 + 1.0 * fv);
             // (and nothing beyond the view distance is drawn: the land there fades into the haze over its last fifth)
             s.view_distance = VIEW_NEAR + (VIEW_FAR - VIEW_NEAR) * fv;
             s.view_fade = 0.2;
@@ -1830,6 +1908,16 @@ impl Screen<Data> for PlayScreen {
                 _ => {}
             }
         }
+        // a click on the map's picture: travel there (it closes the map too)
+        if self.map_open {
+            self.hook_map_click();
+        }
+        if let Some((fx, fy)) = self.map_click.take() {
+            if self.map_open {
+                map_want = false;
+                self.map_travel(ctx, data, fx, fy);
+            }
+        }
         if map_want != self.map_open {
             self.set_map(ctx, data, map_want);
         }
@@ -2102,7 +2190,7 @@ impl Screen<Data> for PlayScreen {
             ("tall_grass", "The tall grass tufts (grass.rs, engine bend pushers). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
-            ("island", "The island north of Stonecrest (island.rs, islandview.rs, worldmap.rs). args: {gate?: 'open'|'closed' (forces the north gate), map?: bool (the world map), budget?: ms (chunk building per frame), found?: n (pad bits found), cell?: [x, z] (the law there: plates, colour, road, pad), reset_stats?: true}; state in game_state.state.island"),
+            ("island", "The island north of Stonecrest (island.rs, islandview.rs, worldmap.rs). args: {gate?: 'open'|'closed' (forces the north gate), map?: bool (the world map), map_click?: [x, z] studs (as a click on the open map: travel there), budget?: ms (chunk building per frame), found?: n (pad bits found), cell?: [x, z] (the law there: plates, colour, road, pad), reset_stats?: true}; state in game_state.state.island"),
             ("card_preview", "A 3D card in front of you with a face texture (the battle part's path). args: {id, level?: 0, big?: true, back?: false} | {clear: true}"),
         ]
     }
@@ -2411,6 +2499,12 @@ impl Screen<Data> for PlayScreen {
                 }
                 if let Some(m) = a["map"].as_bool() {
                     self.set_map(ctx, data, m);
+                }
+                // (as a click on the open map's picture at [x, z] studs: the next frame travels)
+                if let Some(c) = a["map_click"].as_array() {
+                    let (x, z) = (c.first().and_then(|v| v.as_f64()).unwrap_or(0.0) as f32, c.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32);
+                    let (fx, fy) = worldmap::pct(x, z);
+                    self.map_click.set(Some((fx / 100.0, fy / 100.0)));
                 }
                 let mut out = self.island_state(ctx, data);
                 if let (Some(c), Some(law)) = (a["cell"].as_array(), self.law.as_ref()) {

@@ -692,7 +692,7 @@ impl Places {
             self.buildings += 1;
         }
         for (path, at, s) in &plan.trees {
-            let opts = town::prop_opts(ctx, path, 0.0);
+            let opts = town::prop_opts(ctx, path, 0.0, *s);
             let rot = Quat::from_rotation_y((at.x * 12.9898 + at.z * 78.233).sin() * 43758.5 % std::f32::consts::TAU);
             let e = ctx.load_gltf_with(path, Transform::from_translation(m(at.x, at.y, at.z)).with_rotation(rot).with_scale(Vec3::splat(*s)), opts);
             ctx.set_layer(e, layer);

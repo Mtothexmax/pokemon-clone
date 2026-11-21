@@ -23,7 +23,7 @@ pub const STYLE: &str = "<style>
 #ui [data-slot=map_me]{pointer-events:none;z-index:23}
 .bh-mapshade{position:fixed;inset:0;background:rgba(10,14,22,.55);pointer-events:auto}
 .bh-mapbox{position:relative;height:min(86vh,calc(94vw * 793 / 704));aspect-ratio:704/793;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.45);border:4px solid #6b4a2b;box-sizing:border-box;overflow:hidden}
-.bh-mapbox img{display:block;width:100%;height:100%;image-rendering:auto}
+.bh-mapbox img{display:block;width:100%;height:100%;image-rendering:auto;pointer-events:auto;cursor:crosshair}
 .bh-maptitle{position:absolute;left:12px;top:10px;font:800 18px/1.2 system-ui;color:#4a321c;background:rgba(239,227,194,.85);border-radius:8px;padding:4px 10px}
 .bh-mapclose{position:absolute;right:12px;top:10px;font:600 12px/1.2 system-ui;color:#4a321c;background:rgba(239,227,194,.85);border-radius:8px;padding:5px 9px}
 .bh-mapname{position:absolute;transform:translate(-50%,-50%);font:700 13px/1.1 system-ui;color:#3a2814;text-shadow:0 0 3px #efe3c2,0 0 3px #efe3c2;white-space:nowrap}
@@ -173,7 +173,7 @@ pub fn paint(law: &Island) -> Option<String> {
 
 /// The map's HTML: the picture with its names (a pad's name once found, else "?").
 pub fn html(url: &str, found: u32) -> String {
-    let mut s = format!("<div class='bh-mapshade' data-action='map_close'></div><div class='bh-mapbox' data-action='map_close'><img src='{url}' alt='map'>");
+    let mut s = format!("<div class='bh-mapshade' data-action='map_close'></div><div class='bh-mapbox' data-action='map_close'><img class='bh-mapimg' src='{url}' alt='map'>");
     let name = |s: &mut String, x: f32, z: f32, t: &str, small: bool| {
         let (l, tp) = pct(x, z);
         s.push_str(&format!("<div class='bh-mapname{}' style='left:{l:.2}%;top:{tp:.2}%'>{}</div>", if small { " small" } else { "" }, crate::esc(t)));
@@ -190,8 +190,13 @@ pub fn html(url: &str, found: u32) -> String {
             s.push_str(&format!("<div class='bh-mapq' style='left:{l:.2}%;top:{tp:.2}%'>?</div>"));
         }
     }
-    s.push_str("<div class='bh-maptitle'>Brick Isle</div><div class='bh-mapclose'>M / Esc / tap: close</div></div>");
+    s.push_str("<div class='bh-maptitle'>Brick Isle</div><div class='bh-mapclose'>Tap a place: go there &middot; M / Esc: close</div></div>");
     s
+}
+
+/// The place (studs) at a point of the map picture (0..1 across, 0..1 down).
+pub fn at_fraction(fx: f32, fy: f32) -> (f32, f32) {
+    (MX0 + fx * (MX1 - MX0), MZ0 + fy * (MZ1 - MZ0))
 }
 
 /// Your arrow over the map (studs, the controller's yaw: 0 north, -pi/2 east).

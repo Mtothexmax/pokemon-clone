@@ -1223,7 +1223,7 @@ pub fn load_deferred(ctx: &mut Ctx, assets: &mut TownAssets) -> usize {
     }
     let list = std::mem::take(&mut assets.deferred);
     for (root, path, lod) in &list {
-        let opts = prop_opts(ctx, path, *lod);
+        let opts = prop_opts(ctx, path, *lod, scale_of(ctx, *root));
         let e = ctx.load_gltf_with(path, Transform::default(), opts);
         let _ = ctx.world.insert_one(e, Parent(*root));
         let layer = ctx.world.get::<&engine::scene::RenderLayer>(*root).map(|l| l.0).unwrap_or(0);
@@ -1241,16 +1241,27 @@ pub fn is_tree(path: &str) -> bool {
 /// (2 triangles, lit with baked normals, turned toward the camera). 60 x radius is ~20 px on a 1350 px PC view.
 pub const TREE_IMPOSTOR: f32 = 30.0;
 
-/// The load options of a prop: its engine LOD levels (`lod` > 0: their switch distance), trees also an impostor.
-pub fn prop_opts(ctx: &Ctx, path: &str, lod: f32) -> engine::gltf_loader::GltfOpts {
+/// The nearest a tree turns into its card (m, at the LOD distance scale 1): a small tree's radius times
+/// `TREE_IMPOSTOR` lay ~7 m from the camera, so a PC camera tilted low saw cards right beside you.
+const TREE_IMPOSTOR_MIN_M: f32 = 60.0;
+
+/// The load options of a prop: its engine LOD levels (`lod` > 0: their switch distance), trees also an impostor
+/// (`scale`: the instance's, which multiplies the switch distance).
+pub fn prop_opts(ctx: &Ctx, path: &str, lod: f32, scale: f32) -> engine::gltf_loader::GltfOpts {
     let mut o = if lod > 0.0 { engine::gltf_loader::GltfOpts { auto_lod: true, lod_distance: lod, ..Default::default() } } else { ctx.gltf_defaults };
     if is_tree(path) {
         o.impostor = true;
-        o.impostor_distance = TREE_IMPOSTOR;
+        // (our tree models are ~0.23 m in radius before their scale)
+        o.impostor_distance = TREE_IMPOSTOR.max(TREE_IMPOSTOR_MIN_M / (0.23 * scale.max(0.1)));
         o.impostor_views = 8;
         o.impostor_res = 128;
     }
     o
+}
+
+/// A deferred prop's scale (its root's transform).
+fn scale_of(ctx: &Ctx, root: Entity) -> f32 {
+    ctx.world.get::<&Transform>(root).map(|t| t.scale.x).unwrap_or(1.0)
 }
 
 /// Linear material for an sRGB LEGO colour (shiny plastic, as `mat()` in the three.js town).
@@ -1496,7 +1507,7 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> (Vec<Solid>, TownStats, 
             assets.deferred.push((root, p.path.clone(), p.lod));
             root
         } else {
-            let opts = prop_opts(ctx, &p.path, p.lod);
+            let opts = prop_opts(ctx, &p.path, p.lod, p.scale);
             ctx.load_gltf_with(&p.path, t, opts)
         };
         ctx.set_layer(root, if p.area < 0 { layer_at(p.pos.x / STUD, p.pos.z / STUD) } else { layer(p.area) });

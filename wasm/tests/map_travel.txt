@@ -1,0 +1,51 @@
+# Travel by the world map (play.rs map_travel): a click on the open map's picture takes you there and closes the map.
+# The island only once the north gate is open; a town's pad lands on its free middle; the sea refuses; on the strip
+# the nearest safe spot on its paths.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/map_travel.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call clock {"hours": 12}
+call island {"gate": "closed"}
+resume
+frames 10
+call island {"map": true}
+frames 5
+expect game_state.state.island.map.open == true
+call island {"map_click": [-80, -820]}
+frames 5
+expect game_state.state.island.map.open == false
+expect game_state.state.island.map.refused contains gate
+expect game_state.state.hero.z > -10
+# open: Brickton's plaza
+call island {"gate": "open"}
+call island {"map": true}
+frames 5
+call island {"map_click": [-60, -800]}
+frames 30
+expect game_state.state.island.map.travels == 1
+expect game_state.state.hero.x ~= -80
+expect game_state.state.hero.z ~= -820
+expect game_state.state.hero.grounded == true
+# the sea
+call island {"map": true}
+frames 5
+call island {"map_click": [600, -300]}
+frames 5
+expect game_state.state.island.map.refused contains sea
+# open land on the island
+call island {"map": true}
+frames 5
+call island {"map_click": [5, -360]}
+frames 30
+expect game_state.state.island.map.travels == 2
+expect game_state.state.hero.z ~= -360
+expect game_state.state.hero.grounded == true
+# back to Brickhollow: the village's start
+call island {"map": true}
+frames 5
+call island {"map_click": [25, 0]}
+frames 30
+expect game_state.state.hero.x ~= -15
+expect game_state.state.hero.grounded == true
