@@ -198,6 +198,25 @@ expect ui.slots.bt_over contains DEFEAT
 expect game_state.state.battle.taunt == "Good try! You’re getting better."
 frames 20
 screenshot shots/battle-defeat.png
+# ---- View table: the result panel goes away to look at the cards; Continue (or Enter) brings it back ----
+expect ui.slots.bt_over contains View table
+action bt_view_table
+frames 5
+expect game_state.state.battle.result_hidden == true
+expect game_state.screen == "battle"
+expect ui.slots.bt_over contains bt_show_result
+screenshot shots/battle-view-table.png
+action bt_show_result
+frames 5
+expect game_state.state.battle.result_hidden == false
+expect ui.slots.bt_over contains DEFEAT
+action bt_view_table
+frames 3
+key Enter
+frames 3
+expect game_state.screen == "battle"
+expect game_state.state.battle.result_hidden == false
+expect ui.slots.bt_over contains DEFEAT
 # ---- Continue: back in the village, -studs, +10 EXP, Lumi's after-dialogue ----
 action bt_continue
 frames 5

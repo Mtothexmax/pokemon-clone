@@ -198,7 +198,8 @@ pub const STYLE: &str = "<style>
 .bt-endp h2{margin:0;font-size:44px;font-weight:900}.bt-endp h2.win{color:#fde047;text-shadow:0 0 18px rgba(253,224,71,.6)}
 .bt-sc{display:flex;gap:18px}.bt-sc div{display:flex;flex-direction:column;align-items:center;gap:2px}.bt-sc small{font-size:12px;opacity:.8}.bt-sc b{font-size:24px}.bt-sc i{font-style:normal;font-size:20px;font-weight:900}
 .bt-ask .bt-endp h2{font-size:32px}.bt-ask p{margin:0;font-size:16px;font-weight:600;opacity:.9;text-align:center}
-.bt-askb{display:flex;gap:12px}#ui .bt-askb .bt-btn{min-width:110px;font-size:20px;padding:10px 16px}
+.bt-askb{display:flex;gap:12px}
+.bt-viewing{position:absolute;left:50%;transform:translateX(-50%);animation:btpop .25s ease-out}#ui .bt-askb .bt-btn{min-width:110px;font-size:20px;padding:10px 16px}
 .bt-studs{display:flex;gap:8px;align-items:center;font-size:20px;font-weight:700}.bt-studs i{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff3a8,#d9a300)}
 #ui .world-label.bt-fx{background:none;padding:0;border-radius:0;pointer-events:none}
 #ui .bt-fx span{display:block;transform:translateY(50%);font-size:26px;font-weight:900;color:#fff;text-shadow:0 0 6px #000,0 2px 0 #000}
@@ -475,6 +476,8 @@ pub struct BattleScreen {
     log_open: bool,
     /// End Turn without a card played although one could be: "Are you sure?" (Yes / No) is open
     confirm_end: bool,
+    /// the result panel is put away ("View table") to look at the cards; a Continue button brings it back
+    result_hidden: bool,
     // ---- around the battle (Kaigen CardGame) ----
     taunt: Option<(&'static str, f32)>,
     rng: u32,
@@ -585,6 +588,7 @@ impl BattleScreen {
             touch_ui: false,
             log_open: false,
             confirm_end: false,
+            result_hidden: false,
             taunt: None,
             rng: seed.wrapping_mul(2654435761) | 1,
             last_turn: 0,
@@ -1345,6 +1349,8 @@ impl BattleScreen {
                         self.done = true;
                     }
                 }
+                "bt_view_table" => self.result_hidden = phase == Phase::Over,
+                "bt_show_result" => self.result_hidden = false,
                 _ => {
                     if let Some(z) = a.strip_prefix("bt_play:").and_then(|z| z.parse::<usize>().ok()) {
                         if let Some(Inspect::Hand(ci)) = self.inspect {
@@ -1374,7 +1380,12 @@ impl BattleScreen {
             }
             if ctx.input.key_pressed("Enter") {
                 if phase == Phase::Over {
-                    self.done = true;
+                    // looking at the table: Enter brings the result back first (as its Continue button)
+                    if self.result_hidden {
+                        self.result_hidden = false;
+                    } else {
+                        self.done = true;
+                    }
                 } else if self.inspect.is_none() && self.press.is_none() {
                     self.want_end_turn(ctx, data);
                 }
@@ -2233,7 +2244,12 @@ impl BattleScreen {
                 "<div class='bt-end bt-ask'><div class='bt-endp'><h2>Are you sure?</h2><p>You have not played a card this turn.</p>                 <div class='bt-askb'><button class='bt-btn blue' data-action='bt_end_yes'>Yes</button><button class='bt-btn' data-action='bt_end_no'>No</button></div></div></div>",
             );
         }
-        if over && b.result != Outcome::Retreat {
+        if over && b.result != Outcome::Retreat && self.result_hidden {
+            ov.push_str(&format!(
+                "<div class='bt-viewing' style='bottom:{:.0}px'><button class='bt-btn blue' data-action='bt_show_result'>Continue</button></div>",
+                l.bottom_px + 10.0
+            ));
+        } else if over && b.result != Outcome::Retreat {
             let title = match b.result {
                 Outcome::Win => "VICTORY!",
                 Outcome::Lose => "DEFEAT",
@@ -2255,7 +2271,7 @@ impl BattleScreen {
                 sc.push_str(&format!("<div><small>{}</small><b>{} : {}</b><i style='color:{col}'>{mark}</i></div>", cards::ZONES[b.zone[z]].name, b.zone_power(z, SIDE_P), b.zone_power(z, SIDE_AI)));
             }
             ov.push_str(&format!(
-                "<div class='bt-end'><div class='bt-endp'><h2 class='{}'>{title}</h2><div class='bt-sc'>{sc}</div><div class='bt-studs'><i></i>{}{delta} Studs</div><button class='bt-btn blue' data-action='bt_continue'>Continue</button></div></div>",
+                "<div class='bt-end'><div class='bt-endp'><h2 class='{}'>{title}</h2><div class='bt-sc'>{sc}</div><div class='bt-studs'><i></i>{}{delta} Studs</div><div class='bt-askb'><button class='bt-btn' data-action='bt_view_table'>View table</button><button class='bt-btn blue' data-action='bt_continue'>Continue</button></div></div></div>",
                 if b.result == Outcome::Win { "win" } else { "" },
                 if delta >= 0 { "+" } else { "" }
             ));
@@ -2315,7 +2331,7 @@ impl BattleScreen {
             "result": b.result, "p_snapped": b.p_snapped, "ai_snapped": b.ai_snapped,
             "hand": hand, "hand_n": b.hand[SIDE_P].len(), "ai_hand_n": b.hand[SIDE_AI].len(),
             "deck_n": b.deck[SIDE_P].len(), "ai_deck_n": b.deck[SIDE_AI].len(),
-            "locations": locs, "log": b.log, "no_moves": b.no_moves(), "confirm_end": self.confirm_end, "step": b.step_i,
+            "locations": locs, "log": b.log, "no_moves": b.no_moves(), "confirm_end": self.confirm_end, "result_hidden": self.result_hidden, "step": b.step_i,
             "selected": self.selected.map(|c| cards::card(b.c[c].id).id),
             "inspect": self.inspect.map(|i| format!("{i:?}")),
             "dragging": matches!(self.press, Some(Press::Card { moved: true, .. })),
@@ -2487,7 +2503,7 @@ impl Screen<Data> for BattleScreen {
             ("battle_play", "Play a hand card of yours to a location (the UI's path). args: {card: 'id' | hand: index, zone: 0..2}"),
             ("battle_end_turn", "End Turn (as the button / Enter)."),
             ("battle_auto", "Play this turn as the AI would for you (stages through the UI's path), then optionally end the turn. args: {end?: bool}"),
-            ("battle_ui", "Press a HUD button. args: {action: bt_end|bt_end_yes|bt_end_no|bt_undo|bt_snap|bt_retreat|bt_log|bt_continue|bt_close|bt_play:z|bt_take_back|bt_activate}"),
+            ("battle_ui", "Press a HUD button. args: {action: bt_end|bt_end_yes|bt_end_no|bt_undo|bt_snap|bt_retreat|bt_log|bt_continue|bt_view_table|bt_show_result|bt_close|bt_play:z|bt_take_back|bt_activate}"),
             ("battle_inspect", "Open the big card or location. args: {card: id} | {zone: 0..2} | {close: true}"),
             ("battle_speed", "The battle's speed (reveal pauses, animations). args: {x: 1}"),
             ("battle_cheat", "Change power: every card of yours gets +n (or the opponent's with foe: true). args: {power: n, foe?: bool}"),
