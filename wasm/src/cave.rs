@@ -30,7 +30,20 @@ pub const DEEP_Y0: f32 = -34.0;
 pub const DEEP_Y1: f32 = -6.0;
 pub const DEEP_Z0: f32 = 76.0;
 pub const DEEP_Z1: f32 = 116.0;
-pub const DEEP_CORE: Vec3 = Vec3::new(0.0, -19.6, 110.0);
+/// The green warp pipe at the grotto's far end (where the core's column stood): swim down into its opening and you
+/// come out of the pipe in the core room (`CORE_ROOM_*`), a small cave below and beyond, where the Stud Core lies;
+/// its own pipe takes you back.
+pub const PIPE_AT: Vec3 = Vec3::new(0.0, DEEP_Y0, 104.0);
+pub const PIPE_TOP: f32 = -22.0;
+pub const PIPE_R: f32 = 3.2;
+pub const CR_W: f32 = 22.0;
+pub const CR_Y0: f32 = -66.0;
+pub const CR_Y1: f32 = -46.0;
+pub const CR_Z0: f32 = 124.0;
+pub const CR_Z1: f32 = 148.0;
+pub const PIPE2_AT: Vec3 = Vec3::new(0.0, CR_Y0, 129.0);
+pub const PIPE2_TOP: f32 = CR_Y0 + 6.0;
+pub const DEEP_CORE: Vec3 = Vec3::new(0.0, CR_Y0 + 5.0, 142.0);
 
 /// Where the diver is (dive.rs collision, the debug state).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -38,6 +51,8 @@ pub enum Zone {
     Basin,
     Tunnel,
     Deep,
+    /// the small cave behind the warp pipe, with the Stud Core
+    Core,
 }
 
 /// The cave's render layer (village 1, rooms 2..5, the battle 29, hidden 31).
@@ -140,6 +155,120 @@ impl Build {
 }
 
 const CORALS: [u32; 4] = [0xd63a3a, 0xff7aa8, 0xff9a3c, 0x9b4dd6];
+
+/// A green warp pipe (Super Mario Land) standing on `y0` at (x, z), its top (the rim's upper face) at `top`: a body,
+/// a wider rim, the dark opening, a light stripe down its front. Solid up to its top.
+fn pipe(t: &mut Build, x: f32, y0: f32, top: f32, z: f32) {
+    let (green, rim, light, dark) = (0x1e9e3a, 0x26b847, 0x7fe08f, 0x061a0c);
+    t.cyl(green, x, y0, z, PIPE_R, PIPE_R, top - 2.0 - y0, 20);
+    t.cyl(rim, x, top - 2.0, z, PIPE_R + 0.8, PIPE_R + 0.8, 2.0, 20);
+    t.cyl(dark, x, top - 0.02, z, PIPE_R - 0.4, PIPE_R - 0.4, 0.06, 20);
+    // the shine: a pale stripe down the body and the rim (toward the tunnel, -z)
+    t.bx(light, 0.7, top - 2.4 - y0, 0.3, x - PIPE_R * 0.45, y0 + 0.2, z - PIPE_R * 0.9);
+    t.bx(light, 0.8, 1.6, 0.3, x - (PIPE_R + 0.8) * 0.45, top - 1.8, z - (PIPE_R + 0.8) * 0.9);
+    t.solid(x - PIPE_R - 0.8, x + PIPE_R + 0.8, y0, top, z - PIPE_R - 0.8, z + PIPE_R + 0.8);
+}
+
+/// The user's LEGO coral (`createCoralModel`): a dark tan base plate (12 x 10) with studs round its edge, a sand plate
+/// (8 x 6), sand rocks, coloured 1x1 plates, and on it the green branching coral element (closed, rounded tips) with
+/// four small companions in coral, pink, gold and aqua. `at`: the base's centre bottom (cave studs); `k` cave studs
+/// per model unit (the model's stud is 0.8 units).
+fn lego_coral(t: &mut Build, at: Vec3, k: f32) {
+    const U: f32 = 0.8;
+    const BRICK_H: f32 = 0.96;
+    const PLATE_H: f32 = 0.32;
+    let (coral_green, coral, pink, gold, aqua, dark_tan, sand, light_sand) = (0x2fbf48, 0xff5e5b, 0xff4fa3, 0xf2b705, 0x1cc6c6, 0x8f7a56, 0xd9c08a, 0xe8d6a8);
+    let pos = |x: f32, y: f32, z: f32| at + Vec3::new(x, y, z) * k;
+    // a brick on the stud grid (gx, gz its corner in studs, gy its bottom), real studs where `studs` says
+    let brick = |t: &mut Build, gx: f32, gz: f32, gy: f32, w: f32, d: f32, h: f32, hex: u32, studs: &dyn Fn(i32, i32) -> bool| {
+        let c = pos((gx + w * 0.5) * U, gy, (gz + d * 0.5) * U);
+        t.bx(hex, (w * U - 0.016) * k, h * k, (d * U - 0.016) * k, c.x, c.y, c.z);
+        for i in 0..w as i32 {
+            for j in 0..d as i32 {
+                if studs(i, j) {
+                    let s = pos((gx + i as f32 + 0.5) * U, gy + h, (gz + j as f32 + 0.5) * U);
+                    t.cyl(hex, s.x, s.y, s.z, 0.24 * k, 0.24 * k, 0.17 * k, 10);
+                }
+            }
+        }
+    };
+    let all = |_: i32, _: i32| true;
+    brick(t, -6.0, -5.0, 0.0, 12.0, 10.0, PLATE_H, dark_tan, &|i, j| !((2..10).contains(&i) && (2..8).contains(&j)));
+    brick(t, -4.0, -3.0, PLATE_H, 8.0, 6.0, PLATE_H, sand, &|i, j| !((3..5).contains(&i) && (2..4).contains(&j)));
+    brick(t, -4.0, -3.0, PLATE_H * 2.0, 2.0, 2.0, BRICK_H * 0.5, light_sand, &all);
+    brick(t, -4.0, -3.0, PLATE_H * 2.0 + BRICK_H * 0.5, 2.0, 2.0, PLATE_H, dark_tan, &|i, j| !(i == 1 && j == 1));
+    brick(t, 2.0, 1.0, PLATE_H * 2.0, 2.0, 2.0, PLATE_H, light_sand, &all);
+    brick(t, 2.0, 1.0, PLATE_H * 3.0, 1.0, 2.0, PLATE_H, dark_tan, &|_, j| j == 0);
+    brick(t, -1.0, 2.0, PLATE_H * 2.0, 1.0, 1.0, PLATE_H, gold, &all);
+    brick(t, -6.0, -5.0, PLATE_H, 1.0, 1.0, PLATE_H, pink, &all);
+    brick(t, 5.0, -5.0, PLATE_H, 1.0, 1.0, PLATE_H, aqua, &all);
+    brick(t, 5.0, 4.0, PLATE_H, 2.0, 1.0, PLATE_H, coral, &all);
+    brick(t, -6.0, 4.0, PLATE_H, 1.0, 1.0, PLATE_H, gold, &all);
+    // the coral element: branches from the stem to closed tips (picture pixels -> units, the foot at 0)
+    let p = |x: f32, y: f32, z: f32| Vec3::new((x - 68.0) * 0.04, (132.0 - y) * 0.04, z);
+    let branches: [(f32, Vec<Vec3>); 5] = [
+        (0.21, vec![p(68.0, 130.0, 0.0), p(67.0, 108.0, 0.0), p(58.0, 88.0, 0.1), p(55.0, 66.0, 0.0), p(62.0, 42.0, -0.1), p(76.0, 22.0, 0.0), p(82.0, 9.0, 0.0)]),
+        (0.2, vec![p(62.0, 96.0, 0.0), p(50.0, 86.0, 0.15), p(40.0, 74.0, 0.0), p(36.0, 60.0, 0.1), p(40.0, 46.0, 0.0)]),
+        (0.2, vec![p(66.0, 92.0, 0.0), p(80.0, 86.0, -0.15), p(94.0, 80.0, 0.0), p(105.0, 70.0, -0.1), p(108.0, 58.0, 0.0)]),
+        (0.19, vec![p(67.0, 120.0, 0.0), p(54.0, 126.0, 0.1), p(38.0, 128.0, 0.0), p(28.0, 122.0, 0.0), p(26.0, 110.0, 0.0)]),
+        (0.17, vec![p(57.0, 76.0, 0.0), p(68.0, 68.0, 0.12), p(74.0, 56.0, 0.0), p(72.0, 46.0, 0.0)]),
+    ];
+    // Catmull-Rom through the points (tension 0.5), 8 samples per span
+    let spline = |pts: &[Vec3]| -> Vec<Vec3> {
+        let n = pts.len();
+        let g = |i: i32| pts[i.clamp(0, n as i32 - 1) as usize];
+        let mut out = vec![];
+        for s in 0..n - 1 {
+            let (p0, p1, p2, p3) = (g(s as i32 - 1), g(s as i32), g(s as i32 + 1), g(s as i32 + 2));
+            for q in 0..8 {
+                let u = q as f32 / 8.0;
+                let (u2, u3) = (u * u, u * u * u);
+                out.push(0.5 * ((2.0 * p1) + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u3));
+            }
+        }
+        out.push(pts[n - 1]);
+        out
+    };
+    let piece = |t: &mut Build, gx: f32, gz: f32, gy: f32, hex: u32, scale: f32, rot: f32, skip: &[usize]| {
+        let base = pos((gx + 0.5) * U, gy, (gz + 0.5) * U);
+        let tr = |v: Vec3| base + Quat::from_rotation_y(rot) * (v * scale * k);
+        // the sleeve on its stud and the ring at its foot
+        t.cyl(hex, base.x, base.y, base.z, 0.3 * scale * k, 0.3 * scale * k, 0.34 * scale * k, 16);
+        t.cyl(hex, base.x, base.y, base.z, 0.36 * scale * k, 0.36 * scale * k, 0.07 * scale * k, 16);
+        for (bi, (r, pts)) in branches.iter().enumerate() {
+            if skip.contains(&bi) {
+                continue;
+            }
+            let path: Vec<Vec3> = spline(pts).into_iter().map(|v| world(tr(v))).collect();
+            let rr = r * scale * k * STUD;
+            let ring: Vec<Vec2> = (0..10).map(|i| {
+                let a = -(i as f32) / 10.0 * std::f32::consts::TAU;
+                Vec2::new(a.cos() * rr, a.sin() * rr)
+            }).collect();
+            t.mb.part(&format!("c{hex:06x}")).sweep(&path, &ring, true);
+            // the rounded, closed ends
+            for end in [pts[0], pts[pts.len() - 1]] {
+                let c = world(tr(end));
+                let prof: Vec<Vec2> = (0..=6).map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2 + i as f32 / 6.0 * std::f32::consts::PI;
+                    Vec2::new(a.cos() * rr, a.sin() * rr)
+                }).collect();
+                t.mb.part(&format!("c{hex:06x}")).with(Mat4::from_translation(c), |b| {
+                    b.lathe(&prof, 10);
+                });
+            }
+        }
+    };
+    let top = PLATE_H * 2.0;
+    piece(t, -1.0, -1.0, top, coral_green, 1.0, 0.0, &[]);
+    piece(t, -3.0, 1.0, top, coral, 0.5, 0.6, &[]);
+    piece(t, 3.0, -2.0, top, pink, 0.55, std::f32::consts::PI, &[]);
+    piece(t, 1.0, 2.0, top + PLATE_H, gold, 0.42, -0.8, &[3]);
+    piece(t, -3.0, -3.0, top + PLATE_H + BRICK_H * 0.5, aqua, 0.4, 2.2, &[4]);
+    // (the base is solid; the coral's branches you swim through)
+    let (lo, hi) = (pos(-6.0 * U, 0.0, -5.0 * U), pos(6.0 * U, PLATE_H * 2.0, 5.0 * U));
+    t.solid(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z);
+}
 
 /// The static cave (its entity is on [`CAVE_LAYER`]): the solids, triangles.
 pub struct Cave {
@@ -352,11 +481,50 @@ pub fn build(ctx: &mut Ctx, assets: &mut TownAssets) -> Cave {
                 t.coral(x - 2.0, DEEP_Y0, z + 2.0, CORALS[(i % 4) as usize], 0.9);
             }
         }
-        // the Stud Core's column at the far end, at the tunnel's height
-        let (cx, cz) = (DEEP_CORE.x, DEEP_CORE.z);
-        t.rock(0x55606c, 6.0, 3.0, 6.0, cx, DEEP_Y0, cz, true);
-        t.rock(0x4a5361, 4.0, DEEP_CORE.y - 4.4 - DEEP_Y0, 4.0, cx, DEEP_Y0 + 3.0, cz, true);
-        t.rock(0x6a7582, 5.0, 2.0, 5.0, cx, DEEP_CORE.y - 3.4, cz, true);
+        // the warp pipe at the far end, where the core's column stood
+        pipe(&mut t, PIPE_AT.x, DEEP_Y0, PIPE_TOP, PIPE_AT.z);
+    }
+    // ---- the core room: a small cave of warm rock below and beyond the grotto, the way in its own pipe ----
+    {
+        let (hw, z0, z1) = (CR_W * 0.5, CR_Z0, CR_Z1);
+        let (zc, d) = ((z0 + z1) * 0.5, z1 - z0);
+        let h = CR_Y1 - CR_Y0;
+        let (wall_a, wall_b, floor_c) = (0x4a3a2e, 0x5c4636, 0x3a2c22);
+        t.bx(floor_c, CR_W + 6.0, 4.0, d + 6.0, 0.0, CR_Y0 - 4.0, zc);
+        t.bx(wall_b, CR_W + 6.0, 3.0, d + 6.0, 0.0, CR_Y1, zc);
+        for sx in [-1.0, 1.0] {
+            t.bx(if sx < 0.0 { wall_a } else { wall_b }, 3.0, h, d + 6.0, sx * (hw + 1.5), CR_Y0, zc);
+        }
+        t.bx(wall_a, CR_W + 6.0, h, 3.0, 0.0, CR_Y0, z0 - 1.5);
+        t.bx(wall_b, CR_W + 6.0, h, 3.0, 0.0, CR_Y0, z1 + 1.5);
+        // banded ledges on the walls, gold crystals, a little coral
+        for i in 0..6 {
+            let sx = if i % 2 == 0 { -1.0 } else { 1.0 };
+            let z = z0 + 3.0 + i as f32 * 3.6;
+            t.rock(if i % 3 == 0 { wall_a } else { 0x6e5440 }, 2.5, 1.5, 3.0, sx * (hw - 1.25), CR_Y0 + 4.0 + hash(i, 31) * 9.0, z, true);
+        }
+        for i in 0..10 {
+            let x = -hw + 2.0 + hash(i, 41) * (CR_W - 4.0);
+            let z = z0 + 2.0 + hash(i, 42) * (d - 4.0);
+            if x.abs() < 6.0 {
+                continue; // the way from the pipe to the core stays clear
+            }
+            let hh = 2.0 + hash(i, 43) * 5.0;
+            let col = if i % 2 == 0 { 0xffd23d } else { 0xffa63d };
+            t.rot(col, Vec3::new(1.2, hh, 1.2), Vec3::new(x, CR_Y0 + hh * 0.45, z), Vec3::new((hash(i, 44) - 0.5) * 0.6, hash(i, 45) * 3.0, (hash(i, 46) - 0.5) * 0.6));
+        }
+        t.coral(-7.0, CR_Y0, z1 - 4.0, CORALS[1], 0.9);
+        t.coral(7.5, CR_Y0, z1 - 6.0, CORALS[2], 0.8);
+        // the core's rock: a low cushion of stone where it lies
+        t.rock(0x6a7582, 6.0, 1.5, 6.0, DEEP_CORE.x, CR_Y0, DEEP_CORE.z, true);
+        t.rock(0x8a95a2, 4.0, 1.0, 4.0, DEEP_CORE.x, CR_Y0 + 1.5, DEEP_CORE.z, true);
+        // the pipe you came out of
+        pipe(&mut t, PIPE2_AT.x, CR_Y0, PIPE2_TOP, PIPE2_AT.z);
+    }
+    // ---- the LEGO coral (the user's model) on the sand east of the hole, clear of the kelp ----
+    {
+        let (x, z) = (16.0, 2.0);
+        lego_coral(&mut t, Vec3::new(x, floor(x, z), z), 2.2);
     }
 
     let triangles = t.mb.triangle_count();

@@ -99,6 +99,11 @@ comes from.
   baseplate, the trail and every island top; the stud maps still show far away; phones use `stud_relief = 1` (3x3).
 - **Start screen:** `Title` shows assets/title/title_wide.webp (landscape) / title_tall.webp (portrait), the title and
   Play over the sky; music `Track::Title` (assets/music/title.ogg).
+- **Pond cave additions:** the user's LEGO coral (`cave::lego_coral`: base plates with studs, the green branching
+  element swept along Catmull-Rom curves with closed round tips, four small companions) east of the hole; at the
+  grotto's far end a green warp pipe (`PIPE_AT`, Super Mario Land): down into its opening = a moment of black and the
+  pipe sound, out of the core room's pipe (`CR_*`, `PIPE2_AT`), a small warm cave where the Stud Core lies
+  (`DEEP_CORE`); its pipe takes you back (`Zone::Core`, `dive.warps`).
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
   of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)

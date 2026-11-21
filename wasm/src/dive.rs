@@ -155,6 +155,9 @@ pub struct Dive {
     click_surface: bool,
     /// since the Stud Core was taken (-1: not this dive)
     core_t: f32,
+    /// seconds before a pipe takes you again; pipe journeys (for tests)
+    warp_cd: f32,
+    pub warps: u32,
     /// pearls taken on this dive
     pub pearls_now: u32,
     dives: u32,
@@ -320,17 +323,19 @@ impl Dive {
         let e = spawn(ctx, &surf, "cave surface", CAVE_LAYER);
         place(ctx, e, world(Vec3::new(0.0, CAVE_TOP + 19.0, 0.0)), Quat::IDENTITY, 1.0);
         // the lights: daylight down the hole, the grotto, the kelp, the trench, the core, the boat; and your helmet lamp
-        let lights: [([f32; 3], u32, f32, f32); 9] = [
+        let lights: [([f32; 3], u32, f32, f32); 10] = [
             ([0.0, CAVE_TOP - 4.0, 0.0], 0x8cd9ff, 40.0, 90.0),
             ([24.0, 14.0, -28.0], 0xd940d9, 22.0, 60.0),
             ([-22.0, 22.0, -22.0], 0x4df2b3, 22.0, 50.0),
             ([0.0, -6.0, 26.0], 0x3399ff, 18.0, 45.0),
-            ([0.0, -14.0, 106.0], 0xffbf40, 20.0, 70.0),
+            // the warp pipe's green glow; the core room's warm light over the core
+            ([0.0, -16.0, 100.0], 0x5cff7a, 16.0, 50.0),
             ([-24.0, 10.0, 18.0], 0x66ccff, 18.0, 45.0),
             // the tunnel (a faint blue glow half way) and the deep grotto (violet and cyan over its crystals)
             ([0.0, -19.0, 58.0], 0x3d7bff, 14.0, 35.0),
             ([-10.0, -12.0, 88.0], 0xa64dff, 28.0, 90.0),
             ([11.0, -14.0, 102.0], 0x40d9ff, 28.0, 90.0),
+            ([0.0, cave::CR_Y0 + 12.0, 139.0], 0xffbf40, 24.0, 80.0),
         ];
         for (p, hex, r, k) in lights {
             let e = ctx.world.spawn((Transform::from_translation(world(Vec3::from(p))), PointLight { color: srgb_hex(hex).truncate(), intensity: 0.0, range: r * STUD }));
@@ -449,7 +454,9 @@ impl Dive {
     /// Where `p` is: the basin, the tunnel (past the basin's north wall, in the tunnel's cross-section) or the deep
     /// grotto behind it.
     fn zone(p: Vec3) -> cave::Zone {
-        if p.z > cave::DEEP_Z0 {
+        if p.z > cave::DEEP_Z1 + 2.0 && p.y < cave::CR_Y1 {
+            cave::Zone::Core
+        } else if p.z > cave::DEEP_Z0 {
             cave::Zone::Deep
         } else if p.z > CAVE_R - 1.0 && p.x.abs() < cave::TUN_W * 0.5 && p.y < cave::TUN_Y1 {
             cave::Zone::Tunnel
@@ -465,7 +472,13 @@ impl Dive {
         let mut p = self.p;
         let hw = cave::TUN_W * 0.5 - r;
         let in_mouth = p.x.abs() < hw + 0.3 && p.y > cave::TUN_Y0 + r - 0.3 && p.y < cave::TUN_Y1 - r + 0.3;
-        if p.z > cave::DEEP_Z0 + r || (p.z > cave::DEEP_Z0 - r && !in_mouth && Self::zone(self.p) == cave::Zone::Deep) {
+        if Self::zone(self.p) == cave::Zone::Core {
+            // the core room (closed: the way out is its pipe, or Surface)
+            let cw = cave::CR_W * 0.5 - r;
+            p.x = p.x.clamp(-cw, cw);
+            p.y = p.y.clamp(cave::CR_Y0 + r, cave::CR_Y1 - r);
+            p.z = p.z.clamp(cave::CR_Z0 + r, cave::CR_Z1 - r);
+        } else if p.z > cave::DEEP_Z0 + r || (p.z > cave::DEEP_Z0 - r && !in_mouth && Self::zone(self.p) == cave::Zone::Deep) {
             // the deep grotto
             let dw = cave::DEEP_W * 0.5 - r;
             p.x = p.x.clamp(-dw, dw);
@@ -604,6 +617,26 @@ impl Dive {
         self.vel = self.vel.lerp(want, kf);
         self.p += self.vel * dt;
         self.collide();
+        // a warp pipe: down into its opening and out of the other one (a moment of black, the pipe's sound)
+        self.warp_cd = (self.warp_cd - dt).max(0.0);
+        if self.warp_cd <= 0.0 && !self.leaving {
+            let near = |at: Vec3, top: f32, p: Vec3| Vec2::new(p.x - at.x, p.z - at.z).length() < cave::PIPE_R - 0.4 && p.y < top + 1.6;
+            let to = match Self::zone(self.p) {
+                cave::Zone::Deep if near(cave::PIPE_AT, cave::PIPE_TOP, self.p) => Some((Vec3::new(cave::PIPE2_AT.x, cave::PIPE2_TOP + 3.0, cave::PIPE2_AT.z), std::f32::consts::PI)),
+                cave::Zone::Core if near(cave::PIPE2_AT, cave::PIPE2_TOP, self.p) => Some((Vec3::new(cave::PIPE_AT.x, cave::PIPE_TOP + 3.0, cave::PIPE_AT.z - 2.0), 0.0)),
+                _ => None,
+            };
+            if let Some((at, yaw)) = to {
+                self.p = at;
+                self.vel = Vec3::ZERO;
+                self.yaw = yaw;
+                self.pitch = 0.0;
+                self.fade = 1.0;
+                self.warp_cd = 1.5;
+                self.warps += 1;
+                data.sound.sfx(ctx, Sfx::Pop, 0.45, 0.9);
+            }
+        }
         // up the hole: back to the pond
         let esc = ctx.input.key_pressed("Escape");
         if !self.leaving && (self.p.y > CAVE_TOP + 12.0 || self.click_surface || esc) && self.t > 1.0 {
@@ -837,6 +870,7 @@ impl Dive {
             "suit_shown": self.suit_shown, "built": self.built, "cave_tris": self.cave_tris, "solids": self.solids.len(),
             "near_core": r((self.p - CORE_AT).length()),
             "zone": Self::zone(self.p),
+            "warps": self.warps,
         })
     }
 
