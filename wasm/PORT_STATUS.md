@@ -105,6 +105,11 @@ comes from.
   floor into the core room under it (`CR_*`, the pipe hanging from its ceiling to `PIPE2_BOTTOM`), where the Stud
   Core lies (`DEEP_CORE`); `Zone::Pipe` keeps you in the shaft, its rims and body push you off outside. Every cave
   brick grows and shifts by its own 1..6 cm (`Build::bx`), so no two faces share a plane.
+- **Character generator and townspeople:** `figure::FigSpec` (head / torso+arms / legs from the eight styles,
+  clothes and hair tinted from `CLOTH` / `HAIR`, `None` keeps a part's colour; `FigSpec::random(seed)`;
+  `Figure::spawn_spec`, `Figure::tint` once the parts loaded, `TintCache`). Debug `minifig {seed | spec, at}`. Each
+  town's people walk their ways (`people_ways`: Brickton's sidewalks and plaza, Saltwick's street and pier, across
+  Dewmere's green), resting at the ends; drawn and moved only within `PEOPLE_R` 90 studs. Test: people.
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, shops / offices south), Port Saltwick (two rows
   of houses, pier, boat, lighthouse), Dewmere (cottages round a green, pond, trees). Houses (`house`, `HouseStyle`)

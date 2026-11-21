@@ -39,9 +39,20 @@ impl Bld {
     }
     /// A box (studs) min..max in colour `hex`; every box a little larger or smaller than the last (no shared planes).
     fn bx(&mut self, hex: u32, a: Vec3, b: Vec3) {
+        // (each box grows by its own 1..4 hundredths of a stud per axis and shifts by less: no two faces in one plane;
+        // seven fixed steps, one of them zero, left equal boxes' faces together)
         self.n += 1;
-        let e = 0.011 * ((self.n % 7) as f32 - 3.0);
-        let (a, b) = (a - Vec3::splat(e), b + Vec3::splat(e));
+        let h = |k: u32| crate::island::hash01(self.n as i32, k as i32, 77);
+        let g = Vec3::new(0.01 + 0.03 * h(1), 0.01 + 0.03 * h(2), 0.01 + 0.03 * h(3));
+        let o = (Vec3::new(h(4), h(5), h(6)) - Vec3::splat(0.5)) * g * 0.8;
+        let (a, b) = (a - g * 0.5 + o, b + g * 0.5 + o);
+        self.mb.part(&format!("c{hex:06x}")).cuboid(m(a.x, a.y, a.z), m(b.x, b.y, b.z));
+        self.lo = self.lo.min(a);
+        self.hi = self.hi.max(b);
+    }
+    /// A box exactly as given (studs): the bricks of a wall, which meet edge to edge (grown ones overlapped by
+    /// millimetres, their fronts almost in one plane: z-fighting along every joint).
+    fn bx_exact(&mut self, hex: u32, a: Vec3, b: Vec3) {
         self.mb.part(&format!("c{hex:06x}")).cuboid(m(a.x, a.y, a.z), m(b.x, b.y, b.z));
         self.lo = self.lo.min(a);
         self.hi = self.hi.max(b);
@@ -283,9 +294,9 @@ fn brick_wall(b: &mut Bld, hex: u32, along_x: bool, a0: f32, a1: f32, face: f32,
             let col = shade(hex, jit);
             for (s0, s1) in segs {
                 if along_x {
-                    b.bx(col, Vec3::new(s0, y, f0), Vec3::new(s1, yt, f1));
+                    b.bx_exact(col, Vec3::new(s0, y, f0), Vec3::new(s1, yt, f1));
                 } else {
-                    b.bx(col, Vec3::new(f0, y, s0), Vec3::new(f1, yt, s1));
+                    b.bx_exact(col, Vec3::new(f0, y, s0), Vec3::new(f1, yt, s1));
                 }
             }
             a = e;
@@ -306,11 +317,14 @@ fn window(r: &mut Rng, b: &mut Bld, along_x: bool, at: f32, face: f32, out: f32,
         b.bx(col, pa.min(pb), pa.max(pb));
     };
     let (a0, a1) = (at - w * 0.5, at + w * 0.5);
+    // (the frame reaches a little into the opening and out over the wall: none of its faces lies in a plane of the
+    // wall's bricks, which are cut exactly at the opening)
+    let f = 0.08;
     bx(b, 0x9fd8ef, a0, a1, -0.6, -0.4, y0, y0 + h);
-    bx(b, 0xf4f4f4, a0 - 0.2, a1 + 0.2, -0.1, 0.25, y0 - 0.25, y0);
-    bx(b, 0xf4f4f4, a0 - 0.2, a1 + 0.2, -0.1, 0.15, y0 + h, y0 + h + 0.2);
-    bx(b, 0xf4f4f4, a0 - 0.2, a0, -0.4, 0.15, y0, y0 + h);
-    bx(b, 0xf4f4f4, a1, a1 + 0.2, -0.4, 0.15, y0, y0 + h);
+    bx(b, 0xf4f4f4, a0 - 0.2, a1 + 0.2, -0.9, 0.25, y0 - 0.25, y0 + f);
+    bx(b, 0xf4f4f4, a0 - 0.2, a1 + 0.2, -0.9, 0.15, y0 + h - f, y0 + h + 0.2);
+    bx(b, 0xf4f4f4, a0 - 0.2, a0 + f, -0.9, 0.15, y0, y0 + h);
+    bx(b, 0xf4f4f4, a1 - f, a1 + 0.2, -0.9, 0.15, y0, y0 + h);
     bx(b, 0xf4f4f4, at - 0.08, at + 0.08, -0.45, -0.3, y0, y0 + h);
     bx(b, 0xf4f4f4, a0, a1, -0.45, -0.3, y0 + h * 0.55, y0 + h * 0.55 + 0.12);
     for s in [-1.0f32, 1.0] {
@@ -361,7 +375,7 @@ fn house(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, st: &HouseStyle) {
     brick_wall(b, wall, false, z0 + 1.0, z1 - 1.0, x0, -1.0, base, top, &side_holes, seed + 2);
     brick_wall(b, wall, false, z0 + 1.0, z1 - 1.0, x1, 1.0, base, top, &side_holes, seed + 3);
     // (inside: one dark block, nothing to see through the glass)
-    b.bx(shade(wall, 0.6), Vec3::new(x0 + 1.0, base, z0 + 1.0), Vec3::new(x1 - 1.0, top - 0.2, z1 - 1.0));
+    b.bx_exact(shade(wall, 0.6), Vec3::new(x0 + 1.05, base + 0.05, z0 + 1.05), Vec3::new(x1 - 1.05, top - 0.25, z1 - 1.05));
     for k in 0..st.storeys {
         let wy = base + 1.2 + k as f32 * storey;
         for &wx in &wxs {
@@ -379,10 +393,12 @@ fn house(r: &mut Rng, b: &mut Bld, c: Vec3, w: f32, d: f32, st: &HouseStyle) {
     b.bx(0x9fd8ef, Vec3::new(c.x - 0.4, base + 2.4, a), Vec3::new(c.x + 0.4, base + 3.2, bb));
     let (a, bb) = zz(-0.4, -0.2);
     b.bx(0xf2cd37, Vec3::new(c.x + 0.55, base + 1.6, a), Vec3::new(c.x + 0.75, base + 1.8, bb));
-    let (a, bb) = zz(-0.1, 0.2);
-    b.bx(0xf4f4f4, Vec3::new(c.x - 1.3, base + 3.6, a), Vec3::new(c.x + 1.3, base + 4.0, bb));
+    // (the frame reaches into the opening a little: its faces off the wall's cut planes)
+    let (a, bb) = zz(-0.9, 0.2);
+    b.bx(0xf4f4f4, Vec3::new(c.x - 1.3, base + 3.52, a), Vec3::new(c.x + 1.3, base + 4.0, bb));
     for s in [-1.0f32, 1.0] {
-        b.bx(0xf4f4f4, Vec3::new(c.x + s * 1.15 - 0.15, base, a), Vec3::new(c.x + s * 1.15 + 0.15, base + 3.6, bb));
+        let (x0, x1) = if s < 0.0 { (c.x - 1.3, c.x - 0.92) } else { (c.x + 0.92, c.x + 1.3) };
+        b.bx(0xf4f4f4, Vec3::new(x0, base, a), Vec3::new(x1, base + 3.6, bb));
     }
     let (a, bb) = zz(0.0, 1.4);
     b.bx(0xa0a5a9, Vec3::new(c.x - 1.6, c.y, a), Vec3::new(c.x + 1.6, base - 0.1, bb));
@@ -807,6 +823,64 @@ fn dewmere(y: f32) -> Plan {
 
 // ------------------------------------------------------------------------------------------------ in the game
 
+/// A townsperson: a generated minifig walking to and fro between two points (studs), resting at each end.
+struct Walker {
+    fig: crate::figure::Figure,
+    a: Vec3,
+    b: Vec3,
+    /// where along a..b (0..1), which way, studs per second, seconds of rest left
+    s: f32,
+    dir: f32,
+    speed: f32,
+    wait: f32,
+    shown: bool,
+}
+
+/// How near (studs) the townspeople are drawn and walk.
+const PEOPLE_R: f32 = 90.0;
+
+/// The people's ways in a town (studs, from, to; y is the pad's or the pier's).
+fn people_ways(i: usize, y: f32) -> Vec<(Vec3, Vec3)> {
+    let p = &PADS[i];
+    let v = |x: f32, z: f32| Vec3::new(x, y, z);
+    match i {
+        // Brickton: both sidewalks of the avenue (north and south of the plaza) and of the cross street, round the plaza
+        0 => vec![
+            (v(p.x - 3.0, p.z - p.hz + 6.0), v(p.x - 3.0, p.z - 22.0)),
+            (v(p.x + 3.0, p.z - 22.0), v(p.x + 3.0, p.z - p.hz + 6.0)),
+            (v(p.x - 3.0, p.z + 22.0), v(p.x - 3.0, p.z + p.hz - 6.0)),
+            (v(p.x + 3.0, p.z + p.hz - 6.0), v(p.x + 3.0, p.z + 22.0)),
+            (v(p.x - p.hx + 6.0, p.z - 3.0), v(p.x - 22.0, p.z - 3.0)),
+            (v(p.x - 22.0, p.z + 3.0), v(p.x - p.hx + 6.0, p.z + 3.0)),
+            (v(p.x + 22.0, p.z + 3.0), v(p.x + p.hx - 6.0, p.z + 3.0)),
+            (v(p.x + p.hx - 6.0, p.z - 3.0), v(p.x + 22.0, p.z - 3.0)),
+            (v(p.x - 14.0, p.z - 14.0), v(p.x + 14.0, p.z - 14.0)),
+            (v(p.x + 14.0, p.z + 14.0), v(p.x - 14.0, p.z + 14.0)),
+            (v(p.x - 14.0, p.z + 12.0), v(p.x - 14.0, p.z - 12.0)),
+            (v(p.x + 14.0, p.z - 12.0), v(p.x + 14.0, p.z + 12.0)),
+            (v(p.x - 8.0, p.z - p.hz + 10.0), v(p.x - 8.0, p.z - 30.0)),
+            (v(p.x + 30.0, p.z + 8.0), v(p.x + 60.0, p.z + 8.0)),
+        ],
+        // Port Saltwick: the street between the houses, the pier
+        1 => vec![
+            (v(p.x - p.hx + 6.0, p.z - 1.5), v(p.x + p.hx - 6.0, p.z - 1.5)),
+            (v(p.x + p.hx - 10.0, p.z + 1.5), v(p.x - p.hx + 8.0, p.z + 1.5)),
+            (v(p.x - 10.0, p.z), v(p.x + 20.0, p.z)),
+            (v(p.x + 10.0, p.z - 2.5), v(p.x - 20.0, p.z - 2.5)),
+            (Vec3::new(p.x + p.hx + 2.0, y + 0.2, p.z - 0.8), Vec3::new(p.x + p.hx + island::PIER_LEN - 8.0, y + 0.2, p.z - 0.8)),
+            (Vec3::new(p.x + p.hx + island::PIER_LEN - 12.0, y + 0.2, p.z + 0.8), Vec3::new(p.x + p.hx + 10.0, y + 0.2, p.z + 0.8)),
+        ],
+        // Dewmere: across the green and round it
+        _ => vec![
+            (v(p.x - 30.0, p.z - 6.0), v(p.x + 20.0, p.z - 6.0)),
+            (v(p.x + 18.0, p.z + 4.0), v(p.x - 26.0, p.z + 4.0)),
+            (v(p.x - 4.0, p.z - 24.0), v(p.x - 4.0, p.z + 22.0)),
+            (v(p.x + 6.0, p.z + 20.0), v(p.x + 6.0, p.z - 22.0)),
+            (v(p.x + 12.0, p.z), v(p.x + p.hx - 2.0, p.z)),
+        ],
+    }
+}
+
 /// The towns in the play screen: built near, kept.
 #[derive(Default)]
 pub struct Places {
@@ -817,6 +891,12 @@ pub struct Places {
     roots: Vec<Entity>,
     colliders: Vec<engine::physics::rapier::prelude::ColliderHandle>,
     pub buildings: usize,
+    /// the townspeople, their minifigs' tinted materials
+    walkers: Vec<Walker>,
+    tints: crate::figure::TintCache,
+    /// figures made with the debug command `minifig` (the generator, shown near you)
+    pub showcase: Vec<crate::figure::Figure>,
+    seed: u32,
     pub triangles: usize,
     pub trees: usize,
 }
@@ -836,8 +916,80 @@ impl Places {
                 _ => dewmere(y),
             };
             self.spawn(ctx, assets, fader, plan, p.name);
+            self.spawn_people(ctx, i, y);
             return;
         }
+    }
+
+    /// A town's people: one generated minifig per way, starting somewhere along it.
+    fn spawn_people(&mut self, ctx: &mut Ctx, town: usize, y: f32) {
+        for (k, (a, b)) in people_ways(town, y).into_iter().enumerate() {
+            self.seed += 1;
+            let spec = crate::figure::FigSpec::random(1000 * (town as u32 + 1) + k as u32);
+            let fig = crate::figure::Figure::spawn_spec(ctx, &spec, Transform::from_translation(m(a.x, a.y, a.z)), None);
+            ctx.set_layer(fig.root, crate::town::rooms::HIDDEN_LAYER);
+            let h = |n: i32| island::hash01(town as i32 * 31 + k as i32, n, 9);
+            self.walkers.push(Walker { fig, a, b, s: h(1), dir: if h(2) < 0.5 { 1.0 } else { -1.0 }, speed: 3.2 + h(3) * 1.6, wait: h(4) * 2.0, shown: false });
+        }
+    }
+
+    /// Every frame on the island: the people near you walk (and are drawn), the others wait out of sight; their
+    /// colours go on once their parts have loaded.
+    pub fn update_people(&mut self, ctx: &mut Ctx, hero: Vec2, dt: f32) {
+        for w in &mut self.walkers {
+            w.fig.tint(ctx, &mut self.tints);
+            let p = w.a.lerp(w.b, w.s);
+            let near = Vec2::new(p.x, p.z).distance(hero) < PEOPLE_R;
+            if near != w.shown {
+                w.shown = near;
+                ctx.set_layer(w.fig.root, if near { island::LAYER_NEAR } else { crate::town::rooms::HIDDEN_LAYER });
+            }
+            if !near {
+                continue;
+            }
+            let len = w.a.distance(w.b).max(0.1);
+            let moving = w.wait <= 0.0;
+            if moving {
+                w.s += w.dir * w.speed * dt / len;
+                if w.s >= 1.0 || w.s <= 0.0 {
+                    w.s = w.s.clamp(0.0, 1.0);
+                    w.dir = -w.dir;
+                    w.wait = 1.0 + island::hash01((w.a.x * 7.0) as i32, (w.s * 100.0 + w.speed * 10.0) as i32, 3) * 3.0;
+                }
+            } else {
+                w.wait -= dt;
+            }
+            let dirv = (w.b - w.a) * w.dir;
+            let yaw = dirv.x.atan2(dirv.z);
+            let at = w.a.lerp(w.b, w.s);
+            if let Ok(mut t) = ctx.world.get::<&mut Transform>(w.fig.root) {
+                t.translation = m(at.x, at.y, at.z);
+                t.rotation = Quat::from_rotation_y(yaw);
+            }
+            w.fig.animate(ctx, dt, moving, w.speed / 4.0);
+        }
+        for f in &mut self.showcase {
+            f.tint(ctx, &mut self.tints);
+            f.animate(ctx, dt, false, 1.0);
+        }
+    }
+
+    /// The generator's debug command: a figure from `spec` (or a random one from `seed`) standing at (x, y, z) studs
+    /// facing you; returns its spec.
+    pub fn showcase(&mut self, ctx: &mut Ctx, spec: crate::figure::FigSpec, at: Vec3, yaw: f32, layer: u8) -> crate::figure::FigSpec {
+        let fig = crate::figure::Figure::spawn_spec(ctx, &spec, Transform::from_translation(m(at.x, at.y, at.z)).with_rotation(Quat::from_rotation_y(yaw)), None);
+        ctx.set_layer(fig.root, layer);
+        self.showcase.push(fig);
+        spec
+    }
+
+    pub fn people(&self) -> Value {
+        json!({
+            "walkers": self.walkers.len(),
+            "shown": self.walkers.iter().filter(|w| w.shown).count(),
+            "walking": self.walkers.iter().filter(|w| w.shown && w.wait <= 0.0).count(),
+            "showcase": self.showcase.iter().filter_map(|f| f.spec().cloned()).collect::<Vec<_>>(),
+        })
     }
 
     fn spawn(&mut self, ctx: &mut Ctx, assets: &mut TownAssets, fader: &mut Fader, plan: Plan, name: &str) {
@@ -921,6 +1073,12 @@ impl Places {
 
     /// Everything off (leaving the play screen).
     pub fn clear(&mut self, ctx: &mut Ctx) {
+        for w in std::mem::take(&mut self.walkers) {
+            ctx.despawn(w.fig.root);
+        }
+        for f in std::mem::take(&mut self.showcase) {
+            ctx.despawn(f.root);
+        }
         for e in self.roots.drain(..) {
             ctx.despawn(e);
         }
@@ -931,7 +1089,7 @@ impl Places {
     }
 
     pub fn describe(&self) -> Value {
-        json!({"built": self.built, "buildings": self.buildings, "triangles": self.triangles, "trees": self.trees, "firs": self.firs})
+        json!({"built": self.built, "buildings": self.buildings, "triangles": self.triangles, "trees": self.trees, "firs": self.firs, "people": self.people()})
     }
 }
 

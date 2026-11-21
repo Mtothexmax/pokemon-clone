@@ -2068,6 +2068,7 @@ impl Screen<Data> for PlayScreen {
             if let Some(assets) = data.town.as_mut() {
                 self.places.update(ctx, assets, &law, &mut self.fader, Vec2::new(p.x, p.z) / STUD);
             }
+            self.places.update_people(ctx, Vec2::new(p.x, p.z) / STUD, dt);
         }
         self.outdoor_zone(ctx);
         self.gate(ctx, data);
@@ -2187,6 +2188,7 @@ impl Screen<Data> for PlayScreen {
             ("card_face", "Draw a card face (cardface.rs). args: {id, level?: 0, big?: false, unknown?: false, back?: false, power?: n, texture?: false} -> {url (null until encoded), texture id}"),
             ("battle", "Start a card battle (as the dialogue does: the bricks, then the 3D table). args: {kind: 'rival'|'practice'|'pip', seed?: n, instant?: false (no transition), start?: true (false: only set the seed of the next battle)}"),
             ("look", "Debug close-up: the camera eases to look at a spot like a sign close-up. args: {at: [x, y, z] studs, yaw?: 0 (the side it is seen from, 0 = south), w?: 8, h?: 6 (studs in view), tilt?: 0.5 (radians above)}; {} = back"),
+            ("minifig", "The character generator (AI first): a minifig from a spec {head, torso, legs: style ('player'|'dex'|'lumi'|'mom'|'pip'|'quill'|'baker'|'knight'), torso_col?, legs_col?, hair_col?: 0xRRGGBB} or a random one from {seed}; spawned at {at: [x, z] studs} or 4 studs in front of you, facing you. Returns its spec; the island's townspeople are made the same way (game_state.state.island.places.people)."),
             ("tall_grass", "The tall grass tufts (grass.rs, engine bend pushers). args: {wind?: 1.0 (sway strength, 0 = still)}; state in game_state.state.grass"),
             ("vox", "Your Voxelmon and the wild fights (vox.rs). args: {force?: true (a wild one now) | 'id', shiny?: false, skill?: 0|1 (as key 1 / 2), run?: true, hp?: {me, wild}, tired?: bool, wild_idle?: bool (it never lunges), rate?: 0.22 (chance per 3 studs in the grass), seed?: n}"),
             ("dive", "The lab quest's dive (dive.rs). args: {sink?: true (as jumping into the pond with the suit), start?: true (straight into the cave), at?: [x, y, z] (cave studs; the core lies at [0, -19.6, 34]), yaw?, pitch?, skip_fade?: true, surface?: true}"),
@@ -2415,6 +2417,27 @@ impl Screen<Data> for PlayScreen {
                     self.start_battle(ctx, data, kind);
                 }
                 Some(Ok(json!({"battle": kind})))
+            }
+            "minifig" => {
+                // the character generator (AI first): {seed?: n | spec?: FigSpec, at?: [x, z] studs (default 4 in front
+                // of you)} -> spawns the figure there, facing you; returns its spec ({} alone: a random one)
+                let spec = match a.get("spec") {
+                    Some(v) => match serde_json::from_value::<crate::figure::FigSpec>(v.clone()) {
+                        Ok(s) => s,
+                        Err(e) => return Some(Err(format!("minifig: bad spec ({e})"))),
+                    },
+                    None => crate::figure::FigSpec::random(a.get("seed").and_then(|v| v.as_u64()).unwrap_or_else(|| (engine::log::now_ms() as u64) & 0xffff_ffff) as u32),
+                };
+                let Some((p, yaw)) = self.hero_pos(ctx) else { return Some(Err("minifig: no hero".into())) };
+                let fwd = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+                let at = match a.get("at").and_then(|v| v.as_array()) {
+                    Some(v) => Vec3::new(v.first().and_then(|x| x.as_f64()).unwrap_or(0.0) as f32, p.y / STUD, v.get(1).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32),
+                    None => p / STUD + fwd * 4.0,
+                };
+                let layer = if self.area.is_some() { rooms::layer_of(self.area) } else if at.z < island::SOUTH_Z { island::LAYER_NEAR } else { town::layer_at(at.x, at.z) };
+                let to_me = Vec3::new(p.x / STUD - at.x, 0.0, p.z / STUD - at.z);
+                let spec = self.places.showcase(ctx, spec, at, to_me.x.atan2(to_me.z), layer);
+                return Some(Ok(json!({"spec": spec, "people": self.places.people()})));
             }
             "look" => {
                 self.look = a.get("at").and_then(|v| v.as_array()).map(|v| {

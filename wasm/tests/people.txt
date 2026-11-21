@@ -1,0 +1,30 @@
+# Townspeople and the character generator (figure.rs FigSpec, places.rs people): the island's towns fill with generated
+# minifigs (parts from the eight styles, tinted clothes and hair) walking their ways; `minifig` makes one from a seed or
+# a spec (AI first: the same seed, the same figure).
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/people.txt --port 9223 --url http://localhost:8091/
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 15000
+call save_reset
+call clock {"hours": 11}
+call island {"gate": "open"}
+resume
+call teleport {"x": -80, "z": -790}
+frames 60
+wait_for game_state.state.assets_pending == 0 20000
+frames 60
+expect game_state.state.island.places.people.walkers >= 14
+expect game_state.state.island.places.people.shown >= 8
+expect game_state.state.island.places.people.walking >= 3
+# the generator: a seed gives the same figure every time; a spec is taken as written
+call minifig {"seed": 7}
+call minifig {"spec": {"head": "knight", "torso": "baker", "legs": "dex", "torso_col": 13179401, "legs_col": 1782068}}
+frames 30
+expect game_state.state.island.places.people.showcase.length == 2
+expect game_state.state.island.places.people.showcase.1.head == "knight"
+expect game_state.state.island.places.people.showcase.1.torso_col == 13179401
+screenshot shots/people.png
+# far from every town nobody is drawn
+call teleport {"x": 5, "z": -360}
+frames 30
+expect game_state.state.island.places.people.shown == 0

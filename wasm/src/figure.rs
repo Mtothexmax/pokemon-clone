@@ -35,6 +35,66 @@ pub enum Pose {
     Wave,
 }
 
+/// The minifig styles (folders in assets/minifig), each a full set of parts.
+pub const STYLES: [&str; 8] = ["player", "dex", "lumi", "mom", "pip", "quill", "baker", "knight"];
+
+/// The LEGO colours clothes and hair are tinted in (the generator's palette).
+pub const CLOTH: [u32; 16] = [
+    0xc91a09, 0x0055bf, 0xf2cd37, 0x237841, 0x4b9f4a, 0xfe8a18, 0xff8ac0, 0x5a93db, 0x0a3463, 0xf4f4f4, 0x1b2a34,
+    0x6c6e68, 0xa0a5a9, 0x82422a, 0xe4cd9e, 0x8e3a8f,
+];
+pub const HAIR: [u32; 6] = [0x1b2a34, 0x583927, 0x82422a, 0xf2cd37, 0xa0a5a9, 0xc91a09];
+
+/// A minifig as data (the character generator, AI first: made from a seed or written by hand, JSON both ways):
+/// each body part from one of the `STYLES` (the arms come with the torso), clothes and hair tinted or as the style
+/// has them. `None` keeps a part's own colour.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FigSpec {
+    pub head: String,
+    pub torso: String,
+    pub legs: String,
+    #[serde(default)]
+    pub torso_col: Option<u32>,
+    #[serde(default)]
+    pub legs_col: Option<u32>,
+    #[serde(default)]
+    pub hair_col: Option<u32>,
+}
+
+impl FigSpec {
+    /// A random townsperson from `seed` (the same seed, the same figure).
+    pub fn random(seed: u32) -> Self {
+        let mut h = seed.wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
+        let mut next = |n: usize| {
+            h ^= h >> 15;
+            h = h.wrapping_mul(0x2c1b_3c6d);
+            h ^= h >> 12;
+            h = h.wrapping_mul(0x297a_2d39);
+            h ^= h >> 15;
+            (h as usize) % n
+        };
+        let head = STYLES[next(STYLES.len())].to_string();
+        let torso = STYLES[next(STYLES.len())].to_string();
+        let legs = STYLES[next(STYLES.len())].to_string();
+        let torso_col = if next(3) == 0 { None } else { Some(CLOTH[next(CLOTH.len())]) };
+        let legs_col = if next(4) == 0 { None } else { Some(CLOTH[next(CLOTH.len())]) };
+        let hair_col = if next(3) == 0 { None } else { Some(HAIR[next(HAIR.len())]) };
+        Self { head, torso, legs, torso_col, legs_col, hair_col }
+    }
+
+    /// The style folder of part `i` (`PARTS` order: head, torso, arms, legs).
+    fn style_of(&self, i: usize) -> &str {
+        match i {
+            0 => &self.head,
+            1..=3 => &self.torso,
+            _ => &self.legs,
+        }
+    }
+}
+
+/// Tinted copies of the parts' materials, shared by every figure with the same colour.
+pub type TintCache = std::collections::HashMap<(MaterialId, u32), MaterialId>;
+
 pub struct Figure {
     /// The figure's root (feet at its origin, facing +z).
     pub root: Entity,
@@ -63,6 +123,9 @@ pub struct Figure {
     mouths: Vec<TextureId>,
     mouth_load: Vec<Entity>,
     mouth: usize,
+    /// a generated figure's spec, its tints still to be applied (the parts load asynchronously)
+    spec: Option<FigSpec>,
+    tint_pending: bool,
 }
 
 impl Figure {
@@ -79,9 +142,65 @@ impl Figure {
             let _ = ctx.world.insert_one(e, Parent(root));
             e
         });
-        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0, style: style.to_string(), face_mat: None, mouths: vec![], mouth_load: vec![], mouth: 0 };
+        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0, style: style.to_string(), face_mat: None, mouths: vec![], mouth_load: vec![], mouth: 0, spec: None, tint_pending: false };
         f.apply(ctx);
         f
+    }
+
+    /// Spawns a generated figure: each part from its spec's style; `tint` colours it once its parts have loaded.
+    pub fn spawn_spec(ctx: &mut Ctx, spec: &FigSpec, t: Transform, parent: Option<Entity>) -> Self {
+        let root = ctx.world.spawn((t, Name(format!("fig:{}+{}+{}", spec.head, spec.torso, spec.legs))));
+        if let Some(p) = parent {
+            let _ = ctx.world.insert_one(root, Parent(p));
+        }
+        let parts = std::array::from_fn(|i| {
+            let opts = engine::gltf_loader::GltfOpts { auto_lod: false, ..Default::default() };
+            let e = ctx.load_gltf_with(&format!("assets/minifig/{}/{}.glb", spec.style_of(i), PARTS[i]), Transform::from_translation(PIVOT[i]), opts);
+            let _ = ctx.world.insert_one(e, Parent(root));
+            e
+        });
+        let tint = spec.torso_col.is_some() || spec.legs_col.is_some() || spec.hair_col.is_some();
+        let mut f = Self { root, parts, rot: [0.0, 0.0, ARM_REST, ARM_REST, 0.0, 0.0], walk_t: 0.0, pose: Pose::Normal, idle_t: 0.0, spin: 0.0, offset: Vec3::ZERO, air: false, head_want: 0.0, head_yaw: 0.0, style: spec.head.clone(), face_mat: None, mouths: vec![], mouth_load: vec![], mouth: 0, spec: Some(spec.clone()), tint_pending: tint };
+        f.apply(ctx);
+        f
+    }
+
+    pub fn spec(&self) -> Option<&FigSpec> {
+        self.spec.as_ref()
+    }
+
+    /// A generated figure's colours: the materials named "torso" (torso and sleeves), "legs" (legs and hips) and
+    /// "*hair*" get tinted copies (shared through `cache`). Call every frame until it returns true (all parts loaded).
+    pub fn tint(&mut self, ctx: &mut Ctx, cache: &mut TintCache) -> bool {
+        if !self.tint_pending {
+            return true;
+        }
+        let Some(spec) = self.spec.clone() else { return true };
+        let mut meshes = vec![];
+        for &p in &self.parts {
+            let ds: Vec<Entity> = engine::scene::descendants(&ctx.world, p).into_iter().filter(|e| ctx.world.get::<&MeshRenderer>(*e).is_ok()).collect();
+            if ds.is_empty() {
+                return false; // still loading
+            }
+            meshes.extend(ds);
+        }
+        for e in meshes {
+            let Some(mat) = ctx.world.get::<&MeshRenderer>(e).ok().map(|m| m.material) else { continue };
+            let Some(name) = ctx.renderer.material(mat).map(|m| m.name.clone()) else { continue };
+            let want = if name == "torso" { spec.torso_col } else if name == "legs" { spec.legs_col } else if name.contains("hair") { spec.hair_col } else { None };
+            let Some(hex) = want else { continue };
+            let new = *cache.entry((mat, hex)).or_insert_with(|| {
+                let mut m = ctx.renderer.material(mat).cloned().unwrap_or_default();
+                m.base_color = engine::renderer::srgb_hex(hex);
+                m.name = format!("{name} {hex:06x}");
+                ctx.renderer.add_material(m)
+            });
+            if let Ok(mut mr) = ctx.world.get::<&mut MeshRenderer>(e) {
+                mr.material = new;
+            }
+        }
+        self.tint_pending = false;
+        true
     }
 
     /// Loads the open-mouth prints once (out of sight) and keeps their textures; the face material is the head's

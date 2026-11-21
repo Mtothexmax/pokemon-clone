@@ -368,6 +368,13 @@ impl Town {
         }
     }
 
+    /// A brick exactly as given (no jitter): for floors of equal planks, whose tops must lie in one plane (jittered
+    /// heights left hair-thin slivers of side face at every joint, which flicker without anti-aliasing).
+    pub fn brick_exact(&mut self, hex: u32, w: f32, h: f32, d: f32, x: f32, y: f32, z: f32) {
+        self.here(x, z);
+        self.b(hex).block(m(x, y, z), m(w, h, d));
+    }
+
     /// A rotated brick (centre, euler radians XYZ).
     fn brick_rot(&mut self, hex: u32, size: Vec3, c: Vec3, euler: Vec3) {
         self.here(c.x, c.z);
@@ -625,10 +632,11 @@ impl Town {
     /// A brick wall (bottom on the 0.4 foundation) with a thin groove every brick (1.2 studs).
     fn wall(&mut self, hex: u32, w: f32, h: f32, d: f32, x: f32, z: f32) {
         self.brick(hex, w, h, d, x, 0.4, z, false);
-        let groove = shade(hex, 0.86);
+        // (a groove a seventh of a stud tall and soft: thinner, darker ones flickered without anti-aliasing)
+        let groove = shade(hex, 0.92);
         let mut y = 0.4 + 1.2;
         while y < 0.4 + h - 0.3 {
-            self.brick(groove, w + 0.06, 0.07, d + 0.06, x, y - 0.035, z, false);
+            self.brick(groove, w + 0.06, 0.14, d + 0.06, x, y - 0.07, z, false);
             y += 1.2;
         }
     }

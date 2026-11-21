@@ -158,8 +158,9 @@ impl Town {
             let mut x = -w * 0.5;
             while x < w * 0.5 {
                 let c = if x.abs() as i32 & 1 != 0 { floor_b } else { floor_a };
-                // (bottom deep in the dark surround: at 0 it shared a plane with every wall's bottom)
-                self.brick(c, 1.0, 0.65, d, ox + x + 0.5, -0.25, oz, false);
+                // (bottom deep in the dark surround: at 0 it shared a plane with every wall's bottom; exact, all tops in
+                // one plane: jittered planks left slivers at the joints that flickered)
+                self.brick_exact(c, 1.0, 0.65, d, ox + x + 0.5, -0.25, oz);
                 x += 1.0;
             }
         }
@@ -288,7 +289,9 @@ impl Town {
                 self.brick(C_RED, 1.6, 1.8, 0.3, ox - 6.0 + c * 1.3, 2.1, oz - 1.0 + s * 3.0, false);
             }
         }
-        self.flower_pot_on(ox - 6.0, oz - 1.0, 2.8 + STUD_H);
+        // the flowers on the dining table, without their pot
+        let r = self.rot();
+        self.prop("assets/props/flower_bunch.glb", ox - 6.0, oz - 1.0, 2.8 + STUD_H, 1.0, r);
         // living room: rug, sofa, TV
         self.brick(0x3d6fd1, 8.0, 0.12, 7.0, ox + 4.5, 0.4, oz + 0.5, false); // (not under the stairs)
         self.brick(0x6fa0ff, 7.6, 0.13, 5.6, ox + 5.0, 0.46, oz + 0.5, false);
