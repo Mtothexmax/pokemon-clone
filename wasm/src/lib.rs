@@ -272,21 +272,29 @@ pub(crate) fn day_colours(ctx: &mut Ctx) {
 
 pub(crate) struct Title;
 
+/// The start screen's picture, filling the screen: the wide one on a landscape screen, the tall one on a portrait
+/// phone (assets/title, from the generated key art).
+const TITLE_BG: &str = "<style>.bh-titlebg{position:fixed;inset:0;z-index:-1;background:#7fc4f0 url(assets/title/title_wide.webp) center/cover no-repeat;animation:bh-tin .8s ease-out}@media (orientation:portrait){.bh-titlebg{background-image:url(assets/title/title_tall.webp)}}@keyframes bh-tin{from{opacity:0;transform:scale(1.04)}to{opacity:1;transform:none}}</style><div class='bh-titlebg'></div>";
+
+/// The title and the Play button over the picture's sky.
+const TITLE_MENU: &str = "<style>#ui [data-slot=\"menu\"]{place-items:start center}.bh-start{margin-top:max(4vh,18px);text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;animation:bh-sdrop .7s .2s both cubic-bezier(.2,1.4,.4,1)}.bh-start h1{margin:0;font:900 clamp(44px,9vw,104px)/1 system-ui,sans-serif;letter-spacing:1px;color:#ffd23f;text-shadow:0 4px 0 #b5161c,0 8px 0 #7a0e12,0 12px 18px rgba(0,0,0,.35);-webkit-text-stroke:2px #7a0e12}.bh-start .sub{font:700 clamp(15px,2.4vw,22px)/1.2 system-ui,sans-serif;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.55)}#ui .bh-start button{pointer-events:auto;margin-top:8px;font:800 clamp(18px,2.6vw,26px)/1 system-ui,sans-serif;padding:14px 38px;border:0;border-radius:14px;background:#ffd23f;color:#3a1d00;box-shadow:0 5px 0 #b07a00,0 9px 18px rgba(0,0,0,.3);cursor:pointer}#ui .bh-start button:hover{background:#ffe066}#ui .bh-start button:active{transform:translateY(3px);box-shadow:0 2px 0 #b07a00}@keyframes bh-sdrop{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:none}}</style><div class='bh-start'><h1>Brickhollow</h1><div class='sub'>A brick island adventure</div><button data-action='play'>Play</button></div>";
+
 impl Screen<Data> for Title {
     fn name(&self) -> &'static str {
         "title"
     }
     fn enter(&mut self, ctx: &mut Ctx, data: &mut Data) {
-        data.ensure(ctx);
+        data.ensure_loaded(ctx);
+        // the start screen's own theme (the browser starts it on the first key or tap); the play screen hands over
+        data.sound.music(ctx, Track::Title);
         setup_look(ctx);
         ctx.world.spawn((Transform::from_xyz(0.0, 2.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y), Camera::default()));
-        ctx.ui.set(
-            "menu",
-            "<div class='panel menu'><h1>Brickhollow</h1><div>Snap Beasts &middot; a LEGO village</div><button data-action='play'>Play (Enter)</button></div>",
-        );
+        ctx.ui.set("title_bg", TITLE_BG);
+        ctx.ui.set("menu", TITLE_MENU);
     }
     fn exit(&mut self, ctx: &mut Ctx, _data: &mut Data) {
         ctx.ui.set("menu", "");
+        ctx.ui.set("title_bg", "");
     }
     fn update(&mut self, ctx: &mut Ctx, data: &mut Data, _dt: f32) -> Trans<Data> {
         data.loadbar(ctx);

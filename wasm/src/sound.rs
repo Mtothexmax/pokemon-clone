@@ -160,6 +160,8 @@ pub enum Track {
     Victory,
     Defeat,
     Wild,
+    /// The start screen's theme ("Île de Joy")
+    Title,
     /// The island's music where you are (index into `ISLE_MUSIC`; `island::music_at` picks it).
     Isle(u8),
 }
@@ -180,11 +182,12 @@ impl Track {
             Track::Victory => Some("assets/music/victory.ogg"),
             Track::Defeat => Some("assets/music/defeat.ogg"),
             Track::Wild => Some("assets/music/wild.ogg"),
+            Track::Title => Some("assets/music/title.ogg"),
             Track::Isle(i) => Some(ISLE_URLS[i as usize % ISLE_URLS.len()]),
         }
     }
     fn looped(self) -> bool {
-        matches!(self, Track::Home | Track::Fight | Track::Wild | Track::Isle(_))
+        matches!(self, Track::Home | Track::Fight | Track::Wild | Track::Title | Track::Isle(_))
     }
     pub fn name(self) -> &'static str {
         match self {
@@ -195,6 +198,7 @@ impl Track {
             Track::Victory => "victory",
             Track::Defeat => "defeat",
             Track::Wild => "wild",
+            Track::Title => "title",
             Track::Isle(i) => ISLE_MUSIC[i as usize % ISLE_MUSIC.len()],
         }
     }
