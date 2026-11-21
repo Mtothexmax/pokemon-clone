@@ -333,6 +333,26 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Phones: `phone_quality` sets `max_fps` = `PHONE_MAX_FPS` 45 (every 2nd refresh at 90 Hz: walking juddered with
   11 / 22 ms frames in turn); `Settings::update` lifts it on a display under 80 Hz; desktop steps set 0.
 
+## Hooks for later parts (card face / deck / battle HUD / HP pill polish)
+- Card faces (`cardface.rs`): the compact face (`!Face::big`: hand, table, deck grid, packs) is the art window over
+  almost the whole card and one banner line, `compact_banner` (the kind pill: glyph + `kind_info.label` on the left,
+  the name on the right, shrunk together to fit; no pill for `Kind::None` / unknown). The big face is unchanged.
+  The deck grid's tick (`deck_marks` `::after`) sits above that banner.
+- Deck screen: `CardUi::replacing` (game_state `cards.replacing`): "Add to deck" / a double click with a full deck
+  opens a chooser in the side panel / sheet (`replace:i` actions; the strip's `slot:i` too, outlined); Cancel
+  (`deck_cancel`), Esc / C or picking another card drop it. The swap keeps the deck order.
+- Battle ranking: `Battle::leader()` = who would win if it ended now (locations won, then total power of the revealed
+  cards; `None` = dead heat); `finish` uses it. The HUD badges show it (1st / 2nd, "Tie" on both), not `first` (who
+  reveals first, still decided at the turn start). game_state `battle.rank` (you / foe / tie).
+- Battle seed: `Data::cg_rand` seeds `cg_seed` from `Math.random` / the clock mixed with `ctx.rng` (the engine
+  generator starts fixed per page load); `battle {seed}` still fixes one battle.
+- End Turn confirm: `BattleScreen::want_end_turn` (button `bt_end` / `bt_suggest`, Enter) opens "Are you sure?" when
+  none of your cards is staged and a hand card fits somewhere (`confirm_end`; `bt_end_yes` / `bt_end_no`, Enter = Yes,
+  Esc = No; pointer input on the table is held). `end_turn` itself (and `battle_end_turn`) never asks.
+- Result: "View table" (`bt_view_table`) hides the result panel (`result_hidden`), a Continue button
+  (`bt_show_result`) or Enter brings it back; the panel's Continue (`bt_continue`) leaves as before.
+- Voxelmon pill (`Vox::draw`, between fights): smaller (11 px, 96 px bar), hidden at full HP unless tired.
+
 ## Not ported / differences from Kaigen
 - The debug panel's toggle: Kaigen used ` itself; here the engine owns ` (its debug mode, which the panel follows) and phones get
   a menu row. The picker names models by their glTF file and roads / the baseplate; Kaigen's per-building tag registry
