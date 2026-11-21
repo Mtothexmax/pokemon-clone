@@ -1,5 +1,5 @@
 // Wi-Fi build only (tools/lan.ps1 injects it): sends what the phone's console sees to tools/serve_lan.py,
-// which writes it to out/phone.log. The phone has no dev tools, so this is how its errors reach the PC.
+// which writes it to logs/phone.log. The phone has no dev tools, so this is how its errors reach the PC.
 (() => {
   const send = (kind, data) => {
     try {

@@ -7,7 +7,8 @@
 // UVs are linear, normals are the vertex normals interpolated (Phong shading), so prints keep their place.
 //
 //   node tools/subdivide.mjs <in.glb> <out.glb> [--level 4]
-//   node tools/subdivide.mjs --heads            (assets/minifig/*/head.glb -> head_hi.glb)
+//   node tools/subdivide.mjs --heads            (assets/minifig/*/head.glb -> head_hi.glb, and head.glb smooth shaded:
+//                                                a copy of the flat-shaded original is kept as head_flat.glb)
 //
 // The game uses head_hi.glb as LOD 0 of a figure's head when the camera comes close (figure.rs). Zero npm dependencies.
 
@@ -16,7 +17,7 @@ import path from 'node:path';
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
-const LEVEL = Number(opt('--level', 4));
+let LEVEL = Number(opt('--level', 4));
 
 function readGlb(file) {
   const b = fs.readFileSync(file);
@@ -62,8 +63,39 @@ const len = (a) => Math.hypot(a[0], a[1], a[2]);
 const norm = (a) => { const l = len(a) || 1; return mul(a, 1 / l); };
 const key = (p) => p.map((x) => Math.round(x * 1e5)).join(',');
 
+/** Auto smooth (as Blender's): the minifig parts come flat shaded (a normal per facet, some zero), which shows every
+ *  facet of a round part. Each corner gets the area-weighted normal of the triangles around its position whose facet
+ *  normal is within `SMOOTH_DEG` of its own: the facets of a round part (~11 degrees apart) blend, a rim (90) stays. */
+const SMOOTH_DEG = Number(opt('--smooth', 46));
+function smoothCorners(P, UV, I) {
+  const fn = [];
+  for (let t = 0; t < I.length; t += 3) fn.push(cross(sub(P[I[t + 1]], P[I[t]]), sub(P[I[t + 2]], P[I[t]])));
+  const around = new Map();
+  for (let t = 0; t < I.length; t += 3) for (let e = 0; e < 3; e++) {
+    const k = key(P[I[t + e]]);
+    if (!around.has(k)) around.set(k, []);
+    around.get(k).push(t / 3);
+  }
+  const cos = Math.cos((SMOOTH_DEG * Math.PI) / 180);
+  const P2 = [], N2 = [], UV2 = UV ? [] : null, I2 = [];
+  for (let t = 0; t < I.length; t += 3) {
+    const own = norm(fn[t / 3]);
+    for (let e = 0; e < 3; e++) {
+      const v = I[t + e];
+      let n = [0, 0, 0];
+      for (const o of around.get(key(P[v]))) if (dot(norm(fn[o]), own) > cos) n = add(n, fn[o]);
+      I2.push(P2.length);
+      P2.push(P[v]);
+      N2.push(len(n) > 1e-12 ? norm(n) : own);
+      if (UV) UV2.push(UV[v]);
+    }
+  }
+  return { P: P2, N: N2, UV: UV2, I: I2 };
+}
+
 /** One primitive: positions, normals, uvs, indices -> the tessellated arrays. */
-function tessellate(P, N, UV, I) {
+function tessellate(P0, N0, UV0, I0) {
+  const { P, N, UV, I } = smoothCorners(P0, UV0, I0);
   // which normals meet along each edge (by welded positions): a hard edge has two different ones at an end
   const edgeNormals = new Map(); // "ka|kb" (sorted) -> { [ka]: [normals], [kb]: [normals] }
   const ek = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -211,8 +243,15 @@ function subdivideGlb(inFile, outFile) {
 if (args[0] === '--heads') {
   const root = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'assets', 'minifig');
   for (const style of fs.readdirSync(root)) {
-    const f = path.join(root, style, 'head.glb');
-    if (fs.existsSync(f)) subdivideGlb(f, path.join(root, style, 'head_hi.glb'));
+    const flat = path.join(root, style, 'head_flat.glb'), f = path.join(root, style, 'head.glb');
+    if (!fs.existsSync(f)) continue;
+    if (!fs.existsSync(flat)) fs.copyFileSync(f, flat);
+    subdivideGlb(flat, path.join(root, style, 'head_hi.glb'));
+    // the far head: the same triangles, smooth shaded (level 1: corners only)
+    const keep = LEVEL;
+    LEVEL = 1;
+    subdivideGlb(flat, f);
+    LEVEL = keep;
   }
 } else if (args.length >= 2) {
   subdivideGlb(args[0], args[1]);

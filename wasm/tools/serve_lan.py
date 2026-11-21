@@ -22,7 +22,7 @@ ROOT = os.path.join(os.path.dirname(HERE), 'out', 'lan')
 CERT_DIR = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'KaigenProjects', 'pokemontest', 'tools', '.lan-cert')
 CA_CRT = os.path.join(CERT_DIR, 'brickhollow-test-ca.crt')
 # what the phone's console sends (tools/phone_log.js)
-PHONE_LOG = os.path.join(os.path.dirname(HERE), 'out', 'phone.log')
+PHONE_LOG = os.path.join(os.path.dirname(HERE), 'logs', 'phone.log')  # (logs/: the dev watcher ignores it)
 
 
 class Handler(SimpleHTTPRequestHandler):

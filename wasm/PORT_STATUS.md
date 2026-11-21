@@ -288,8 +288,9 @@ Source: the Kaigen (HZ engine, C) port in `%LOCALAPPDATA%/KaigenProjects/pokemon
 - Talk close-up (`talk::CamZoom`): the eye moves on a line, the look point slides from the orbit camera's to the
   board's centre (`looking_at` every frame; a slerped rotation let the face swing out), smootherstep over `ZOOM_S`
   0.85 s, the lens opens to `ZOOM_FOV` 55 degrees (wide angle from ~1 m) and is restored. Touch help (`bh-thelp`) stays left of Use / Jump.
-- Fine heads: `tools/subdivide.mjs --heads` makes `assets/minifig/*/head_hi.glb` (PN-triangle patches, 4x4 per
-  triangle, hard edges kept; rerun after changing a head). `Figure::want_detail` loads it once (out of sight) and makes
+- Fine heads: `tools/subdivide.mjs --heads` makes `assets/minifig/*/head_hi.glb` (auto smooth at 46 degrees, then
+  PN-triangle patches, 4x4 per triangle, hard edges kept) and `head.glb` (the same triangles smooth shaded) from
+  `head_flat.glb` (the flat-shaded original, the source: change that one and rerun). `Figure::want_detail` loads it once (out of sight) and makes
   it LOD 0 of the head within `HI_DIST` 3 m (matched by material name); play.rs calls it for villagers within 4 m
   and the one you talk to; `game_state.state.fine_heads`.
 - Asset bar: `Data::loadbar(ctx)` every frame from Title, PlayScreen and BattleScreen (call it from any new screen):
