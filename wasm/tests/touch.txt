@@ -22,8 +22,7 @@ expect game_state.state.hero.speed > 11
 screenshot shots/touch-run.png
 call input {"touch": {"id": 1, "x": 300, "y": 700, "phase": "end"}}
 # (a slow frame rate runs you up to Dex's house: the slide along its wall eases out too)
-frames 60
-expect game_state.state.hero.speed < 0.5
+wait_for game_state.state.hero.speed < 0.5 3000
 # the Jump button (shown once a finger touched the screen) jumps
 expect game_state.state.hero.jumps == 0
 action jump

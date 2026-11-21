@@ -179,9 +179,11 @@ pub(crate) const PLASTIC_ROUGH: f32 = 0.3;
 const PLASTIC_COAT_ROUGH: f32 = 0.06;
 const PLASTIC_SSS: f32 = 0.3;
 pub(crate) const AMBIENT_SPECULAR: f32 = 0.8;
-/// The phones' frame cap (`phone_quality`): every 2nd refresh at 90 Hz. Not 45: a 91.7 Hz display's 2nd refresh is
-/// 45.9 fps, over the cap, so the engine took every 3rd (30 fps; measured on the phone).
-pub(crate) const PHONE_MAX_FPS: f32 = 50.0;
+/// The phones' frame cap (`phone_quality`): every 3rd refresh at 90 Hz (30.6 fps), every 4th at 120 Hz. A PowerVR
+/// phone made every 2nd at 90 Hz (45.9 fps) in light parts of the village, but the tree-lined west (80-95k triangles,
+/// twice as many) put its GPU 120-190 ms behind: the engine's latency fallback stepped down after ~1.5 s, with 98-130 ms
+/// frames (the hero jumped ahead) on the way, and stepped up again in lighter parts. An even 30 fps everywhere instead.
+pub(crate) const PHONE_MAX_FPS: f32 = 31.0;
 /// (`sign_`: the printed boards, a clear coat's sky reflection washed their text out at some angles)
 const NOT_PLASTIC: [&str; 8] = ["wood", "felt", "card", "cave", "paper", "rock", "sand", "sign_"];
 
@@ -289,14 +291,14 @@ pub(crate) fn phone_quality(ctx: &mut Ctx) {
     s.bloom = false;
     s.water_ssr = false;
     s.lens_flare = 0.0;
-    // a budget that fits the frame cap (every 2nd refresh at 90 Hz = 21.8 ms), the resolution may drop to half; it starts
-    // at half (a phone measured 235-307 ms per frame at full resolution before the adaptation walked it down, every
-    // step a hitch) and the adaptation raises it when there is room
+    // a tight budget (under the capped frame's 32.7 ms) keeps the resolution at half, which held up in the heavy parts
+    // of the village; it starts there too (a phone measured 235-307 ms per frame at full resolution before the
+    // adaptation walked it down, every step a hitch)
     s.frame_budget_ms = 20.0;
     s.min_render_scale = 0.5;
     s.render_scale = 0.5;
-    // an even frame rate: a phone that nearly makes 90 Hz drew 11 / 22 ms frames in turn (walking juddered); every 2nd
-    // refresh instead (engine a928c1f; Settings::update lifts it again on a 60 Hz display)
+    // an even frame rate (`PHONE_MAX_FPS`: every 3rd refresh at 90 Hz; engine a928c1f; Settings::update lifts it on a
+    // 60 Hz display)
     s.max_fps = PHONE_MAX_FPS;
     s.auto_resolution = true;
 }
