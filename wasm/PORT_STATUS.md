@@ -73,7 +73,7 @@ comes from.
 | `cardface.rs` | card faces drawn on a 2D canvas -> textures (`CardFaces::texture(ctx, Face)`, cached) and PNG URLs; compact / big / back / unknown / power variants |
 | `deck.rs` | `CardUi`: the deck screen (collection, deck strip, replace chooser), foil packs (`show_rewards`), the upgrade moment |
 | `battle.rs` | the card battle's rules, engine-free: `Battle::new(opponent, my_deck, ai_deck, seed)`, `update(dt)`, `stage`, `end_turn`, `plan`, `leader`; `BattleKind`, taunts |
-| `arena.rs` | `BattleScreen` (scene "battle", pushed over the village): the 3D table, slab cards, tiles, HUD, input, effects, the result; the brick transition (`start_transition`, `transition_update`, `TRANS_BOARD`) |
+| `arena.rs` | `BattleScreen` (scene "battle", pushed over the village): the 3D table, slab cards, tiles, HUD, input, effects, the result (on phones it renders at full resolution with one shadow cascade, no bloom / depth darkening / stud relief: `enter`); the brick transition (`start_transition`, `transition_update`, `TRANS_BOARD`) |
 | `table.rs` | `TableArt`: the battle's meshes and materials (slabs, tiles, number atlas badges, shards, table, glows) |
 | `sound.rs` | synthesized effects (`Sfx`), music (`Track`, crossfades), voice lines (`assets/voices/<id>.ogg` on `Bus::Voice`), `voice_mouth` |
 | `settings.rs` | the ☰ menu (voices, music, Graphics Auto / High / Medium / Low, controls on phones, debug panel, title screen), Auto's frame-rate watch, `apply_step`, `native_resolution` |

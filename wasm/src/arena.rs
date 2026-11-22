@@ -2506,6 +2506,20 @@ impl Screen<Data> for BattleScreen {
         s.vignette = 0.35;
         s.bloom_threshold = 1.1;
         s.lens_flare = 0.0;
+        // phones (the Low profile renders the village at half resolution): the table is a small scene, so it renders
+        // at full resolution (sharp card text) and pays for it elsewhere: one shadow cascade over the table only,
+        // no bloom, no depth darkening, the flat studs (the cards are flat anyway)
+        if data.settings.step(&data.save.data) == 2 {
+            s.auto_resolution = false;
+            s.render_scale = 1.0;
+            s.min_render_scale = 1.0;
+            s.shadow_cascades = 1;
+            s.shadow_distance = 12.0;
+            s.bloom = false;
+            s.depth_darkening = 0.0;
+            s.water_ssr = false;
+            s.stud_relief = 0;
+        }
         self.layout(ctx);
         self.build(ctx, data);
         self.fit_camera(ctx);

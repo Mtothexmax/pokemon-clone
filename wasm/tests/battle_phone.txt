@@ -1,0 +1,31 @@
+# On a phone (the Low profile: the village at half resolution) the card battle renders at full resolution for sharp
+# card text, paid for with one shadow cascade over the table, no bloom / depth darkening / stud relief; leaving the
+# battle brings the phone profile back.
+# Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle_phone.txt --port 9223 --url http://localhost:8091/
+viewport 390 844 3 touch
+reload
+screen play
+wait_for game_state.state.assets_pending == 0 20000
+call save_reset
+call clock {"hours": 12}
+call life {"freeze": true, "pip_home": true}
+resume
+frames 30
+expect render.render_scale <= 0.65
+call battle {"kind": "practice", "seed": 7, "instant": true}
+frames 100
+expect game_state.screen == "battle"
+expect render.render_scale == 1
+expect render.min_render_scale == 1
+expect render.auto_resolution == false
+expect render.shadow_cascades == 1
+expect render.stud_relief == 0
+expect render.bloom == false
+screenshot battle_phone
+action bt_retreat
+frames 60
+expect game_state.screen == "play"
+expect render.min_render_scale == 0.5
+expect render.auto_resolution == true
+expect render.shadow_cascades == 2
+expect render.stud_relief == 1
