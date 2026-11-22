@@ -1,12 +1,14 @@
 """The battle's portraits: each minifig head (assets/minifig/<style>/head.glb, and its talking prints head_mouth1/2)
-rendered small on a transparent background -> assets/portraits/<style>_<0|1|2>.png. The battle shows the opponent's
-and yours instead of a letter, and swaps the opponent's by the voice's loudness while it talks.
+rendered small on a transparent background, turned toward the screen's middle: <style>_<0|1|2>.png look right and a
+little down (the opponent's, top left), <style>_<0|1|2>_up.png right and a little up (yours, bottom left). The battle
+shows them instead of a letter and swaps the opponent's by the voice's loudness while it talks.
 Run: blender -b --factory-startup --python tools/portraits/render_heads.py -- <repo wasm dir>
 """
 import bpy, sys, math, mathutils
 root = sys.argv[sys.argv.index('--') + 1]
 STYLES = ["player", "dex", "lumi", "pip", "quill", "mom", "baker", "knight"]
 for style in STYLES:
+  for suffix, lift in (("", 0.32), ("_up", -0.22)):
     for k, name in enumerate(["head", "head_mouth1", "head_mouth2"]):
         bpy.ops.wm.read_factory_settings(use_empty=True)
         sc = bpy.context.scene
@@ -21,9 +23,12 @@ for style in STYLES:
         size = max(hi - lo)
         cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam); sc.camera = cam
         cam.data.type = 'ORTHO'
-        cam.data.ortho_scale = size * 1.12
-        # the face looks along glTF +z (Blender -y): from the front, a little turned and from a little above
-        d = mathutils.Vector((0.35, -1.0, 0.25)).normalized() * size * 4
+        # (close: the face fills the frame, the hair or hat cut at the top)
+        cam.data.ortho_scale = size * 0.86
+        c = c - mathutils.Vector((0.0, 0.0, size * 0.06))
+        # the face looks along glTF +z (Blender -y): the camera off to its left (it looks right, to the screen's
+        # middle) and above (it looks down) or below (up)
+        d = mathutils.Vector((-0.5, -1.0, lift)).normalized() * size * 4
         cam.location = c + d
         cam.rotation_euler = (c - cam.location).to_track_quat('-Z', 'Y').to_euler()
         sun = bpy.data.objects.new('sun', bpy.data.lights.new('sun', 'SUN')); sc.collection.objects.link(sun)
@@ -39,6 +44,6 @@ for style in STYLES:
         sc.render.resolution_x = sc.render.resolution_y = 160
         sc.render.image_settings.file_format = 'PNG'
         sc.render.image_settings.color_mode = 'RGBA'
-        sc.render.filepath = f"{root}/assets/portraits/{style}_{k}.png"
+        sc.render.filepath = f"{root}/assets/portraits/{style}_{k}{suffix}.png"
         bpy.ops.render.render(write_still=True)
 print('heads done', flush=True)

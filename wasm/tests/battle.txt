@@ -56,7 +56,7 @@ expect game_state.state.battle.taunt == "Let’s have a fun practice round!"
 wait_for game_state.state.battle.voice == "assets/voices/7e9bc202.ogg" 4000
 # the portraits are LEGO heads (assets/portraits); while Lumi talks her mouth opens and closes with the voice
 expect ui.slots.bt_top contains assets/portraits/lumi_0.png
-expect ui.slots.bt_bottom contains assets/portraits/player_0.png
+expect ui.slots.bt_bottom contains assets/portraits/player_0_up.png
 wait_for ui.slots.bt_top contains bt-head on' src='assets/portraits/lumi_2.png 4000
 expect ui.slots.bt_top contains Lumi
 expect ui.slots.bt_bottom contains ENERGY

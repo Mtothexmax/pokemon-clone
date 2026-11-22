@@ -40,6 +40,10 @@ const HIDDEN: u8 = crate::town::rooms::HIDDEN_LAYER;
 /// The gap between slots (the card width on the board is `Lay::bw`).
 const GAP: f32 = 0.06;
 const FOV: f32 = 40.0;
+/// How far up (0..1, from where it was picked to a location's slots) a hand card must have been dragged to be played
+/// when let go short of them.
+const DRAG_SNAP: f32 = 0.7;
+
 /// Hand cards and the big card: depth in front of the camera.
 const HAND_D: f32 = 2.0;
 const INSPECT_D: f32 = 1.3;
@@ -1203,7 +1207,9 @@ impl BattleScreen {
                 }
                 data.sound.sfx(ctx, Sfx::Blip, 1.2, 0.35);
             }
-            Some(Press::Card { ci, from_hand, moved: true, .. }) => {
+            Some(Press::Card { ci, from_hand, moved: true, start }) => {
+                // (a hand card let go short of the slots: played anyway once it came 70 % of the way up to them)
+                let over = if from_hand && over.is_none() { self.drag_most_way(ctx, ci, start, p) } else { over };
                 let b = self.b.as_mut().unwrap();
                 if from_hand {
                     if let Some(t) = over.filter(|&t| t < 3) {
@@ -1255,6 +1261,29 @@ impl BattleScreen {
                 }
             }
         }
+    }
+
+    /// A hand card dragged from `start` and let go at `p` (CSS px) outside the slots: the location whose column is
+    /// nearest on screen, if the card came at least `DRAG_SNAP` of the way up from where it was picked to that
+    /// location's slots and may be played there.
+    fn drag_most_way(&self, ctx: &Ctx, ci: usize, start: Vec2, p: Vec2) -> Option<usize> {
+        let l = self.lay;
+        let mut best: Option<(f32, usize, f32)> = None;
+        for z in 0..3 {
+            let slots = BASE + Vec3::new(l.zone_x(z), 0.0, l.row0 + l.step * 0.5);
+            let Some([sx, sy]) = self.screen_of(ctx, slots) else { continue };
+            let dx = (p.x - sx).abs();
+            if best.is_none_or(|b| dx < b.0) {
+                best = Some((dx, z, sy));
+            }
+        }
+        let (_, z, sy) = best?;
+        let way = start.y - sy;
+        if way <= 1.0 || p.y >= l.h - l.bottom_px * 0.5 {
+            return None;
+        }
+        let done = (start.y - p.y) / way;
+        (done >= DRAG_SNAP && self.b().can_play(ci, z)).then_some(z)
     }
 
     /// The pointer is on the big card (taps there do not close it).
@@ -2189,7 +2218,7 @@ impl BattleScreen {
         let me_first = leader == Some(SIDE_P);
         let bottom = format!(
             "<div class='bt-bot{ph}' style='--bh:{bh:.0}px;--orb:{orb:.0}px'><div class='bt-orb{spent}'><b>{left}<small>/{en}</small></b><span>ENERGY</span></div>\
-             <div class='bt-me'><div class='bt-port{lit}' style='background:#1e6fe0;width:46px;height:46px;font-size:10px'><img class='bt-head on' src='assets/portraits/player_0.png' alt='YOU'>{mb}</div></div>\
+             <div class='bt-me'><div class='bt-port{lit}' style='background:#1e6fe0;width:46px;height:46px;font-size:10px'><img class='bt-head on' src='assets/portraits/player_0_up.png' alt='YOU'>{mb}</div></div>\
              <div class='bt-ctl'><button class='bt-btn blue{go}' data-action='bt_end'{endd}>{endl}</button><button class='bt-btn' data-action='bt_undo'{undod}>Undo</button></div></div>",
             ph = if l.phone { " phone" } else { "" },
             bh = l.bottom_px,
