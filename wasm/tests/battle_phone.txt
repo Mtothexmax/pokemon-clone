@@ -21,7 +21,7 @@ expect render.auto_resolution == false
 expect render.shadow_cascades == 1
 expect render.stud_relief == 0
 expect render.bloom == false
-screenshot battle_phone
+screenshot shots/battle-phone-full.png
 action bt_retreat
 frames 60
 expect game_state.screen == "play"
