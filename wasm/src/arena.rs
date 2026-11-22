@@ -53,15 +53,26 @@ const DRAG_H: f32 = 0.5;
 /// A card dragged by a finger rides above it: its lower edge this far (CSS px) above the touch point, so the thumb
 /// (which reaches further up than the point it touches) does not cover it
 const THUMB_PX: f32 = 30.0;
-/// The way into a battle (s) and the time the board is set up under the bricks.
-pub const TRANS: f32 = 2.1;
+/// The time (s) the board is set up under the bricks on the way into a battle. The bricks leave once the board has
+/// drawn a few frames and `TRANS_OUT` has passed on the wall clock (the CSS runs on it): setting up the board stalls
+/// a frame or more (and a phone switches to full resolution, which clears the canvas) - all under the bricks.
 pub const TRANS_BOARD: f32 = 1.55;
+const TRANS_OUT: f64 = 1.65;
+/// Frames the board draws under the bricks before they leave.
+const TRANS_FRAMES: u32 = 3;
 
 // ---------------------------------------------------------------- the way in (shared with the play screen)
 
 pub struct Transition {
     pub t: f32,
     pub kind: BattleKind,
+    /// the banner's name and face (the HTML is built again when the bricks leave)
+    opp: &'static str,
+    face: Option<&'static str>,
+    /// wall clock (ms) at the start, frames since the board was set up, when the bricks started leaving
+    start_ms: f64,
+    after: u32,
+    out_ms: Option<f64>,
 }
 
 /// The opponent's fanned cards: the step between two along the card normal (metres; a card is ~1 cm thick).
@@ -82,9 +93,9 @@ pub fn start_transition(ctx: &mut Ctx, data: &mut Data, kind: BattleKind) {
         BattleKind::Practice => Some("lumi"),
         BattleKind::Wild => None,
     };
-    data.trans = Some(Transition { t: 0.0, kind });
+    data.trans = Some(Transition { t: 0.0, kind, opp: opponent, face, start_ms: engine::log::now_ms(), after: 0, out_ms: None });
     data.sound.music(ctx, Track::Intro);
-    ctx.ui.set("bt_trans", &transition_html(opponent, face));
+    ctx.ui.set("bt_trans", &transition_html(opponent, face, None));
 }
 
 /// Advances the bricks; true once the board should be set up (every frame, from whichever screen is on top).
@@ -98,15 +109,30 @@ pub fn transition_update(ctx: &mut Ctx, data: &mut Data, dt: f32) -> bool {
     if t0 < 1.12 && t1 >= 1.12 {
         data.sound.sfx(ctx, Sfx::Pop, 0.55, 0.9); // the VS lands
     }
-    if t1 >= TRANS {
-        data.trans = None;
-        ctx.ui.set("bt_trans", "");
+    let Some(tr) = &mut data.trans else { return false };
+    if t0 >= TRANS_BOARD {
+        tr.after += 1;
+    }
+    let now = engine::log::now_ms();
+    let e = (now - tr.start_ms) / 1000.0;
+    match tr.out_ms {
+        None if tr.after >= TRANS_FRAMES && e >= TRANS_OUT => {
+            tr.out_ms = Some(now);
+            let html = transition_html(tr.opp, tr.face, Some(e as f32));
+            ctx.ui.set("bt_trans", &html);
+        }
+        Some(o) if now - o >= 600.0 => {
+            data.trans = None;
+            ctx.ui.set("bt_trans", "");
+        }
+        _ => {}
     }
     t0 < TRANS_BOARD && t1 >= TRANS_BOARD
 }
 
 /// The bricks, YOU vs them, the flashes: css animations started once (timed like Kaigen `cg_transition_draw`).
-fn transition_html(opp: &str, face: Option<&str>) -> String {
+/// `out`: the bricks leave now, `out` s (wall clock) after the start (the banners continue where they are).
+fn transition_html(opp: &str, face: Option<&str>, out: Option<f32>) -> String {
     let colors = ["#c91a09", "#f2cd37", "#0055bf", "#237841", "#fe8a18"];
     let mut rows = String::new();
     for r in 0..7 {
@@ -117,14 +143,23 @@ fn transition_html(opp: &str, face: Option<&str>) -> String {
             bricks.push_str(&format!("<i style='background:{col}'><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></i>"));
         }
         let din = 0.18 + 0.045 * r as f32;
-        let dout = 1.65 + 0.035 * r as f32;
-        rows.push_str(&format!(
-            "<div class='btt-row {dir}' style='top:{top:.3}%;animation-delay:{din:.3}s,{dout:.3}s'>{bricks}</div>",
-            top = r as f32 * 100.0 / 6.0
-        ));
+        let top = r as f32 * 100.0 / 6.0;
+        let anim = match out {
+            // (in: only the way in; they stay until the game sends them out)
+            None => format!("animation:{} .4s cubic-bezier(.2,.8,.3,1) {din:.3}s forwards", if dir == "r" { "bttinr" } else { "bttin" }),
+            Some(_) => format!("animation:{} .32s ease-in {:.3}s both", if dir == "r" { "bttoutr" } else { "bttout" }, 0.035 * r as f32),
+        };
+        rows.push_str(&format!("<div class='btt-row {dir}' style='top:{top:.3}%;{anim}'>{bricks}</div>"));
     }
+    // the banners, the VS and the flash run on from the start (built again: delays less the time gone)
+    let e = out.unwrap_or(0.0);
+    let d = |s: f32| format!("animation-delay:{:.3}s", s - e);
     format!(
-        "<div class='btt'>{rows}<div class='btt-you'><img class='btt-face' src='assets/portraits/player_face_0.png' alt=''>YOU</div><div class='btt-opp'>{oface}{opp}</div><div class='btt-vs'>VS</div><div class='btt-flash'></div></div>",
+        "<div class='btt'>{rows}<div class='btt-you' style='{}'><img class='btt-face' src='assets/portraits/player_face_0.png' alt=''>YOU</div><div class='btt-opp' style='{}'>{oface}{opp}</div><div class='btt-vs' style='{}'>VS</div><div class='btt-flash' style='{}'></div></div>",
+        d(0.75),
+        d(0.75),
+        d(0.95),
+        d(0.0),
         oface = face.map(|f| format!("<img class='btt-face' src='assets/portraits/{f}_face_0.png' alt=''>")).unwrap_or_default()
     )
 }
