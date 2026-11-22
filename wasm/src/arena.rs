@@ -479,6 +479,9 @@ pub struct BattleScreen {
     inspect: Option<Inspect>,
     press: Option<Press>,
     drag_over: Option<usize>,
+    /// the location a dragged card would be laid on if let go now (`landing`): the card sinks towards the table
+    /// and a soft click sounds when it docks; letting go then lays it there
+    dock: Option<usize>,
 
     drag_tilt: f32,
     hover: Option<usize>,
@@ -596,6 +599,7 @@ impl BattleScreen {
             inspect: None,
             press: None,
             drag_over: None,
+            dock: None,
 
             drag_tilt: 0.0,
             hover: None,
@@ -887,6 +891,12 @@ impl BattleScreen {
             }
         }
         self.cam_dist = hi;
+        // the shadows reach just past the table (seen from nearly straight above it is about the camera's distance
+        // away): fewer shaded pixels pay for the shadow lookups
+        let sd = hi + 2.0;
+        if (ctx.renderer.settings.shadow_distance - sd).abs() > 0.1 {
+            ctx.renderer.settings.shadow_distance = sd;
+        }
         self.cam_target = BASE + Vec3::new(0.0, 0.0, centre(hi));
         self.pitch = pitch;
         let sway = Vec3::new((self.time * 0.31).sin() * 0.05, (self.time * 0.23).sin() * 0.03, 0.0);
@@ -982,7 +992,7 @@ impl BattleScreen {
         }
         if let (Some(Press::Card { ci: d, moved: true, .. }), Some((o, dir))) = (self.press, ptr) {
             if d == ci {
-                let p = Self::on_plane(o, dir, DRAG_H).unwrap_or(o + dir * 3.0);
+                let p = Self::on_plane(o, dir, if self.dock.is_some() { DRAG_H * 0.35 } else { DRAG_H }).unwrap_or(o + dir * 3.0);
                 let over_hand = self.drag_over == Some(3);
                 let rot = Quat::from_rotation_z(-self.drag_tilt * 0.03) * Quat::from_rotation_x(-FRAC_PI_2 + 0.45);
                 let scale = if over_hand { l.bw * 1.0 } else { l.bw * 1.12 };
@@ -1185,12 +1195,33 @@ impl BattleScreen {
                 // (only the location matters: anywhere over its column, your rows, its tile or the opponent's side)
                 self.drag_over = Self::on_plane(o, d, 0.0).and_then(|q| self.zone_at(q, true));
             }
+            let dock = self.landing(ctx, ci, from_hand, start, p, self.drag_over);
+            if dock.is_some() && dock != self.dock {
+                data.sound.sfx(ctx, Sfx::Kick, 1.9, 0.3);
+            }
+            self.dock = dock;
+        }
+    }
+
+    /// Where a card dragged from `start` (CSS px) and let go at `p` over `over` (`drag_over`) is laid: a hand card
+    /// on the location under it if it may go there, or (outside the columns) one it came `DRAG_SNAP` of the way up
+    /// to; a card staged this turn on another location with room. The same rule for the dock click and the release.
+    fn landing(&self, ctx: &Ctx, ci: usize, from_hand: bool, start: Vec2, p: Vec2, over: Option<usize>) -> Option<usize> {
+        let b = self.b();
+        if from_hand {
+            match over {
+                None => self.drag_most_way(ctx, ci, start, p),
+                Some(t) => (t < 3 && b.can_play(ci, t)).then_some(t),
+            }
+        } else {
+            over.filter(|&t| t < 3 && t as i32 != b.c[ci].zone && b.zone_open(t, SIDE_P))
         }
     }
 
     fn on_release(&mut self, ctx: &mut Ctx, data: &mut Data, p: Vec2) {
         let press = self.press.take();
         let over = self.drag_over.take();
+        self.dock = None;
         log_info!("battle release at {p:?}: {press:?} over {over:?}");
         match press {
             None => {}
@@ -1221,17 +1252,20 @@ impl BattleScreen {
             }
             Some(Press::Card { ci, from_hand, moved: true, start }) => {
                 // (a hand card let go short of the slots: played anyway once it came 70 % of the way up to them)
-                let over = if from_hand && over.is_none() { self.drag_most_way(ctx, ci, start, p) } else { over };
+                let land = self.landing(ctx, ci, from_hand, start, p, over);
+                if land.is_some() {
+                    data.sound.sfx(ctx, Sfx::Pop, 0.8, 0.35);
+                }
                 let b = self.b.as_mut().unwrap();
                 if from_hand {
-                    if let Some(t) = over.filter(|&t| t < 3) {
+                    if let Some(t) = land {
                         self.play(ctx, data, ci, t);
                     }
                     self.selected = None;
                 } else {
                     let orig = b.c[ci].zone as usize;
                     match over {
-                        Some(t) if t < 3 && t != orig => {
+                        Some(t) if land == Some(t) => {
                             b.unstage(ci);
                             if !b.stage(ci, t) {
                                 b.stage(ci, orig); // not allowed there: back where it was
@@ -2423,6 +2457,7 @@ impl BattleScreen {
             "inspect": self.inspect.map(|i| format!("{i:?}")),
             "dragging": matches!(self.press, Some(Press::Card { moved: true, .. })),
             "drag_over": self.drag_over,
+            "dock": self.dock,
             "taunt": self.taunt.map(|t| t.0),
             "banner": self.banner.as_ref().map(|b| b.0.clone()),
             "anims": self.cards.iter().filter(|o| o.anim.is_some()).count(),
@@ -2500,23 +2535,23 @@ impl Screen<Data> for BattleScreen {
         s.atmosphere_intensity = 1.0;
         s.sky_color = engine::renderer::srgb_hex(0xdfeaff).truncate() * 0.6;
         s.ground_color = engine::renderer::srgb_hex(0x6a5038).truncate() * 0.45;
-        s.shadow_distance = 16.0;
-        s.shadow_cascades = s.shadow_cascades.min(2);
+        // (the cheap table: one shadow cascade that reaches just past the table (`fit_camera` sets its distance from
+        // the camera's), no bloom and no depth darkening - on the flat felt they changed next to nothing and cost
+        // about 2 of 7 ms GPU on a desktop at 2.5k)
+        s.shadow_distance = 12.0;
+        s.shadow_cascades = 1;
+        s.bloom = false;
+        s.depth_darkening = 0.0;
         s.exposure = 1.0;
         s.vignette = 0.35;
         s.bloom_threshold = 1.1;
         s.lens_flare = 0.0;
         // phones (the Low profile renders the village at half resolution): the table is a small scene, so it renders
-        // at full resolution (sharp card text) and pays for it elsewhere: one shadow cascade over the table only,
-        // no bloom, no depth darkening, the flat studs (the cards are flat anyway)
+        // at full resolution (sharp card text); no stud relief (the cards are flat anyway)
         if data.settings.step(&data.save.data) == 2 {
             s.auto_resolution = false;
             s.render_scale = 1.0;
             s.min_render_scale = 1.0;
-            s.shadow_cascades = 1;
-            s.shadow_distance = 12.0;
-            s.bloom = false;
-            s.depth_darkening = 0.0;
             s.water_ssr = false;
             s.stud_relief = 0;
         }
