@@ -20,5 +20,12 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 Copy-Item -Recurse -Force (Join-Path $game 'dist/*') $Out
 # no Jekyll: serve every file as it is
 New-Item -ItemType File -Force (Join-Path $Out '.nojekyll') | Out-Null
+# the site's earlier (Kaigen) export registered a service worker at coi-sw.js in its visitors' browsers: this one takes
+# its place once and unregisters itself (the pages it controlled reload without it)
+$sw = @'
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (e) => e.waitUntil(self.registration.unregister().then(() => self.clients.matchAll({ type: "window" })).then((cs) => cs.forEach((c) => c.navigate(c.url)))));
+'@
+Set-Content -Encoding utf8 -NoNewline (Join-Path $Out 'coi-sw.js') $sw
 $mb = [math]::Round(((Get-ChildItem -Recurse -File $Out | Measure-Object Length -Sum).Sum) / 1MB, 1)
 Write-Host "exported to $Out ($mb MB)" -ForegroundColor Green

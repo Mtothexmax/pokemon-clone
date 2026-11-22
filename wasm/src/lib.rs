@@ -52,7 +52,7 @@ pub fn main() {
             .register("title", || Box::new(Title))
             .register("play", || Box::new(PlayScreen::default()))
             .register("battle", || Box::new(arena::BattleScreen::default())),
-        engine::renderer::RenderConfig { msaa: 1 },
+        engine::renderer::RenderConfig { msaa: 1, ..Default::default() },
     );
 }
 
