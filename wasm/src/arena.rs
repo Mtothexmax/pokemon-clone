@@ -2649,6 +2649,9 @@ impl Screen<Data> for BattleScreen {
             // specular, the cards and the felt unlit (printed cards: the lighting changed little)
             s.shadows = false;
             s.ambient_specular = 0.0;
+            // no FXAA (at a phone's pixel density the edges are fine without it, and it softened the card text): the
+            // composite reads one sample a pixel
+            s.fxaa = false;
             self.flat = true;
             data.art.set_flat(ctx, true);
         }

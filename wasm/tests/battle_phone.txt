@@ -1,6 +1,6 @@
 # On a phone (the Low profile: the village at half resolution) the card battle renders at full resolution for sharp
 # card text, paid for with cheap pixels: no shadow maps (a soft blob under each card instead), the cards and the felt
-# unlit, no ambient specular, bloom, depth darkening or stud relief; leaving the battle brings the phone profile back.
+# unlit, no ambient specular, FXAA, bloom, depth darkening or stud relief; leaving the battle brings the phone profile back.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle_phone.txt --port 9223 --url http://localhost:8091/
 viewport 390 844 3 touch
 reload
@@ -22,6 +22,7 @@ expect render.shadow_cascades == 1
 expect render.stud_relief == 0
 expect render.bloom == false
 expect render.shadows == false
+expect render.fxaa == false
 expect render.ambient_specular == 0
 expect game_state.state.battle.flat == true
 screenshot shots/battle-phone-full.png
@@ -33,3 +34,4 @@ expect render.auto_resolution == true
 expect render.shadow_cascades == 2
 expect render.stud_relief == 1
 expect render.shadows == true
+expect render.fxaa == true
