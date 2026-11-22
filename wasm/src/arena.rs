@@ -50,6 +50,9 @@ const INSPECT_D: f32 = 1.3;
 const DIM_D: f32 = 1.6;
 /// A card dragged over the table floats this high.
 const DRAG_H: f32 = 0.5;
+/// A card dragged by a finger rides above it: its lower edge this far (CSS px) above the touch point, so the thumb
+/// (which reaches further up than the point it touches) does not cover it
+const THUMB_PX: f32 = 30.0;
 /// The way into a battle (s) and the time the board is set up under the bricks.
 pub const TRANS: f32 = 2.1;
 pub const TRANS_BOARD: f32 = 1.55;
@@ -488,6 +491,8 @@ pub struct BattleScreen {
     was_down: bool,
     last_pos: Vec2,
     touch_ui: bool,
+    /// the pointer is a finger (the last press came from a touch): a dragged card rides above it (`drag_point`)
+    ptr_touch: bool,
     log_open: bool,
     /// End Turn without a card played although one could be: "Are you sure?" (Yes / No) is open
     confirm_end: bool,
@@ -606,6 +611,7 @@ impl BattleScreen {
             was_down: false,
             last_pos: Vec2::ZERO,
             touch_ui: false,
+            ptr_touch: false,
             log_open: false,
             confirm_end: false,
             result_hidden: false,
@@ -1129,7 +1135,11 @@ impl BattleScreen {
         }
         let mut quick = vec![];
         if let Some(f) = t.touches.first() {
+            self.ptr_touch = true;
             return (true, f.pos, quick);
+        }
+        if ctx.input.button(MouseButton::Left) {
+            self.ptr_touch = false;
         }
         if !self.was_down {
             quick.extend(t.taps.iter().copied());
@@ -1189,6 +1199,8 @@ impl BattleScreen {
             let vx = p.x - self.last_pos.x;
             self.drag_tilt = (self.drag_tilt * 0.75 + vx * 0.6).clamp(-14.0, 14.0);
             self.drag_over = None;
+            // (what counts is where the card is seen, above the finger)
+            let (start, p) = (self.drag_point(ctx, start), self.drag_point(ctx, p));
             if p.y >= self.lay.h - self.lay.bottom_px {
                 self.drag_over = Some(3);
             } else if let Some((o, d)) = self.ray(ctx, p) {
@@ -1201,6 +1213,19 @@ impl BattleScreen {
             }
             self.dock = dock;
         }
+    }
+
+    /// Where a dragged card is seen for the pointer at `p` (CSS px): under the mouse itself; above a finger, its
+    /// lower edge `THUMB_PX` above the touch point (the card's half height on screen measured at the drag height).
+    fn drag_point(&self, ctx: &Ctx, p: Vec2) -> Vec2 {
+        if !self.ptr_touch {
+            return p;
+        }
+        let Some(c) = self.ray(ctx, p).and_then(|(o, d)| Self::on_plane(o, d, DRAG_H)) else { return p };
+        let half = self.lay.bw * 1.12 * CARD_H * 0.5;
+        let edge = c + Quat::from_rotation_x(-FRAC_PI_2 + 0.45) * Vec3::new(0.0, -half, 0.0);
+        let (Some(a), Some(b)) = (self.screen_of(ctx, c), self.screen_of(ctx, edge)) else { return p };
+        Vec2::new(p.x, p.y - (b[1] - a[1]).abs() - THUMB_PX)
     }
 
     /// Where a card dragged from `start` (CSS px) and let go at `p` over `over` (`drag_over`) is laid: a hand card
@@ -1252,7 +1277,7 @@ impl BattleScreen {
             }
             Some(Press::Card { ci, from_hand, moved: true, start }) => {
                 // (a hand card let go short of the slots: played anyway once it came 70 % of the way up to them)
-                let land = self.landing(ctx, ci, from_hand, start, p, over);
+                let land = self.landing(ctx, ci, from_hand, self.drag_point(ctx, start), self.drag_point(ctx, p), over);
                 if land.is_some() {
                     data.sound.sfx(ctx, Sfx::Pop, 0.8, 0.35);
                 }
@@ -1574,7 +1599,7 @@ impl BattleScreen {
         }
         let cam = self.cam_tf(ctx);
         let hands = [self.hand_slots(SIDE_P), self.hand_slots(SIDE_AI)];
-        let ptr = if matches!(self.press, Some(Press::Card { moved: true, .. })) { self.ray(ctx, self.last_pos) } else { None };
+        let ptr = if matches!(self.press, Some(Press::Card { moved: true, .. })) { self.ray(ctx, self.drag_point(ctx, self.last_pos)) } else { None };
         // attackers lunge at their targets (Kaigen: 22 px), the hit card shakes, a buffed one hops
         let n = self.cards.len();
         let mut offset = vec![Vec3::ZERO; n];
@@ -2446,6 +2471,7 @@ impl BattleScreen {
             v
         })
         .collect();
+        let dpt = self.drag_point(ctx, self.last_pos);
         json!({
             "kind": self.kind, "opponent": b.opponent, "phase": b.phase, "turn": b.turn, "max_turns": b.max_turns,
             "energy": b.energy, "energy_left": b.energy_left, "stakes": b.stakes, "first": if b.first == SIDE_P { "you" } else { "foe" }, "rank": match b.leader() { Some(SIDE_P) => "you", Some(_) => "foe", None => "tie" },
@@ -2458,6 +2484,8 @@ impl BattleScreen {
             "dragging": matches!(self.press, Some(Press::Card { moved: true, .. })),
             "drag_over": self.drag_over,
             "dock": self.dock,
+            // where a dragged card is seen for the pointer now (CSS px; above a finger)
+            "drag_point": [dpt.x.round(), dpt.y.round()],
             "taunt": self.taunt.map(|t| t.0),
             "banner": self.banner.as_ref().map(|b| b.0.clone()),
             "anims": self.cards.iter().filter(|o| o.anim.is_some()).count(),

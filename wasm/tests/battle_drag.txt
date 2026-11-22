@@ -1,6 +1,8 @@
 # Dragging a hand card (arena.rs drag_most_way): let go on your row of a location it lands there; let go short of the
 # row it still lands once it came 70 % of the way up from the hand (on the location whose column is nearest); less
 # than that and it goes back to the hand. When a let-go would lay it, it docks (sinks to the table, a click): `dock`. Over a location's column anywhere (even the opponent's side) it lands there.
+# By touch the card rides above the finger (its lower edge 30 px over the touch point: `drag_point`), and it is
+# where the card is seen that counts; the touch points below are that much lower than the card.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle_drag.txt --port 9223 --url http://localhost:8091/
 reload
 viewport 390 844 3 touch
@@ -18,10 +20,11 @@ call input {"touch": {"id": 1, "x": 63, "y": 708, "phase": "start"}}
 frames 2
 call input {"touch": {"id": 1, "x": 66, "y": 650, "phase": "move"}}
 frames 2
-call input {"touch": {"id": 1, "x": 70, "y": 600, "phase": "move"}}
+call input {"touch": {"id": 1, "x": 70, "y": 650, "phase": "move"}}
 frames 2
 expect game_state.state.battle.dock == null
-call input {"touch": {"id": 1, "x": 70, "y": 600, "phase": "end"}}
+expect game_state.state.battle.drag_point.1 < 600
+call input {"touch": {"id": 1, "x": 70, "y": 650, "phase": "end"}}
 frames 20
 expect game_state.state.battle.locations.0.mine.length == 0
 # ---- dropped over the opponent's side of the middle location: only the location matters, it lands there ----
@@ -44,10 +47,10 @@ call input {"touch": {"id": 2, "x": 63, "y": 708, "phase": "start"}}
 frames 2
 call input {"touch": {"id": 2, "x": 66, "y": 650, "phase": "move"}}
 frames 2
-call input {"touch": {"id": 2, "x": 72, "y": 525, "phase": "move"}}
+call input {"touch": {"id": 2, "x": 72, "y": 593, "phase": "move"}}
 frames 2
 expect game_state.state.battle.dock == 0
-call input {"touch": {"id": 2, "x": 72, "y": 525, "phase": "end"}}
+call input {"touch": {"id": 2, "x": 72, "y": 593, "phase": "end"}}
 frames 20
 expect game_state.state.battle.locations.0.mine.length == 1
 expect game_state.state.battle.locations.0.mine.0.id == "quickhop"
