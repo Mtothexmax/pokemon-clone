@@ -1,6 +1,6 @@
 # Dragging a hand card (arena.rs drag_most_way): let go on your row of a location it lands there; let go short of the
 # row it still lands once it came 70 % of the way up from the hand (on the location whose column is nearest); less
-# than that and it goes back to the hand.
+# than that and it goes back to the hand. Over a location's column anywhere (even the opponent's side) it lands there.
 # Run: node C:/dev/wasmOnly/tools/bridge.mjs run tests/battle_drag.txt --port 9223 --url http://localhost:8091/
 reload
 viewport 390 844 3 touch
@@ -23,6 +23,20 @@ frames 2
 call input {"touch": {"id": 1, "x": 70, "y": 600, "phase": "end"}}
 frames 20
 expect game_state.state.battle.locations.0.mine.length == 0
+# ---- dropped over the opponent's side of the middle location: only the location matters, it lands there ----
+call input {"touch": {"id": 7, "x": 63, "y": 708, "phase": "start"}}
+frames 2
+call input {"touch": {"id": 7, "x": 120, "y": 500, "phase": "move"}}
+frames 2
+call input {"touch": {"id": 7, "x": 195, "y": 230, "phase": "move"}}
+frames 2
+call input {"touch": {"id": 7, "x": 195, "y": 230, "phase": "end"}}
+frames 20
+expect game_state.state.battle.locations.1.mine.length == 1
+expect game_state.state.battle.locations.1.mine.0.id == "quickhop"
+action bt_undo
+frames 30
+expect game_state.state.battle.locations.1.mine.length == 0
 # ---- three quarters up (still below the row): it lands on the first location ----
 call input {"touch": {"id": 2, "x": 63, "y": 708, "phase": "start"}}
 frames 2

@@ -73,9 +73,15 @@ pub fn start_transition(ctx: &mut Ctx, data: &mut Data, kind: BattleKind) {
         BattleKind::Wild => "???",
         BattleKind::Practice => "LUMI",
     };
+    let face = match kind {
+        BattleKind::Pip => Some("pip"),
+        BattleKind::Rival => Some("dex"),
+        BattleKind::Practice => Some("lumi"),
+        BattleKind::Wild => None,
+    };
     data.trans = Some(Transition { t: 0.0, kind });
     data.sound.music(ctx, Track::Intro);
-    ctx.ui.set("bt_trans", &transition_html(opponent));
+    ctx.ui.set("bt_trans", &transition_html(opponent, face));
 }
 
 /// Advances the bricks; true once the board should be set up (every frame, from whichever screen is on top).
@@ -97,7 +103,7 @@ pub fn transition_update(ctx: &mut Ctx, data: &mut Data, dt: f32) -> bool {
 }
 
 /// The bricks, YOU vs them, the flashes: css animations started once (timed like Kaigen `cg_transition_draw`).
-fn transition_html(opp: &str) -> String {
+fn transition_html(opp: &str, face: Option<&str>) -> String {
     let colors = ["#c91a09", "#f2cd37", "#0055bf", "#237841", "#fe8a18"];
     let mut rows = String::new();
     for r in 0..7 {
@@ -115,7 +121,8 @@ fn transition_html(opp: &str) -> String {
         ));
     }
     format!(
-        "<div class='btt'>{rows}<div class='btt-you'>YOU</div><div class='btt-opp'>{opp}</div><div class='btt-vs'>VS</div><div class='btt-flash'></div></div>"
+        "<div class='btt'>{rows}<div class='btt-you'><img class='btt-face' src='assets/portraits/player_face_0.png' alt=''>YOU</div><div class='btt-opp'>{oface}{opp}</div><div class='btt-vs'>VS</div><div class='btt-flash'></div></div>",
+        oface = face.map(|f| format!("<img class='btt-face' src='assets/portraits/{f}_face_0.png' alt=''>")).unwrap_or_default()
     )
 }
 
@@ -123,6 +130,7 @@ fn transition_html(opp: &str) -> String {
 pub const STYLE: &str = "<style>
 #ui [data-slot=bt_trans]{position:fixed;inset:0;z-index:80;pointer-events:none}#ui [data-slot=bt_trans]:empty{display:none}
 .btt{position:fixed;inset:0;overflow:hidden}
+.btt-face{height:72%;aspect-ratio:1;border-radius:14%;margin:0 2.4vh;border:4px solid rgba(255,255,255,.9);box-shadow:0 4px 10px rgba(0,0,0,.4);flex:none}
 .btt-row{position:absolute;left:-12vh;height:calc(100% / 6 + 1px);min-height:60px;display:flex;white-space:nowrap;transform:translateX(-120vw);animation:bttin .4s cubic-bezier(.2,.8,.3,1) forwards,bttout .32s ease-in forwards}
 .btt-row.r{left:auto;right:-12vh;flex-direction:row-reverse;transform:translateX(120vw);animation-name:bttinr,bttoutr}
 @keyframes bttin{from{transform:translateX(-120vw)}to{transform:translateX(0)}}
@@ -1171,7 +1179,8 @@ impl BattleScreen {
             if p.y >= self.lay.h - self.lay.bottom_px {
                 self.drag_over = Some(3);
             } else if let Some((o, d)) = self.ray(ctx, p) {
-                self.drag_over = Self::on_plane(o, d, 0.0).and_then(|q| self.zone_at(q, false));
+                // (only the location matters: anywhere over its column, your rows, its tile or the opponent's side)
+                self.drag_over = Self::on_plane(o, d, 0.0).and_then(|q| self.zone_at(q, true));
             }
         }
     }
