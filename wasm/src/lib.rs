@@ -46,13 +46,16 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(start)]
 pub fn main() {
     // no MSAA, FXAA in the composite: at dpr 2 the village looks the same as with 4x MSAA and renders
-    // ~30 % faster on desktop (much more on phones). `?msaa=4` in the URL brings MSAA back
+    // ~30 % faster on desktop (much more on phones). `?msaa=4` in the URL brings MSAA back.
+    // Direct output: the engine also builds pipelines that tonemap in the fragment shader and draw straight into the
+    // canvas, used in frames whose composite would only tonemap (the phone's card battle: no bloom, FXAA, depth
+    // darkening, ...): no HDR target, no composite pass. `?direct=0` turns it off
     engine::run_with(
         ScreenStack::new(Data::default(), Box::new(Title))
             .register("title", || Box::new(Title))
             .register("play", || Box::new(PlayScreen::default()))
             .register("battle", || Box::new(arena::BattleScreen::default())),
-        engine::renderer::RenderConfig { msaa: 1, ..Default::default() },
+        engine::renderer::RenderConfig { msaa: 1, direct_output: true },
     );
 }
 

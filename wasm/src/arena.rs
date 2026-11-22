@@ -2653,10 +2653,13 @@ impl Screen<Data> for BattleScreen {
             // composite reads one sample a pixel
             s.fxaa = false;
             self.flat = true;
-            data.art.set_flat(ctx, true);
         }
         self.layout(ctx);
         self.build(ctx, data);
+        // (after the build: the table's materials are made there the first time)
+        if self.flat {
+            data.art.set_flat(ctx, true);
+        }
         self.fit_camera(ctx);
         // everything starts on its pile
         for ci in 0..self.cards.len() {

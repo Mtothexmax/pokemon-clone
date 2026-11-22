@@ -25,6 +25,9 @@ expect render.shadows == false
 expect render.fxaa == false
 expect render.ambient_specular == 0
 expect game_state.state.battle.flat == true
+# the frame goes straight into the canvas (no HDR target, no composite)
+expect stats.render.direct_output == true
+expect stats.render.direct_blocked == ""
 screenshot shots/battle-phone-full.png
 action bt_retreat
 frames 60

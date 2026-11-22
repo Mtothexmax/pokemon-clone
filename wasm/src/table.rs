@@ -22,8 +22,8 @@ const CARD_TINT: Vec4 = Vec4::new(0.72, 0.72, 0.72, 1.0);
 const CARD_DIM: Vec4 = Vec4::new(0.17, 0.18, 0.21, 1.0);
 /// The same unlit (`Art::set_flat`, phones): the lit look's brightness without the lighting.
 const FLAT_TINT: Vec4 = Vec4::new(1.45, 1.45, 1.45, 1.0);
-const FLAT_DIM: Vec4 = Vec4::new(0.4, 0.42, 0.48, 1.0);
-const FLAT_FELT: Vec4 = Vec4::new(1.2, 1.2, 1.2, 1.0);
+const FLAT_DIM: Vec4 = Vec4::new(0.26, 0.28, 0.33, 1.0);
+const FLAT_FELT: Vec4 = Vec4::new(2.6, 1.4, 1.7, 1.0);
 
 /// Card slab: width 1 (scale the entity by the card's width), height 1.4, this thick (local units).
 pub const CARD_H: f32 = 1.4;
@@ -326,6 +326,10 @@ impl TableArt {
         }
         if let Some(id) = self.felt {
             set(id, Vec4::ONE, FLAT_FELT);
+        }
+        // the empty slots: a phone draws straight into the canvas (blending after the tonemap lightens less)
+        if let Some(m) = self.ghost.and_then(|id| ctx.renderer.material_mut(id)) {
+            m.base_color.w = if on { 0.11 } else { 0.07 };
         }
     }
 
