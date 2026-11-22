@@ -118,7 +118,8 @@ comes from.
   wooden window frames (`window_c`), flower boxes, a blue door canopy and a hip roof. The football goal's top net.
 - **Card battle look:** card faces 480 x 672 (`cardface::FACE_W/H`); the camera 65 % of the way to straight down
   (76.7 / 80.5 degrees), fitted to the three locations' width (landscape: the rows may reach under the bars); the
-  portraits are LEGO heads (assets/portraits/<style>_<0|1|2>.png, tools/portraits/render_heads.py), the opponent's
+  portraits are LEGO faces (assets/portraits/<style>_face_<0|1|2>.png, the face prints cropped by
+  tools/portraits/faces.py), the opponent's
   mouth print following the voice (`foe_mouth`, hysteresis as figure.rs).
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, the TV tower `tv_tower` north-west of it, shops /

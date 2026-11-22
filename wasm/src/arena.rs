@@ -153,7 +153,7 @@ pub const STYLE: &str = "<style>
 #ui [data-slot=bt_top]{position:fixed;left:0;right:0;top:0;z-index:30}
 .bt-top{display:flex;align-items:center;gap:8px;padding:6px max(10px,env(safe-area-inset-right)) 6px max(10px,env(safe-area-inset-left));height:50px;box-sizing:border-box;background:linear-gradient(rgba(5,10,8,.62),rgba(5,10,8,.18));color:#fff;font-weight:700}
 .bt-port{position:relative;flex:none;width:50px;height:50px;border-radius:11px;border:3px solid rgba(255,255,255,.6);display:grid;place-items:center;font-size:18px;font-weight:800;box-sizing:border-box}
-.bt-head{position:absolute;left:-4%;top:-2%;width:108%;height:108%;object-fit:contain;display:none;pointer-events:none;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))}
+.bt-head{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:8px;display:none;pointer-events:none}
 .bt-head.on{display:block}
 .bt-port.lit{border-color:#ffd23d;animation:btpulse .8s ease-in-out infinite alternate}
 @keyframes btpulse{from{box-shadow:0 0 8px 2px rgba(255,210,61,.55)}to{box-shadow:0 0 18px 5px rgba(255,210,61,.95)}}
@@ -2156,8 +2156,9 @@ impl BattleScreen {
         let over = b.phase == Phase::Over;
         let plan = b.phase == Phase::Plan;
         // ---- the top bar: the opponent with the 1st / 2nd badge, the stakes, the turn, Log / SNAP / Retreat ----
-        // the opponent's LEGO head (assets/portraits, tools/portraits/render_heads.py); while the opponent talks its mouth
-        // opens and closes with the voice (the closed, half and open print; a little hysteresis, as figure.rs)
+        // the opponent's LEGO face (its minifig's face print, assets/portraits, tools/portraits/faces.py) filling the
+        // square; while the opponent talks its mouth opens and closes with the voice (the closed, half and open print; a
+        // little hysteresis, as figure.rs)
         let foe_style = match self.kind {
             BattleKind::Rival => Some("dex"),
             BattleKind::Pip => Some("pip"),
@@ -2173,7 +2174,7 @@ impl BattleScreen {
             self.foe_mouth -= 1;
         }
         let ini = match foe_style {
-            Some(st) => (0..3).map(|k| format!("<img class='bt-head{}' src='assets/portraits/{st}_{k}.png' alt=''>", if k == self.foe_mouth { " on" } else { "" })).collect::<String>(),
+            Some(st) => (0..3).map(|k| format!("<img class='bt-head{}' src='assets/portraits/{st}_face_{k}.png' alt=''>", if k == self.foe_mouth { " on" } else { "" })).collect::<String>(),
             None => "?".to_string(),
         };
         // the badges rank the sides as the battle stands (`Battle::leader`: locations, then total power), so
@@ -2218,7 +2219,7 @@ impl BattleScreen {
         let me_first = leader == Some(SIDE_P);
         let bottom = format!(
             "<div class='bt-bot{ph}' style='--bh:{bh:.0}px;--orb:{orb:.0}px'><div class='bt-orb{spent}'><b>{left}<small>/{en}</small></b><span>ENERGY</span></div>\
-             <div class='bt-me'><div class='bt-port{lit}' style='background:#1e6fe0;width:46px;height:46px;font-size:10px'><img class='bt-head on' src='assets/portraits/player_0_up.png' alt='YOU'>{mb}</div></div>\
+             <div class='bt-me'><div class='bt-port{lit}' style='background:#1e6fe0;width:46px;height:46px;font-size:10px'><img class='bt-head on' src='assets/portraits/player_face_0.png' alt='YOU'>{mb}</div></div>\
              <div class='bt-ctl'><button class='bt-btn blue{go}' data-action='bt_end'{endd}>{endl}</button><button class='bt-btn' data-action='bt_undo'{undod}>Undo</button></div></div>",
             ph = if l.phone { " phone" } else { "" },
             bh = l.bottom_px,
