@@ -53,6 +53,8 @@ const DRAG_H: f32 = 0.5;
 /// A card dragged by a finger rides above it: its lower edge this far (CSS px) above the touch point, so the thumb
 /// (which reaches further up than the point it touches) does not cover it
 const THUMB_PX: f32 = 30.0;
+/// The table's sun (normalized; also where the cards' blobs fall on phones).
+const SUN_DIR: Vec3 = Vec3::new(-0.3015, -0.9422, -0.3957);
 /// The time (s) the board is set up under the bricks on the way into a battle. The bricks leave once the board has
 /// drawn a few frames and `TRANS_OUT` has passed on the wall clock (the CSS runs on it): setting up the board stalls
 /// a frame or more (and a phone switches to full resolution, which clears the canvas) - all under the bricks.
@@ -362,6 +364,8 @@ struct CardObj {
     back: Entity,
     badge: Entity,
     glow: Entity,
+    /// the soft shadow on the table under it (`flat`)
+    blob: Entity,
     face_now: Option<Face>,
     /// the face shows dimmed (not enough energy)
     dim: bool,
@@ -539,6 +543,8 @@ pub struct BattleScreen {
     foe_mouth: usize,
     /// the render scale and auto resolution to give back when the big card closes
     sharp: Option<(f32, bool)>,
+    /// phones: no shadow maps, the cards and the felt unlit, a soft dark blob under each card instead (`Art::set_flat`)
+    flat: bool,
     rng: u32,
     last_turn: i32,
     ai_snap_said: bool,
@@ -653,6 +659,7 @@ impl BattleScreen {
             taunt: None,
             foe_mouth: 0,
             sharp: None,
+            flat: false,
             rng: seed.wrapping_mul(2654435761) | 1,
             last_turn: 0,
             ai_snap_said: false,
@@ -811,6 +818,8 @@ impl BattleScreen {
         let back = spawn(ctx, "card back", cb, back_mat, Transform::default(), Some(root), true);
         let badge = spawn(ctx, "power", n0, num, Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(0.0)), Some(root), false);
         let glow = spawn(ctx, "card glow", round, gold, Transform::from_xyz(0.0, 0.0, -CARD_T * 0.5 - 0.01).with_scale(Vec3::new(1.13, 1.1, 1.0)), Some(root), false);
+        let blob = spawn(ctx, "card blob", round, art.pile_shadow.unwrap(), Transform::from_translation(BASE), None, false);
+        show(ctx, blob, false);
         show(ctx, face, false);
         show(ctx, badge, false);
         show(ctx, glow, false);
@@ -821,6 +830,7 @@ impl BattleScreen {
             back,
             badge,
             glow,
+            blob,
             face_now: None,
             dim: false,
             face_shown: false,
@@ -1742,6 +1752,23 @@ impl BattleScreen {
                 }
             }
             set_tf(ctx, o.root, Transform::from_translation(shown.pos).with_rotation(shown.quat()).with_scale(Vec3::splat(shown.scale)));
+            // the blob: under the card where the sun would throw its shadow, wider and fainter the higher it is
+            let blob = o.blob;
+            let h = shown.pos.y - BASE.y;
+            if self.flat && cast && !gone && h < 2.5 {
+                let up = shown.rot * Vec3::Y;
+                let yaw = (-up.x).atan2(-up.z);
+                let sun = SUN_DIR;
+                let p = Vec3::new(shown.pos.x + sun.x / -sun.y * h, BASE.y + 0.004, shown.pos.z + sun.z / -sun.y * h);
+                let k = 1.0 + h * 0.35;
+                set_tf(ctx, blob, Transform::from_translation(p).with_rotation(Quat::from_rotation_y(yaw) * Quat::from_rotation_x(-FRAC_PI_2)).with_scale(Vec3::new(shown.scale * 1.04 * k, shown.scale * 1.04 * k, 1.0)));
+                if let Ok(mut mr) = ctx.world.get::<&mut MeshRenderer>(blob) {
+                    mr.layer = LAYER;
+                    mr.opacity = (1.0 - h / 2.5).clamp(0.0, 1.0) * if h < 0.05 { 0.6 } else { 1.0 };
+                }
+            } else {
+                show(ctx, blob, false);
+            }
             if landed {
                 self.lands += 1;
                 data.sound.sfx(ctx, Sfx::Pop, 0.8, 0.6);
@@ -2519,6 +2546,7 @@ impl BattleScreen {
             "dragging": matches!(self.press, Some(Press::Card { moved: true, .. })),
             "drag_over": self.drag_over,
             "dock": self.dock,
+            "flat": self.flat,
             // where a dragged card is seen for the pointer now (CSS px; above a finger)
             "drag_point": [dpt.x.round(), dpt.y.round()],
             "taunt": self.taunt.map(|t| t.0),
@@ -2586,7 +2614,7 @@ impl Screen<Data> for BattleScreen {
         s.clear_color = engine::renderer::srgb_hex(0x0d1712).truncate();
         s.fog_color = None;
         s.fog_density = 0.0;
-        s.sun_dir = Vec3::new(-0.32, -1.0, -0.42).normalize();
+        s.sun_dir = SUN_DIR;
         s.sun_color = engine::renderer::srgb_hex(0xfff1dc).truncate();
         s.sun_intensity = 3.2;
         s.sun_scale = 1.0;
@@ -2617,6 +2645,12 @@ impl Screen<Data> for BattleScreen {
             s.min_render_scale = 1.0;
             s.water_ssr = false;
             s.stud_relief = 0;
+            // the pixels cheap: no shadow maps (4 lookups a pixel) - soft blobs under the cards instead -, no ambient
+            // specular, the cards and the felt unlit (printed cards: the lighting changed little)
+            s.shadows = false;
+            s.ambient_specular = 0.0;
+            self.flat = true;
+            data.art.set_flat(ctx, true);
         }
         self.layout(ctx);
         self.build(ctx, data);
@@ -2641,6 +2675,9 @@ impl Screen<Data> for BattleScreen {
         ctx.input.touch.set_stick_enabled(true);
         if let Some(s) = self.saved.take() {
             ctx.renderer.settings = s;
+        }
+        if self.flat {
+            data.art.set_flat(ctx, false);
         }
         data.sound.stop_voice(ctx);
         for slot in ["bt_top", "bt_bottom", "bt_over"] {

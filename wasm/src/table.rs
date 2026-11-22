@@ -20,6 +20,10 @@ use web_sys::{CanvasRenderingContext2d as C2d, HtmlCanvasElement, HtmlImageEleme
 const CARD_TINT: Vec4 = Vec4::new(0.72, 0.72, 0.72, 1.0);
 /// A card you cannot pay for (in your hand): much darker, a little blue-grey.
 const CARD_DIM: Vec4 = Vec4::new(0.17, 0.18, 0.21, 1.0);
+/// The same unlit (`Art::set_flat`, phones): the lit look's brightness without the lighting.
+const FLAT_TINT: Vec4 = Vec4::new(1.45, 1.45, 1.45, 1.0);
+const FLAT_DIM: Vec4 = Vec4::new(0.4, 0.42, 0.48, 1.0);
+const FLAT_FELT: Vec4 = Vec4::new(1.2, 1.2, 1.2, 1.0);
 
 /// Card slab: width 1 (scale the entity by the card's width), height 1.4, this thick (local units).
 pub const CARD_H: f32 = 1.4;
@@ -63,6 +67,8 @@ pub struct TableArt {
     /// materials of textured faces (cards, tiles), per texture
     face_mats: HashMap<TextureId, MaterialId>,
     face_mats_dim: HashMap<TextureId, MaterialId>,
+    /// the cards and the felt unlit (phones: the battle's pixels cost a texture fetch, no lighting or shadow lookups)
+    pub flat: bool,
     num_tex: Option<TextureId>,
     pub num_mat: Option<MaterialId>,
     num_meshes: HashMap<(usize, i32), MeshId>,
@@ -293,17 +299,41 @@ impl TableArt {
     /// The material of a textured face (cards, tiles; opaque, double-sided for the shards).
     /// A card face dimmed (in your hand, too expensive for the energy left).
     pub fn face_mat_dim(&mut self, ctx: &mut Ctx, tex: TextureId) -> MaterialId {
-        *self.face_mats_dim.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face dim".into(), texture: Some(tex), double_sided: true, base_color: CARD_DIM, ..Material::color(0xffffff).rough(0.6) }))
+        let (unlit, base_color) = if self.flat { (true, FLAT_DIM) } else { (false, CARD_DIM) };
+        *self.face_mats_dim.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face dim".into(), texture: Some(tex), double_sided: true, base_color, unlit, ..Material::color(0xffffff).rough(0.6) }))
     }
 
     pub fn face_mat(&mut self, ctx: &mut Ctx, tex: TextureId) -> MaterialId {
-        *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face".into(), texture: Some(tex), double_sided: true, base_color: CARD_TINT, ..Material::color(0xffffff).rough(0.6) }))
+        let (unlit, base_color) = if self.flat { (true, FLAT_TINT) } else { (false, CARD_TINT) };
+        *self.face_mats.entry(tex).or_insert_with(|| ctx.renderer.add_material(Material { name: "card face".into(), texture: Some(tex), double_sided: true, base_color, unlit, ..Material::color(0xffffff).rough(0.6) }))
+    }
+
+    /// The cards (faces, backs, tiles) and the felt unlit or lit again: every material made so far, and the ones
+    /// made from now on.
+    pub fn set_flat(&mut self, ctx: &mut Ctx, on: bool) {
+        self.flat = on;
+        let mut set = |id: MaterialId, tint: Vec4, flat: Vec4| {
+            if let Some(m) = ctx.renderer.material_mut(id) {
+                m.unlit = on;
+                m.base_color = if on { flat } else { tint };
+            }
+        };
+        for &id in self.face_mats.values().chain(self.back_mat.iter()) {
+            set(id, CARD_TINT, FLAT_TINT);
+        }
+        for &id in self.face_mats_dim.values() {
+            set(id, CARD_DIM, FLAT_DIM);
+        }
+        if let Some(id) = self.felt {
+            set(id, Vec4::ONE, FLAT_FELT);
+        }
     }
 
     pub fn back_mat(&mut self, ctx: &mut Ctx, faces: &mut crate::cardface::CardFaces) -> Option<MaterialId> {
         if self.back_mat.is_none() {
             let t = faces.texture(ctx, crate::cardface::Face::back())?;
-            self.back_mat = Some(ctx.renderer.add_material(Material { name: "card back".into(), texture: Some(t), base_color: CARD_TINT, ..Material::color(0xffffff).rough(0.6) }));
+            let (unlit, base_color) = if self.flat { (true, FLAT_TINT) } else { (false, CARD_TINT) };
+            self.back_mat = Some(ctx.renderer.add_material(Material { name: "card back".into(), texture: Some(t), base_color, unlit, ..Material::color(0xffffff).rough(0.6) }));
         }
         self.back_mat
     }
