@@ -107,6 +107,9 @@ pub struct CardFaces {
     requested: HashSet<Face>,
     /// faces drawn (tests)
     pub drawn: u32,
+    /// the big card's own texture (the close-up: drawn at the size it is seen, one texture rewritten for each card)
+    /// and what it holds
+    big: Option<(TextureId, u32, u32, Option<Face>)>,
 }
 
 impl CardFaces {
@@ -152,6 +155,29 @@ impl CardFaces {
         Some(g.get_image_data(0, 0, FACE_W as i32, FACE_H as i32).ok()?.data().0)
     }
 
+    /// The close-up's face, `px_w` pixels wide (its width on screen in device pixels; 480..1200): one texture,
+    /// rewritten when another card is shown (a new one only when the size changes, e.g. the phone turned).
+    pub fn big_texture(&mut self, ctx: &mut Ctx, f: Face, px_w: u32) -> Option<TextureId> {
+        let w = (px_w.clamp(FACE_W, 1200) / 8) * 8;
+        let h = (w as f32 * FACE_H as f32 / FACE_W as f32).round() as u32;
+        if let Some((t, bw, bh, Some(held))) = self.big {
+            if bw == w && bh == h && held == f {
+                return Some(t);
+            }
+        }
+        self.draw_sized(f, w, h)?;
+        let px = {
+            let (_, g, _, _) = self.canvas.as_ref()?;
+            g.get_image_data(0, 0, w as i32, h as i32).ok()?.data().0
+        };
+        let tex = match self.big {
+            Some((t, bw, bh, _)) if bw == w && bh == h => ctx.renderer.write_texture_rgba(t, w, h, &px).ok().map(|_| t),
+            _ => ctx.renderer.add_texture_rgba(w, h, &px, "card:big").ok(),
+        }?;
+        self.big = Some((tex, w, h, Some(f)));
+        Some(tex)
+    }
+
     /// A blob URL of the face as PNG for `<img>`; `None` until it is encoded (asked once, then cached).
     pub fn url(&mut self, f: Face) -> Option<String> {
         if let Some(u) = self.urls.borrow().get(&f) {
@@ -184,9 +210,18 @@ impl CardFaces {
 
     /// Draws a face onto the canvas.
     fn draw(&mut self, f: Face) -> Option<()> {
-        let (_, g, ac, ag) = self.canvas()?.clone();
+        self.draw_sized(f, FACE_W, FACE_H)
+    }
+
+    /// Draws a face onto the canvas at `pw` x `ph` (the canvas resized when it differs).
+    fn draw_sized(&mut self, f: Face, pw: u32, ph: u32) -> Option<()> {
+        let (c, g, ac, ag) = self.canvas()?.clone();
+        if c.width() != pw || c.height() != ph {
+            c.set_width(pw);
+            c.set_height(ph);
+        }
         self.drawn += 1;
-        let (w, h) = (FACE_W as f64, FACE_H as f64);
+        let (w, h) = (pw as f64, ph as f64);
         g.set_global_alpha(1.0);
         g.set_global_composite_operation("source-over").ok()?;
         g.clear_rect(0.0, 0.0, w, h);

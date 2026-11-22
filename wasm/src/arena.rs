@@ -494,6 +494,8 @@ pub struct BattleScreen {
     taunt: Option<(&'static str, f32)>,
     /// the opponent's head print shown (0 closed, 1 half, 2 open: the voice's loudness)
     foe_mouth: usize,
+    /// the render scale and auto resolution to give back when the big card closes
+    sharp: Option<(f32, bool)>,
     rng: u32,
     last_turn: i32,
     ai_snap_said: bool,
@@ -605,6 +607,7 @@ impl BattleScreen {
             result_hidden: false,
             taunt: None,
             foe_mouth: 0,
+            sharp: None,
             rng: seed.wrapping_mul(2654435761) | 1,
             last_turn: 0,
             ai_snap_said: false,
@@ -1887,6 +1890,23 @@ impl BattleScreen {
     fn sync_inspect(&mut self, ctx: &mut Ctx, data: &mut Data, dt: f32) {
         let cam = self.cam_tf(ctx);
         let want = self.inspect;
+        // while a card is shown big the view renders at full resolution (a phone draws at half: its text was soft);
+        // the table and one card are cheap, and the old setting comes back when it closes
+        match (want.is_some(), self.sharp) {
+            (true, None) => {
+                let s = &mut ctx.renderer.settings;
+                self.sharp = Some((s.render_scale, s.auto_resolution));
+                s.auto_resolution = false;
+                s.render_scale = 1.0;
+            }
+            (false, Some((scale, auto))) => {
+                let s = &mut ctx.renderer.settings;
+                s.render_scale = scale;
+                s.auto_resolution = auto;
+                self.sharp = None;
+            }
+            _ => {}
+        }
         if let Some(d) = self.dim {
             show(ctx, d, want.is_some());
             if want.is_some() {
@@ -1927,7 +1947,9 @@ impl BattleScreen {
                         ctx.despawn(o.root);
                     }
                     let mut o = self.new_card_obj(ctx, data);
-                    if let Some(t) = data.faces.texture(ctx, face) {
+                    // (its own sharp texture, drawn at the size it is seen: device pixels)
+                    let dpr = web_sys::window().map(|w| w.device_pixel_ratio()).unwrap_or(1.0) as f32;
+                    if let Some(t) = data.faces.big_texture(ctx, face, (w * dpr).round() as u32) {
                         let m = data.art.face_mat(ctx, t);
                         if let Ok(mut mr) = ctx.world.get::<&mut MeshRenderer>(o.face) {
                             mr.material = m;
@@ -2497,6 +2519,10 @@ impl Screen<Data> for BattleScreen {
     }
 
     fn exit(&mut self, ctx: &mut Ctx, data: &mut Data) {
+        if let Some((scale, auto)) = self.sharp.take() {
+            ctx.renderer.settings.render_scale = scale;
+            ctx.renderer.settings.auto_resolution = auto;
+        }
         if let Some(e) = self.prev_cam.take().filter(|e| ctx.world.contains(*e)) {
             ctx.set_main_camera(e);
         }
