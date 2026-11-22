@@ -11,7 +11,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $game = $PSScriptRoot
 Write-Host "=== Brickhollow (wasm) export for GitHub Pages -> $Out ===" -ForegroundColor Cyan
+# cargo writes its progress to stderr: under 'Stop' a redirected stderr line would end the script
+$ErrorActionPreference = 'Continue'
 node C:/dev/wasmOnly/tools/dev.mjs build --game-dir $game --release
+$ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -ne 0) { throw "release build failed" }
 $wasm = Join-Path $game 'dist/pkg/game_bg.wasm'
 if ((Get-Item $wasm).Length -gt 50MB) { throw "dist/ holds a debug build ($wasm)" }
@@ -26,6 +29,7 @@ $sw = @'
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.registration.unregister().then(() => self.clients.matchAll({ type: "window" })).then((cs) => cs.forEach((c) => c.navigate(c.url)))));
 '@
-Set-Content -Encoding utf8 -NoNewline (Join-Path $Out 'coi-sw.js') $sw
+[IO.File]::WriteAllText((Join-Path $Out 'coi-sw.js'), $sw)
+if (-not (Test-Path (Join-Path $Out 'coi-sw.js'))) { throw "coi-sw.js not written" }
 $mb = [math]::Round(((Get-ChildItem -Recurse -File $Out | Measure-Object Length -Sum).Sum) / 1MB, 1)
 Write-Host "exported to $Out ($mb MB)" -ForegroundColor Green

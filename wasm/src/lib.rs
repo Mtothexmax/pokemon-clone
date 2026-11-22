@@ -49,15 +49,15 @@ pub fn main() {
     // ~30 % faster on desktop (much more on phones). `?msaa=4` in the URL brings MSAA back.
     // Direct output: the engine also builds pipelines that tonemap in the fragment shader and draw straight into the
     // canvas, used in frames whose composite would only tonemap (the phone's card battle: no bloom, FXAA, depth
-    // darkening, ...): no HDR target, no composite pass. Off for now: on an Android phone (Dawn/Vulkan) one of those
-    // pipelines (pbr-opaque-eq-2s-ldr) failed to build (VK_ERROR_UNKNOWN), so the double-sided cards would not draw.
-    // `?direct=1` turns it on
+    // darkening, ...): no HDR target, no composite pass. A GPU that cannot build one of those pipelines (an Android
+    // phone: pbr-opaque-eq-2s-ldr, VK_ERROR_UNKNOWN) renders through the composite instead (engine 4deb722,
+    // direct_blocked "pipeline"). `?direct=0` turns it off
     engine::run_with(
         ScreenStack::new(Data::default(), Box::new(Title))
             .register("title", || Box::new(Title))
             .register("play", || Box::new(PlayScreen::default()))
             .register("battle", || Box::new(arena::BattleScreen::default())),
-        engine::renderer::RenderConfig { msaa: 1, direct_output: false },
+        engine::renderer::RenderConfig { msaa: 1, direct_output: true },
     );
 }
 
