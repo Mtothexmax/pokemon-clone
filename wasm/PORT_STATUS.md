@@ -116,6 +116,10 @@ comes from.
 - **Lab and home after the key art:** the lab with battlements, a ribbed glass dome, corner turrets (antenna), the
   dish at the front corner, an entrance canopy; your home with facing bricks in shades (`Town::facing`, exact boxes),
   wooden window frames (`window_c`), flower boxes, a blue door canopy and a hip roof. The football goal's top net.
+- **Card battle look:** card faces 480 x 672 (`cardface::FACE_W/H`); the camera 65 % of the way to straight down
+  (76.7 / 80.5 degrees), fitted to the three locations' width (landscape: the rows may reach under the bars); the
+  portraits are LEGO heads (assets/portraits/<style>_<0|1|2>.png, tools/portraits/render_heads.py), the opponent's
+  mouth print following the voice (`foe_mouth`, hysteresis as figure.rs).
 - **Island towns** (`places.rs`): built on their pads the first time you come within 330 studs, then kept: Brickton
   (towers taller toward the middle, the mall north-east of the plaza, the TV tower `tv_tower` north-west of it, shops /
   offices south), Port Saltwick (two rows

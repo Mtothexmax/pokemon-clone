@@ -22,8 +22,8 @@ use wasm_bindgen::{Clamped, JsCast, JsValue};
 use web_sys::{CanvasGradient, CanvasRenderingContext2d as C2d, HtmlCanvasElement};
 
 /// Face size in pixels (1 : 1.4, as the cards). `em` = a tenth of the width (the Kaigen card's unit).
-pub const FACE_W: u32 = 300;
-pub const FACE_H: u32 = 420;
+pub const FACE_W: u32 = 480;
+pub const FACE_H: u32 = 672;
 pub(crate) const FONT: &str = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 /// What a face shows.
