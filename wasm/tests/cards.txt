@@ -50,6 +50,23 @@ frames 80
 expect game_state.state.cards.rewards.revealed == 3
 expect ui.slots.packs contains Awesome!
 screenshot shots/cards-packs-open.png
+# a revealed card tapped: big at once (no zoom); a tap or a key closes it, the packs stay
+action pack_big:1
+frames 3
+expect game_state.state.cards.rewards.big == "thundrake"
+expect ui.slots.packs contains pk-bigshade
+frames 2
+screenshot shots/cards-packs-big.png
+action pack_big_close
+frames 3
+expect game_state.state.cards.rewards.big == null
+expect game_state.state.cards.rewards.revealed == 3
+action pack_big:2
+frames 3
+key Enter
+frames 3
+expect game_state.state.cards.rewards.big == null
+expect game_state.state.cards.rewards.revealed == 3
 action pack_ok
 frames 10
 expect game_state.state.cards.rewards == null

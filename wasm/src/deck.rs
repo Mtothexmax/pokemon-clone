@@ -60,6 +60,8 @@ pub struct CardUi {
     pub rewards: Vec<usize>,
     title: String,
     reward_t: f32,
+    /// a revealed reward card shown big (tapped; a tap anywhere or a key closes it)
+    pub reward_big: Option<usize>,
     /// seconds since each pack was torn open (`PACK_SEALED`: not yet; < 0: about to, "Reveal all")
     tear: [f32; 3],
     after: Option<DialogId>,
@@ -90,6 +92,7 @@ impl CardUi {
         self.rewards = ids.iter().copied().take(3).collect();
         self.title = title.to_string();
         self.reward_t = 0.0;
+        self.reward_big = None;
         self.tear = [PACK_SEALED; 3];
         self.after = after;
         self.pack_key.clear();
@@ -174,6 +177,20 @@ impl CardUi {
                 }
             }
             all &= self.tear[i] >= PACK_REVEAL;
+        }
+        // a revealed card tapped: shown big at once; a tap or a key closes it again (before anything else)
+        let big = actions.iter().find_map(|a| a.strip_prefix("pack_big:").and_then(|n| n.parse::<usize>().ok()));
+        if self.reward_big.is_some() {
+            if keys || actions.iter().any(|a| a == "pack_big_close") {
+                self.reward_big = None;
+                sound.sfx(ctx, Sfx::Blip, 1.2, 0.3);
+            }
+            return;
+        }
+        if let Some(i) = big.filter(|&i| i < n && self.tear[i] >= PACK_REVEAL) {
+            self.reward_big = Some(i);
+            sound.sfx(ctx, Sfx::Blip, 1.3, 0.35);
+            return;
         }
         let pack = actions.iter().find_map(|a| a.strip_prefix("pack:").and_then(|n| n.parse::<usize>().ok()));
         let reveal_all = actions.iter().any(|a| a == "pack_all");
@@ -326,7 +343,7 @@ impl CardUi {
             }
         }
         self.draw_upgrade(ctx, faces, sw, sh);
-        self.draw_packs(ctx, s, faces, sw);
+        self.draw_packs(ctx, s, faces, sw, sh);
     }
 
     fn img(faces: &mut CardFaces, f: Face) -> String {
@@ -583,7 +600,7 @@ impl CardUi {
 
     /// The rewards: a panel with the sealed foil packs (rebuilt only when a pack's state changes; the CSS
     /// animations start with negative delays, so a rebuild continues them where they are).
-    fn draw_packs(&mut self, ctx: &mut Ctx, s: &crate::save::GameSave, faces: &mut CardFaces, sw: f32) {
+    fn draw_packs(&mut self, ctx: &mut Ctx, s: &crate::save::GameSave, faces: &mut CardFaces, sw: f32, sh: f32) {
         if self.rewards.is_empty() {
             ctx.ui.set("packs", "");
             return;
@@ -592,7 +609,16 @@ impl CardUi {
         let urls: Vec<Option<String>> = self.rewards.iter().map(|&c| faces.url(Face::new(c, cards::level(s, c)))).collect();
         let state = |t: f32| if t <= PACK_SEALED + 1.0 { 's' } else if t < 0.0 { 'w' } else if t < PACK_GONE { 'o' } else { 'g' };
         let all = (0..n).all(|i| self.tear[i] >= PACK_REVEAL);
-        let key: String = (0..n).map(|i| format!("{}{}", state(self.tear[i]), urls[i].is_some() as u8)).collect::<String>() + if all { "A" } else { "" } + if self.reward_t > 0.6 { "D" } else { "" };
+        // the revealed cards' big faces drawn ahead, so a tap shows one at once
+        for i in (0..n).filter(|&i| self.tear[i] >= PACK_REVEAL) {
+            let c = self.rewards[i];
+            let _ = faces.url(Face::new(c, cards::level(s, c)).big());
+        }
+        let key: String = (0..n).map(|i| format!("{}{}", state(self.tear[i]), urls[i].is_some() as u8)).collect::<String>() + if all { "A" } else { "" } + if self.reward_t > 0.6 { "D" } else { "" } + &self.reward_big.filter(|&i| i < n).map(|i| {
+                // (its big face may still be drawing: built again once it is there)
+                let c = self.rewards[i];
+                format!("B{i}{}", faces.url(Face::new(c, cards::level(s, c)).big()).is_some() as u8)
+            }).unwrap_or_default();
         if key == self.pack_key {
             return;
         }
@@ -623,7 +649,7 @@ impl CardUi {
                 "<div class='pk{}{}' {} style='{deal}--tt:-{tt:.2}s;width:{w:.0}px;height:{:.0}px;--r0:{}deg;--pf:{:.1}px'><div class='pk-card'>{img}</div>{}{foil}</div>",
                 if sealed { " sealed" } else { " torn" },
                 if rare { " rare" } else { "" },
-                if sealed { format!("data-action='pack:{i}'") } else { String::new() },
+                if sealed { format!("data-action='pack:{i}'") } else { format!("data-action='pack_big:{i}'") },
                 w * 1.4,
                 if i == 1 { 4 } else { -6 },
                 w * 0.087,
@@ -635,7 +661,17 @@ impl CardUi {
         } else {
             "<div class='pk-hint'>Tap a pack to tear it open!</div><button class='pk-btn' data-action='pack_all' style='background:#783cc8'>Reveal all</button>".to_string()
         };
-        ctx.ui.set("packs", &format!("<div class='pk-shade'><div class='pk-box'><div class='pk-title'>{}</div><div class='pk-row'>{packs}</div>{foot}</div></div>", esc(&self.title)));
+        // a tapped card big over it all (no zoom: there at once), its own sharp big face
+        let big = self.reward_big.filter(|&i| i < n).map(|i| {
+            let c = self.rewards[i];
+            let bw = (sw * 0.8).min((sh - 90.0) / 1.4).min(400.0);
+            format!(
+                "<div class='pk-bigshade' data-action='pack_big_close'>{}<div class='pk-hint'>Tap to close</div></div>",
+                Self::card_html(faces, Face::new(c, cards::level(s, c)).big(), bw, "", "pk-big")
+            )
+        });
+        let hint = if all && self.reward_big.is_none() { "<div class='pk-hint'>Tap a card to see it big</div>" } else { "" };
+        ctx.ui.set("packs", &format!("<div class='pk-shade'><div class='pk-box'><div class='pk-title'>{}</div><div class='pk-row'>{packs}</div>{hint}{foot}</div></div>{}", esc(&self.title), big.unwrap_or_default()));
     }
 
     /// For `game_state`.
@@ -659,6 +695,7 @@ impl CardUi {
                 json!({
                     "title": self.title,
                     "cards": self.rewards.iter().map(|&c| cards::card(c).id).collect::<Vec<_>>(),
+                    "big": self.reward_big.map(|i| cards::card(self.rewards[i]).id),
                     "tear": self.tear[..self.rewards.len()].iter().map(|t| if *t <= PACK_SEALED + 1.0 { Value::Null } else { json!((t * 100.0).round() / 100.0) }).collect::<Vec<_>>(),
                     "revealed": self.tear[..self.rewards.len()].iter().filter(|t| **t >= PACK_REVEAL).count(),
                     "after": self.after.map(|d| format!("{d:?}")),
@@ -721,10 +758,14 @@ pub const STYLE: &str = "<style>
 .pk-title{font-size:20px;font-weight:800;text-align:center;max-width:520px}
 .pk-row{display:flex;gap:14px;padding:8px 0}
 .pk-hint{font-size:14px;color:#5a5e64}
+.pk-bigshade .pk-hint{color:#fff}
 #ui .pk-btn{margin:0;padding:9px 18px;border-radius:9px;color:#fff;font-size:17px;font-weight:600}
 .pk{position:relative;animation:pk-deal .35s ease-out both;animation-delay:var(--deal)}
 .pk.sealed{cursor:pointer;pointer-events:auto}.pk.sealed:hover .pk-p{filter:brightness(1.12)}
 @keyframes pk-deal{from{opacity:0;transform:translateY(-40%) rotate(var(--r0))}to{opacity:1;transform:none}}
+.pk-bigshade{position:fixed;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.72);pointer-events:auto;cursor:pointer}
+#ui .pk-bigshade .bc{cursor:pointer;filter:drop-shadow(0 8px 18px rgba(0,0,0,.5))}
+.pk.torn{cursor:pointer}
 .pk-card{position:absolute;inset:0;border-radius:6%/4.3%}.pk-card img{width:100%;height:100%;display:block}
 .pk.torn .pk-card{animation:pk-pop .55s both;animation-delay:calc(var(--tt) + .42s)}
 .pk.torn.rare .pk-card{box-shadow:0 0 18px 2px rgba(255,210,61,.9)}

@@ -2021,8 +2021,8 @@ impl BattleScreen {
                             mr.cast_shadows = false;
                         }
                     }
-                    o.pose = self.cards[ci].pose;
-                    o.anim = Some(Anim { from: o.pose, t: 0.0, dur: 0.3, style: Style::Plain, landed: false });
+                    // (shown big at once: no zoom from the table, which stuttered)
+                    o.anim = None;
                     self.insp_obj = Some(o);
                 }
                 // the battle power on the big card
